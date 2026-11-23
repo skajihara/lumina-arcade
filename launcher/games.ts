@@ -48,7 +48,7 @@ export const games: GameEntry[] = [
     at: [0.33, 0.6], hue: '#ffe2a8',
   },
   {
-    id: 'starsand', title: 'Starsand', jp: '星砂', status: 'wip',
+    id: 'starsand', title: 'Starsand', jp: '星砂', status: 'ready',
     desc: '流れ落ちる数千粒の光る砂を、星座の器へ導く。満ちたら夜空が花火で弾ける。',
     shape: [[0.5, 0.5], [0.3, 0.15], [0.7, 0.15], [0.5, 0.85]], edges: [[1, 2], [2, 3], [3, 1]],
     at: [0.1, 0.46], hue: '#a8ffe0',
