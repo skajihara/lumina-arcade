@@ -282,13 +282,19 @@ async function main() {
     if (!sim) return;
     const st = sim.stage;
     switch (e.t) {
+      case 'rain': {
+        // 花火の雨：器の上の広い範囲へ、色の粒がきらめいて散る
+        const c = st.cups[e.cup];
+        const cx = (c.x + c.w / 2) * CELL, cy = (c.y - 24) * CELL;
+        particles.emit(cx, cy, { count: 80, speed: [150, 500], angle: -Math.PI / 2, spread: 2.4, life: [0.5, 1.2], size: [0.04, 0.12], color: [COLORS[e.color], 0xffffff], gravity: 220, drag: 1 });
+        break;
+      }
       case 'fill': {
         // 器が満ちる：中の砂が花火になって弾ける
         const c = st.cups[e.cup];
         cupGlow[e.cup] = 1;
         const cx = (c.x + c.w / 2) * CELL, cy = (c.y + c.h / 2) * CELL;
         const col = c.color !== undefined ? COLORS[c.color] : 0xffffff;
-        sim.emptyCup(e.cup);
         for (let k = 0; k < 3; k++) {
           const fx = cx + (k - 1) * c.w * CELL * 0.3, fy = cy - 120 - k * 30;
           particles.emit(fx, fy, { count: 90, speed: [80, 420], life: [0.8, 1.8], size: [0.05, 0.2], color: [col, 0xffffff, col], gravity: 160, drag: 1.2 });
@@ -298,7 +304,12 @@ async function main() {
         juice.doFlash(0.35, col);
         synth.boom(0.7, 4);
         synth.arp([0, 4, 7, 11, 14].map((n) => n + e.cup * 2), 0.06, 0.1);
-        toast(`器が満ちた（${sim.filled.filter(Boolean).length} / ${st.cups.length}）`);
+        if (e.chain >= 2) {
+          // 花火の雨から続けて満ちた：連鎖
+          toast(`連鎖 ×${e.chain} — 器が満ちた（${sim.filled.filter(Boolean).length} / ${st.cups.length}）`);
+          juice.slowmo(0.3, 0.8);
+          synth.arp([7, 11, 14, 19].map((n) => n + e.chain), 0.05, 0.1);
+        } else toast(`器が満ちた（${sim.filled.filter(Boolean).length} / ${st.cups.length}）`);
         break;
       }
       case 'mix': {
