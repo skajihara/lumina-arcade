@@ -78,6 +78,7 @@ export type SimEvent =
   | { t: 'bump'; x: number; y: number; by?: number }
   | { t: 'explode'; star: number; x: number; y: number; r: number; chain: number; last: boolean }
   | { t: 'link'; a: number; b: number }
+  | { t: 'fuse'; a: number; b: number; dur: number }
   | { t: 'supernova' }
   | { t: 'flip'; side: 'L' | 'R' }
   | { t: 'launch'; power: number }
@@ -669,6 +670,22 @@ export class NovaSim {
         o.blastChain = this.chainId;
         o.decay = 0;
         this.addCharge(o, Math.round(cfg.blastCharge), this.chainId, cfg.chainDelay * (0.6 + 0.8 * Math.max(0, d) / R));
+      }
+    }
+    // 星座の線：爆発は線でつながった星へも火を運ぶ（離れていても、線を伝って届く）
+    if (cfg.fuseSpeed > 0) {
+      for (const [a, b] of this.links) {
+        if (a !== s.id && b !== s.id) continue;
+        const o = this.stars[a === s.id ? b : a];
+        // 火を受け取れるのは灯った星だけ（爆風で起爆に届くチャージがある星）
+        if (!o.alive || o.blastChain === this.chainId || o.charge < Math.round(cfg.maxCharge) - Math.round(cfg.blastCharge)) continue;
+        if (cfg.twist === 1 && o.color !== s.color) continue;
+        o.blastChain = this.chainId;
+        o.decay = 0;
+        const q = o.body.getPosition();
+        const dur = Math.min(cfg.chainWindow * 0.8, Math.hypot(q.x - p.x, q.y - p.y) / cfg.fuseSpeed);
+        this.events.push({ t: 'fuse', a: s.id, b: o.id, dur });
+        this.addCharge(o, Math.round(cfg.blastCharge), this.chainId, Math.max(cfg.chainDelay, dur));
       }
     }
     for (const b of this.balls) this.blast(b.body, p.x, p.y, R * 1.15);

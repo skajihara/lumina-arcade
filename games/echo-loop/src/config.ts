@@ -26,6 +26,8 @@ const base = (p: NovaConfig): EchoConfig => ({
   ballSave: 0,
   balls: 1,
   twist: 0,
+  // 星座の線は連鎖を運ばない（群れごとに別のループで落とす遊びを保つ）
+  fuseSpeed: 0,
   loopSec: 10,
   maxLoops: 6,
   echoCollide: 0,

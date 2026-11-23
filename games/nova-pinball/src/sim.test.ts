@@ -58,6 +58,33 @@ describe('NovaSim', () => {
     expect(links).toBe(2);
   });
 
+  it('火は星座の線を伝って、離れた灯った星へ届く（灯っていない星には届かない）', () => {
+    const stage: StageDef = {
+      id: 't', name: 't', hint: '',
+      // 0 と 1 は爆風が届かないほど離れているが、線でつながっている。2 は線の先だが灯っていない
+      stars: [{ x: 2, y: 4, charge: 2 }, { x: 11, y: 12, charge: 1 }, { x: 3, y: 15 }],
+      links: [[0, 1], [1, 2]],
+    };
+    const run = (fuseSpeed: number) => {
+      const sim = new NovaSim(stage, { ...cfg(), fuseSpeed });
+      (sim as unknown as { addCharge(s: unknown, n: number): void }).addCharge(sim.stars[0], 1);
+      let fuses = 0;
+      for (let i = 0; i < 360; i++) {
+        sim.step(0);
+        for (const e of sim.events) if (e.t === 'fuse') fuses++;
+      }
+      return { sim, fuses };
+    };
+    const on = run(9);
+    expect(on.sim.stars[1].alive).toBe(false);
+    expect(on.sim.stars[2].alive).toBe(true);
+    expect(on.sim.litLinks.has(0)).toBe(true);
+    expect(on.fuses).toBe(1);
+    const off = run(0);
+    expect(off.sim.stars[1].alive).toBe(true);
+    expect(off.fuses).toBe(0);
+  });
+
   it('チャージは時間で減る', () => {
     const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6, y: 8, charge: 2 }], links: [] };
     const c = cfg();

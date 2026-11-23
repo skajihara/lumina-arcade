@@ -14,13 +14,13 @@ const RUNS = Number(process.env.BALANCE_RUNS ?? 16);
 const LIMIT_SEC = 240;
 
 it('nova-pinball balance report', () => {
-  const lines: string[] = ['# Nova Pinball 難易度レポート', '', `ボット（フリッパー上のボールを先読みして狙い撃つ。skill が低いほど反応が遅く狙いがぶれる）で各ステージを${RUNS}回ずつ（制限${LIMIT_SEC}秒）。生成: ${new Date().toISOString()}`, ''];
+  const lines: string[] = ['# Nova Pinball 難易度レポート', '', `ボット（フリッパー上のボールを先読みして狙い撃つ。星座計画：線の星を先に灯し、取り残しのない時だけ起爆。skill が低いほど反応が遅く狙いがぶれる）で各ステージを${RUNS}回ずつ（制限${LIMIT_SEC}秒）。生成: ${new Date().toISOString()}`, ''];
   for (const preset of ['やさしい', 'ふつう', 'むずかしい']) {
-    lines.push(`## ${preset}`, '', '| # | ステージ | skill | クリア率 | 平均クリア秒 | 平均最大連鎖 | 星座完成率 | ゲームオーバー率 |', '|---|---|---|---|---|---|---|---|');
+    lines.push(`## ${preset}`, '', '| # | ステージ | skill | クリア率 | 平均クリア秒 | 平均最大連鎖 | 星座完成率 | 線の点灯率 | ★2以上 | ★3 | ゲームオーバー率 |', '|---|---|---|---|---|---|---|---|---|---|---|');
     stages.forEach((st, i) => {
       if (st.endless) return;
       for (const skill of [0.6, 0.85]) {
-        let clears = 0, tSum = 0, chainSum = 0, nova = 0, over = 0;
+        let clears = 0, tSum = 0, chainSum = 0, nova = 0, over = 0, linkSum = 0, s2 = 0, s3 = 0;
         for (let r = 0; r < RUNS; r++) {
           const sim = new NovaSim(st, { ...presets[preset] });
           const bot = new NovaBot(1000 + r * 7 + i, skill);
@@ -28,9 +28,15 @@ it('nova-pinball balance report', () => {
           if (sim.phase === 'clear') { clears++; tSum += sim.time; }
           chainSum += sim.bestChain;
           if (sim.supernova) nova++;
+          const frac = sim.links.length ? sim.litLinks.size / sim.links.length : 1;
+          linkSum += frac;
+          // main.ts の星評価と同じ基準
+          if (sim.phase === 'clear') {
+            if (sim.supernova || sim.bestChain >= Math.ceil(sim.stars.length * 0.6)) { s3++; s2++; } else if (frac >= 0.7) s2++;
+          }
           if (sim.phase === 'gameover') over++;
         }
-        lines.push(`| ${i + 1} | ${st.name} | ${skill} | ${Math.round((clears / RUNS) * 100)}% | ${clears ? (tSum / clears).toFixed(0) : '-'} | ${(chainSum / RUNS).toFixed(1)} | ${Math.round((nova / RUNS) * 100)}% | ${Math.round((over / RUNS) * 100)}% |`);
+        lines.push(`| ${i + 1} | ${st.name} | ${skill} | ${Math.round((clears / RUNS) * 100)}% | ${clears ? (tSum / clears).toFixed(0) : '-'} | ${(chainSum / RUNS).toFixed(1)} | ${Math.round((nova / RUNS) * 100)}% | ${Math.round((linkSum / RUNS) * 100)}% | ${Math.round((s2 / RUNS) * 100)}% | ${Math.round((s3 / RUNS) * 100)}% | ${Math.round((over / RUNS) * 100)}% |`);
       }
     });
     lines.push('');

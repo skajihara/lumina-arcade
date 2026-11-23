@@ -24,6 +24,8 @@ export interface NovaConfig {
   decayTime: number;
   decayFloor: number;
   chainWindow: number;
+  /** 星座の線を伝って火が走る速さ（マス/秒）。0 で線は連鎖を運ばない */
+  fuseSpeed: number;
   looseHitSpeed: number;
   slowmoAt: number;
   gameSpeed: number;
@@ -56,6 +58,7 @@ export const schema: Schema<NovaConfig> = {
   blastForce: { label: '爆風の強さ', min: 0, max: 40, step: 0.5, folder: '爆発' },
   chainDelay: { label: '連鎖の間隔（秒）', min: 0, max: 0.6, step: 0.01, folder: '爆発' },
   chainWindow: { label: '連鎖が切れるまで（秒）', min: 0.3, max: 4, step: 0.05, folder: '爆発' },
+  fuseSpeed: { label: '星座の線を走る火の速さ（0で無し）', min: 0, max: 30, step: 0.5, folder: '爆発' },
   looseHitSpeed: { label: '浮遊星の衝突でチャージする速さ', min: 1, max: 20, step: 0.5, folder: '爆発' },
   slowmoAt: { label: 'スローになる連鎖数', min: 2, max: 20, step: 1, folder: '演出' },
   gameSpeed: { label: 'ゲーム速度', min: 0.3, max: 1.5, step: 0.05, folder: '演出' },
@@ -88,6 +91,7 @@ const normal: NovaConfig = {
   blastForce: 14,
   chainDelay: 0.12,
   chainWindow: 1.2,
+  fuseSpeed: 9,
   looseHitSpeed: 6,
   slowmoAt: 5,
   gameSpeed: 1,

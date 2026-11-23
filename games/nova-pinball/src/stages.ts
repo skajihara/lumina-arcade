@@ -172,16 +172,6 @@ export const stages: StageDef[] = [
     hue: 0.6,
   },
   {
-    id: 'milkyway',
-    slings: true, outlanes: true, rollovers: true,
-    name: '天の川',
-    hint: '長い川をひと筆で。全部灯してまとめて燃やせ',
-    stars: milkyWay(),
-    links: chainLinks(0, 13),
-    bumpers: [{ x: 6.9, y: 16.2, r: 0.4 }],
-    hue: 0.66,
-  },
-  {
     id: 'dipper',
     slings: true, outlanes: true, rollovers: true, noKickbackStart: true,
     name: '北斗',
@@ -208,6 +198,16 @@ export const stages: StageDef[] = [
     links: [[0, 1], [1, 2], [3, 4], [4, 5], [6, 0], [6, 3]],
     bumpers: [{ x: 6.9, y: 9.4, r: 0.7 }, { x: 4.7, y: 12.9, r: 0.45 }, { x: 9.1, y: 12.9, r: 0.45 }],
     hue: 0.8,
+  },
+  {
+    id: 'milkyway',
+    slings: true, outlanes: true, rollovers: true,
+    name: '天の川',
+    hint: '長い川をひと筆で。全部灯してまとめて燃やせ',
+    stars: milkyWay(),
+    links: chainLinks(0, 13),
+    bumpers: [{ x: 6.9, y: 16.2, r: 0.4 }],
+    hue: 0.66,
   },
   {
     id: 'galaxy',
