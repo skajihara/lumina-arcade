@@ -1,0 +1,30 @@
+{
+  "name": "lumina-arcade",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "夜空をテーマにした、物理×連鎖爆破の小さなゲーム集（ローカルで遊べる）",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "node scripts/build-all.mjs",
+    "build:one": "node scripts/build-all.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "check": "npm run typecheck && npm run test && npm run build && npm run e2e",
+    "balance": "vitest run --config vitest.balance.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.1"
+  },
+  "dependencies": {
+    "lil-gui": "^0.21.0",
+    "pixi-filters": "^6.1.5",
+    "pixi.js": "^8.23.0",
+    "planck": "^1.4.2"
+  }
+}

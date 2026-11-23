@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lumina Arcade — 光の遊技場</title>
+    <script type="module" crossorigin>(function(){let e=document.createElement(`link`).relList;if(e&&e.supports&&e.supports(`modulepreload`))return;for(let e of document.querySelectorAll(`link[rel="modulepreload"]`))n(e);new MutationObserver(e=>{for(let t of e)if(t.type===`childList`)for(let e of t.addedNodes)e.tagName===`LINK`&&e.rel===`modulepreload`&&n(e)}).observe(document,{childList:!0,subtree:!0});function t(e){let t={};return e.integrity&&(t.integrity=e.integrity),e.referrerPolicy&&(t.referrerPolicy=e.referrerPolicy),t.credentials=e.crossOrigin===`use-credentials`?`include`:e.crossOrigin===`anonymous`?`omit`:`same-origin`,t}function n(e){if(e.ep)return;e.ep=!0;let n=t(e);fetch(e.href,n)}})();var e=[{id:`nova-pinball`,title:`Nova Pinball`,jp:`星爆ピンボール`,status:`ready`,desc:`星に当ててチャージ、満タンで爆発。育てた星を一気に点火して連鎖で全部燃やす。`,shape:[[.5,.5],[.2,.25],[.8,.2],[.85,.75],[.25,.8]],edges:[[0,1],[0,2],[0,3],[0,4],[1,2]],at:[.27,.33],hue:`#9fd0ff`},{id:`echo-loop`,title:`Echo Loop`,jp:`残響ループ`,status:`wip`,desc:`10秒の時間ループ。過去の自分のボールと一緒に、同じ10秒で全部の星を爆発させる。`,shape:[[.5,.5],[.15,.4],[.35,.1],[.7,.15],[.85,.55],[.6,.9]],edges:[[1,2],[2,3],[3,4],[4,5],[5,0],[0,1]],at:[.63,.27],hue:`#c3a6ff`},{id:`stopped-world`,title:`Stopped World`,jp:`時止めの一撃`,status:`wip`,desc:`時間を止めて力を溜め、解除の瞬間に全部まとめて解き放つ。`,shape:[[.5,.5],[.5,.1],[.9,.5],[.5,.9],[.1,.5]],edges:[[1,2],[2,3],[3,4],[4,1],[0,1],[0,3]],at:[.84,.48],hue:`#e8e8ff`},{id:`event-horizon`,title:`Event Horizon`,jp:`事象の地平クレーン`,status:`wip`,desc:`ブラックホールで物体を周回させ、ホワイトホールの爆発でゴールへ投げ飛ばす。`,shape:[[.5,.5],[.2,.3],[.8,.3],[.8,.7],[.2,.7]],edges:[[1,2],[2,3],[3,4],[4,1]],at:[.6,.6],hue:`#ffb38a`},{id:`origami-cosmos`,title:`Origami Cosmos`,jp:`折紙宇宙`,status:`wip`,desc:`宇宙を折りたたんで、遠い星同士を重ね合わせて連鎖させるパズル。`,shape:[[.5,.5],[.1,.1],[.9,.1],[.9,.9],[.1,.9]],edges:[[1,2],[2,3],[3,4],[4,1],[1,3]],at:[.33,.6],hue:`#ffe2a8`},{id:`starsand`,title:`Starsand`,jp:`星砂`,status:`wip`,desc:`流れ落ちる数千粒の光る砂を、星座の器へ導く。満ちたら夜空が花火で弾ける。`,shape:[[.5,.5],[.3,.15],[.7,.15],[.5,.85]],edges:[[1,2],[2,3],[3,1]],at:[.1,.46],hue:`#a8ffe0`}],t=`
+:root { --ink:#e9ecff; --dim:#8f96c9; --accent:#9fd0ff; --gold:#ffd98a; }
+html,body { margin:0; height:100%; overflow:hidden; background:#02030a; color:var(--ink);
+  font-family: "Hiragino Maru Gothic ProN","Zen Maru Gothic","Yu Gothic UI","Segoe UI",system-ui,sans-serif; }
+canvas#game { display:block; position:fixed; inset:0; }
+.hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+.hud .tl,.hud .tr { position:absolute; top:12px; font-size:15px; letter-spacing:.08em; text-shadow:0 0 8px #000; }
+.hud .tl { left:16px } .hud .tr { right:16px; text-align:right }
+.hud .big { font-size:26px; font-weight:700; }
+.hud .center { position:absolute; left:50%; top:42%; transform:translate(-50%,-50%); text-align:center; }
+.chain { font-size:54px; font-weight:800; letter-spacing:.06em; color:#fff;
+  text-shadow:0 0 18px var(--accent), 0 0 42px #5a7dff; transition:opacity .3s; }
+.toast { font-size:22px; color:var(--gold); text-shadow:0 0 12px #b8860b; opacity:0; transition:opacity .4s, transform .4s; }
+.toast.show { opacity:1; transform:translateY(-8px); }
+.menu { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:radial-gradient(ellipse at center, rgba(10,14,48,.72), rgba(2,3,10,.92)); backdrop-filter: blur(3px); pointer-events:auto; }
+.menu h1 { font-size:44px; margin:0 0 6px; letter-spacing:.14em; font-weight:800;
+  background:linear-gradient(180deg,#fff,#9fd0ff); -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 0 14px #5a7dff); }
+.menu h2 { font-size:15px; margin:0 0 22px; color:var(--dim); letter-spacing:.3em; font-weight:400; }
+.menu p { color:var(--dim); max-width:520px; text-align:center; line-height:1.7; margin:6px 16px; }
+.btn { pointer-events:auto; cursor:pointer; border:1px solid #5866b8; background:rgba(40,50,120,.35); color:var(--ink);
+  padding:10px 22px; margin:6px; border-radius:999px; font-size:16px; letter-spacing:.1em; transition:all .15s; font-family:inherit; }
+.btn:hover,.btn:focus { background:rgba(90,110,230,.55); box-shadow:0 0 18px #5a7dff; outline:none; }
+.btn.small { padding:6px 14px; font-size:13px; }
+.grid { display:grid; grid-template-columns:repeat(4, 96px); gap:10px; margin:14px 0; }
+.stage { height:78px; border-radius:14px; border:1px solid #39407a; background:rgba(20,24,60,.6); cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:13px; color:var(--dim); }
+.stage b { font-size:22px; color:var(--ink); }
+.stage.cleared { border-color:#c9a64a; box-shadow: inset 0 0 14px rgba(255,217,138,.25); }
+.stage.locked { opacity:.35; cursor:default; }
+.stage:not(.locked):hover { box-shadow:0 0 16px #5a7dff; }
+.row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:center; }
+.sel { background:rgba(90,110,230,.7); box-shadow:0 0 14px #5a7dff; }
+.keys { font-size:13px; color:var(--dim); margin-top:14px; text-align:center; line-height:1.8; }
+kbd { border:1px solid #4a5290; border-radius:5px; padding:1px 6px; font-size:12px; color:var(--ink); }
+.back { position:fixed; left:12px; bottom:10px; z-index:15; font-size:12px; color:var(--dim); text-decoration:none; pointer-events:auto; }
+`;function n(e=``){let n=document.createElement(`style`);n.textContent=t+e,document.head.appendChild(n)}n(`
+#sky { position:fixed; inset:0; }
+.title { position:fixed; top:4vh; left:0; right:0; text-align:center; pointer-events:none; }
+.title h1 { font-size:clamp(28px,5vw,54px); margin:0; letter-spacing:.3em; font-weight:800;
+  background:linear-gradient(180deg,#fff,#9fd0ff); -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 0 16px #5a7dff); }
+.title p { color:var(--dim); letter-spacing:.4em; margin:6px 0 0; font-size:13px; }
+.card { position:fixed; left:50%; bottom:3vh; transform:translateX(-50%); max-width:560px; width:90vw; text-align:center;
+  padding:16px 20px; border-radius:18px; background:rgba(12,16,48,.6); border:1px solid #39407a; backdrop-filter:blur(4px);
+  transition:opacity .25s; }
+.card h3 { margin:0; font-size:22px; letter-spacing:.12em; }
+.card small { color:var(--dim); letter-spacing:.2em; }
+.card p { color:var(--dim); margin:8px 0 0; line-height:1.7; }
+.wip { color:#8f96c9; font-size:12px; border:1px solid #4a5290; border-radius:999px; padding:1px 8px; margin-left:6px; }
+`);var r=document.createElement(`canvas`);r.id=`sky`,document.body.appendChild(r);var i=r.getContext(`2d`);document.body.insertAdjacentHTML(`beforeend`,`
+  <div class="title"><h1>LUMINA ARCADE</h1><p>光 の 遊 技 場</p></div>
+  <div class="card" id="card"><h3>星座を選んでください</h3><p>光っている星座が遊べるゲーム。灰色は制作中です。</p></div>`);var a=document.getElementById(`card`),o=0,s=0,c=1,l=[],u=()=>{c=Math.min(2,devicePixelRatio||1),o=innerWidth,s=innerHeight,r.width=o*c,r.height=s*c,r.style.width=o+`px`,r.style.height=s+`px`,l.length=0;for(let e=0;e<420;e++)l.push({x:Math.random()*o,y:Math.random()*s,r:Math.random()**3*1.8+.3,p:Math.random()*9,s:.5+Math.random()*2})};addEventListener(`resize`,u),u();var d=null,f=()=>Math.min(o,s)*.17,p=e=>{let t=f();return e.shape.map(([n,r])=>({x:e.at[0]*o+(n-.5)*t,y:e.at[1]*s+(r-.5)*t}))},m=(t,n)=>e.find(e=>Math.hypot(t-e.at[0]*o,n-e.at[1]*s)<f()*.6)??null,h=e=>{a.innerHTML=e?`<h3>${e.title}${e.status===`wip`?`<span class="wip">制作中</span>`:``}</h3><small>${e.jp}</small><p>${e.desc}</p>`:`<h3>星座を選んでください</h3><p>光っている星座が遊べるゲーム。灰色は制作中です。</p>`};r.addEventListener(`pointermove`,e=>{let t=m(e.clientX,e.clientY);t!==d&&(d=t,h(t)),r.style.cursor=t&&t.status===`ready`?`pointer`:`default`}),r.addEventListener(`click`,e=>{let t=m(e.clientX,e.clientY);t&&t.status===`ready`?location.href=`./${t.id}.html`:t&&(d=t,h(t))});var g=performance.now(),_=t=>{let n=(t-g)/1e3;i.setTransform(c,0,0,c,0,0);let r=i.createRadialGradient(o*.5,s*.45,0,o*.5,s*.5,Math.max(o,s)*.8);r.addColorStop(0,`#111845`),r.addColorStop(.55,`#070a22`),r.addColorStop(1,`#02030a`),i.fillStyle=r,i.fillRect(0,0,o,s),i.globalCompositeOperation=`lighter`;for(let e of l)i.globalAlpha=.35+.35*Math.sin(n*e.s+e.p),i.fillStyle=`#cfe0ff`,i.beginPath(),i.arc(e.x,e.y,e.r,0,Math.PI*2),i.fill();for(let t of e){let e=t.status===`ready`,r=p(t),a=d===t,c=e?t.hue:`#5a6090`;i.globalAlpha=(e?.55:.25)+(a?.35:0)+(e?.1*Math.sin(n*2):0),i.strokeStyle=c,i.lineWidth=a?2:1.2,i.beginPath();for(let[e,n]of t.edges)i.moveTo(r[e].x,r[e].y),i.lineTo(r[n].x,r[n].y);i.stroke(),r.forEach((t,n)=>{let r=(n===0?5:3)*(a?1.4:1),o=i.createRadialGradient(t.x,t.y,0,t.x,t.y,r*6);o.addColorStop(0,c),o.addColorStop(1,`transparent`),i.globalAlpha=e?.9:.35,i.fillStyle=o,i.beginPath(),i.arc(t.x,t.y,r*6,0,Math.PI*2),i.fill(),i.fillStyle=`#fff`,i.beginPath(),i.arc(t.x,t.y,r*.6,0,Math.PI*2),i.fill()}),i.globalAlpha=e?.9:.4,i.fillStyle=e?`#e9ecff`:`#7a80b0`,i.font=`600 13px system-ui, sans-serif`,i.textAlign=`center`,i.fillText(t.jp,t.at[0]*o,t.at[1]*s+f()*.62)}i.globalAlpha=1,i.globalCompositeOperation=`source-over`,requestAnimationFrame(_)};requestAnimationFrame(_),window.__lumina={game:`launcher`,ready:!0,errors:[],state:()=>({games:e.length})};</script>
+  </head>
+  <body>
+  </body>
+</html>
