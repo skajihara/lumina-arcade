@@ -10,7 +10,7 @@ import { synth } from '@engine/audio';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el } from '@engine/hud';
-import { ChronoSim, defaults, VIEW_W, VIEW_H, HZ } from './sim';
+import { ChronoSim, defaults, VIEW_W, VIEW_H, HZ, type Brush } from './sim';
 
 const params = new URLSearchParams(location.search);
 
@@ -34,7 +34,7 @@ async function main() {
   let sim = new ChronoSim(defaults, 1);
   let sprites: Sprite[] = [];
   let autoplay = params.has('autoplay');
-  let painting: 'slow' | 'fast' | null = null;
+  let painting: Brush | null = null;
   let t = 0;
   const restart = () => {
     sim = new ChronoSim(defaults, Math.floor(Math.random() * 1000));
@@ -46,9 +46,9 @@ async function main() {
   const paintAt = (cx: number, cy: number) => {
     if (!painting) return;
     const p = ga.toLogical(cx, cy);
-    if (sim.paint(p.x, p.y, painting)) synth.tone(painting === 'slow' ? 330 : 660, 0.2, { type: 'sine', vol: 0.05, slideTo: painting === 'slow' ? 220 : 990 });
+    if (sim.paint(p.x, p.y, painting)) synth.tone(painting === 'fast' ? 660 : painting === 'slow' ? 330 : 440, 0.2, { type: 'sine', vol: 0.05, slideTo: painting === 'fast' ? 990 : painting === 'slow' ? 220 : 280 });
   };
-  ga.app.canvas.addEventListener('pointerdown', (e) => { synth.unlock(); painting = e.button === 2 ? 'fast' : 'slow'; paintAt(e.clientX, e.clientY); });
+  ga.app.canvas.addEventListener('pointerdown', (e) => { synth.unlock(); painting = e.button === 2 ? 'fast' : e.shiftKey || e.button === 1 ? 'rewind' : 'slow'; paintAt(e.clientX, e.clientY); });
   window.addEventListener('pointermove', (e) => paintAt(e.clientX, e.clientY));
   window.addEventListener('pointerup', () => { painting = null; });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -96,12 +96,14 @@ async function main() {
       // 塗った時間：遅い所は青い渦、速い所は赤い筋
       zoneG.clear();
       for (const z of sim.zones) {
-        const col = z.k === 'slow' ? 0x5a8cff : 0xff6b6b;
-        zoneG.circle(z.x, z.y, z.r).fill({ color: col, alpha: 0.12 });
+        const col = z.k === 'slow' ? 0x5a8cff : z.k === 'fast' ? 0xff6b6b : 0xc07bff;
+        const fade = sim.cfg.zoneLife > 0 ? Math.min(1, (sim.cfg.zoneLife - z.age) / 1.5) : 1;
+        zoneG.circle(z.x, z.y, z.r).fill({ color: col, alpha: 0.12 * fade });
         for (let k = 0; k < 3; k++) {
-          const a = (z.k === 'slow' ? t * 0.4 : t * 3) + (k * Math.PI * 2) / 3;
+          // 逆再生の渦は逆向きに回る
+          const a = (z.k === 'slow' ? t * 0.4 : z.k === 'fast' ? t * 3 : -t * 1.5) + (k * Math.PI * 2) / 3;
           const rr = z.r * (0.5 + k * 0.2);
-          zoneG.moveTo(z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr).arc(z.x, z.y, rr, a, a + 1.4).stroke({ width: 2, color: col, alpha: 0.4 });
+          zoneG.moveTo(z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr).arc(z.x, z.y, rr, a, a + 1.4).stroke({ width: 2, color: col, alpha: 0.4 * fade });
         }
       }
       // 籠
@@ -123,9 +125,9 @@ async function main() {
         sp.visible = s.alive;
         sp.x = s.x; sp.y = s.y;
         const r = sim.rate(s.x, s.y);
-        sp.tint = r < 1 ? 0x9fc0ff : r > 1 ? 0xffb3b3 : 0xfff3d6;
+        sp.tint = r < 0 ? 0xd9b3ff : r < 1 ? 0x9fc0ff : r > 1 ? 0xffb3b3 : 0xfff3d6;
       });
-      tl.innerHTML = `<div>実験：時空の絵筆</div><div class="big">籠 ${sim.caught} / ${sim.cfg.stars}</div><div style="font-size:13px;color:var(--dim)">インク ${sim.ink}　ドラッグ＝遅い時間（青）　右ドラッグ＝速い時間（赤）　R＝やり直し</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+      tl.innerHTML = `<div>実験：時空の絵筆</div><div class="big">籠 ${sim.caught} / ${sim.cfg.stars}</div><div style="font-size:13px;color:var(--dim)">インク ${sim.ink}　ドラッグ＝遅い（青）　右ドラッグ＝速い（赤）　Shift＋ドラッグ＝逆再生（紫）　R＝やり直し</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       hook.frames++;
     },
   }, HZ);
