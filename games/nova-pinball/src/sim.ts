@@ -5,7 +5,8 @@
  */
 import { World, Circle, Polygon, Chain, RevoluteJoint, type Body, type Contact } from 'planck';
 import type { NovaConfig } from './config';
-import type { StageDef } from './stages';
+import type { StageDef, StarDef } from './stages';
+import { Rng } from '@engine/rng';
 
 export const HZ = 120;
 export const DT = 1 / HZ;
@@ -80,6 +81,7 @@ export type SimEvent =
   | { t: 'chainEnd'; chain: number }
   | { t: 'sling'; side: 'L' | 'R'; x: number; y: number }
   | { t: 'roll'; id: number; all: boolean }
+  | { t: 'wave'; n: number; from: number }
   | { t: 'kickback'; side: 'L' | 'R'; x: number; y: number };
 
 export type Phase = 'play' | 'clear' | 'gameover';
@@ -92,6 +94,8 @@ export interface BoardOpts {
   slings?: boolean;
   /** 上部のロールオーバー（3つ灯すとボールセーブ再点灯） */
   rollovers?: boolean;
+  /** キックバックを最初は消しておく（ロールオーバーを揃えると点く） */
+  noKickbackStart?: boolean;
 }
 
 /** 左右対称の鏡像（盤面の中心 x=6.9） */
@@ -151,6 +155,13 @@ export class NovaSim {
   bumpers: { x: number; y: number; r: number }[] = [];
   flippers: Flipper[] = [];
   litLinks = new Set<number>();
+  /** 今の星座の線（エンドレスでは波ごとに増える） */
+  links: [number, number][] = [];
+  /** エンドレスの波（通常ステージは 1 のまま） */
+  wave = 1;
+  /** 今の波の最初の線の番号（超新星の判定に使う） */
+  waveLinkStart = 0;
+  private rng: Rng;
   /** 灯っているロールオーバー */
   rollLit = [false, false, false];
   /** アウトレーンのキックバック（落ちたボールを1回だけ打ち返す）が灯っているか */
@@ -171,9 +182,12 @@ export class NovaSim {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
     this.gravityNow = cfg.gravity;
     this.ballsLeft = Math.max(0, Math.round(cfg.balls) - 1);
+    this.rng = new Rng(stage.endless?.seed ?? 1);
+    this.links = stage.links.map((l) => [l[0], l[1]] as [number, number]);
     this.buildBoard();
     this.buildStage();
-    const kb = !!stage.outlanes && cfg.kickbackStart > 0;
+    if (stage.endless) this.spawnWave();
+    const kb = !!stage.outlanes && cfg.kickbackStart > 0 && !stage.noKickbackStart;
     this.kickback = { L: kb, R: kb };
     this.spawnBall();
     this.world.on('begin-contact', (c: Contact) => this.onContact(c));
@@ -221,27 +235,81 @@ export class NovaSim {
   }
 
   private buildStage(): void {
-    this.stage.stars.forEach((d, i) => {
-      const r = d.r ?? 0.55;
-      const body = this.world.createBody({
-        type: d.loose ? 'dynamic' : 'static',
-        position: { x: d.x, y: d.y },
-        linearDamping: 1.2,
-        angularDamping: 2,
-        gravityScale: 0,
-        userData: { kind: 'star', id: i } as Tag,
-      });
-      body.createFixture(new Circle(r), { density: 0.6, restitution: 0.85, friction: 0.05 });
-      this.stars.push({
-        id: i, body, r, loose: !!d.loose, charge: d.charge ?? 0, decay: 0, alive: true,
-        pendingAt: -1, pendingChain: 0, exploded: false, explodedChain: -1, lastHit: -999, blastChain: -1,
-      });
-    });
+    this.stage.stars.forEach((d) => this.addStar(d));
     (this.stage.bumpers ?? []).forEach((b, i) => {
       const body = this.world.createBody({ type: 'static', position: { x: b.x, y: b.y }, userData: { kind: 'bumper', id: i } as Tag });
       body.createFixture(new Circle(b.r), { restitution: 0.9 });
       this.bumpers.push({ ...b });
     });
+  }
+
+  private addStar(d: StarDef): void {
+    const i = this.stars.length;
+    const r = d.r ?? 0.55;
+    const body = this.world.createBody({
+      type: d.loose ? 'dynamic' : 'static',
+      position: { x: d.x, y: d.y },
+      linearDamping: 1.2,
+      angularDamping: 2,
+      gravityScale: 0,
+      userData: { kind: 'star', id: i } as Tag,
+    });
+    body.createFixture(new Circle(r), { density: 0.6, restitution: 0.85, friction: 0.05 });
+    this.stars.push({
+      id: i, body, r, loose: !!d.loose, charge: d.charge ?? 0, decay: 0, alive: true,
+      pendingAt: -1, pendingChain: 0, exploded: false, explodedChain: -1, lastHit: -999, blastChain: -1,
+    });
+  }
+
+  /**
+   * エンドレス：次の波の星をシード付き乱数で置く。波が進むほど星が増え、小さく、漂う星が混ざる。
+   * 星座の線は、近い星を順にたどる一筆書き。
+   */
+  private spawnWave(): void {
+    const n = 4 + this.wave;
+    const from = this.stars.length;
+    const pts: StarDef[] = [];
+    const r = Math.max(0.36, 0.56 - this.wave * 0.02);
+    const looseP = this.wave >= 3 ? Math.min(0.35, 0.08 * (this.wave - 2)) : 0;
+    // 星座らしく：前の星から 1.7〜2.5 の歩幅で歩いて置く（爆風が届く距離 → 灯せば連鎖できる）
+    const free = (x: number, y: number) =>
+      x > 2.2 && x < 11.6 && y > 2.6 && y < 14.4
+      && pts.every((p) => Math.hypot(p.x - x, p.y - y) > 1.5)
+      && this.stars.every((s) => !s.alive || Math.hypot(s.body.getPosition().x - x, s.body.getPosition().y - y) > 1.5)
+      && this.bumpers.every((b) => Math.hypot(b.x - x, b.y - y) > b.r + r + 0.6)
+      && this.balls.every((b) => Math.hypot(b.body.getPosition().x - x, b.body.getPosition().y - y) > 1.2);
+    let tries = 0;
+    while (pts.length < n && tries++ < 3000) {
+      let x: number, y: number;
+      if (pts.length === 0 || tries % 200 === 0) {
+        x = this.rng.range(2.4, 11.4);
+        y = this.rng.range(2.8, 13.8);
+      } else {
+        const from = pts[this.rng.int(Math.max(0, pts.length - 2), pts.length - 1)];
+        const a = this.rng.range(0, Math.PI * 2), d = this.rng.range(1.7, 2.5);
+        x = from.x + Math.cos(a) * d;
+        y = from.y + Math.sin(a) * d;
+      }
+      if (free(x, y)) pts.push({ x: +x.toFixed(2), y: +y.toFixed(2), r, loose: this.rng.next() < looseP });
+    }
+    // 近い順の一筆書き
+    const order: number[] = [0];
+    const left = new Set(pts.map((_, i) => i).slice(1));
+    while (left.size) {
+      const last = pts[order[order.length - 1]];
+      let best = -1, bd = Infinity;
+      for (const i of left) {
+        const d = Math.hypot(pts[i].x - last.x, pts[i].y - last.y);
+        if (d < bd) { bd = d; best = i; }
+      }
+      order.push(best);
+      left.delete(best);
+    }
+    order.forEach((i) => this.addStar(pts[i]));
+    this.waveLinkStart = this.links.length;
+    for (let k = 0; k < order.length - 1; k++) this.links.push([from + k, from + k + 1]);
+    this.supernova = false;
+    this.events.push({ t: 'wave', n: this.wave, from });
   }
 
   spawnBall(at = { x: 13.8, y: 23.8 }): Ball {
@@ -513,7 +581,7 @@ export class NovaSim {
     this.events.push({ t: 'explode', star: s.id, x: p.x, y: p.y, r: R, chain: this.chainCount, last });
 
     // 星座の線
-    this.stage.links.forEach(([a, b], i) => {
+    this.links.forEach(([a, b], i) => {
       if (this.litLinks.has(i) || (a !== s.id && b !== s.id)) return;
       const other = this.stars[a === s.id ? b : a];
       if (other.exploded && other.explodedChain === this.chainId) {
@@ -522,7 +590,9 @@ export class NovaSim {
         this.events.push({ t: 'link', a, b });
       }
     });
-    if (!this.supernova && this.stage.links.length > 0 && this.litLinks.size === this.stage.links.length) {
+    let waveLit = this.links.length > this.waveLinkStart;
+    for (let i = this.waveLinkStart; i < this.links.length && waveLit; i++) if (!this.litLinks.has(i)) waveLit = false;
+    if (!this.supernova && waveLit) {
       this.supernova = true;
       this.score += 5000;
       this.ballsLeft++;
@@ -586,6 +656,15 @@ export class NovaSim {
   }
 
   private checkEnd(): void {
+    if (this.phase === 'play' && this.starsAlive() === 0 && this.stage.endless) {
+      // エンドレス：次の波へ
+      this.score += 2000 * this.wave;
+      // 2波ごとに +1 ボール
+      if (this.wave % 2 === 0) this.ballsLeft++;
+      this.wave++;
+      this.spawnWave();
+      return;
+    }
     if (this.phase === 'play' && this.starsAlive() === 0) {
       this.phase = 'clear';
       this.score += 1000 * (this.ballsLeft + this.balls.length);

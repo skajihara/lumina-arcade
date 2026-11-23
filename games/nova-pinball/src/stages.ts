@@ -28,6 +28,8 @@ export interface StageDef extends BoardOpts {
   /** 星座の線（星のインデックスの組）。両端が同じ連鎖で爆発すると灯る */
   links: [number, number][];
   bumpers?: BumperDef[];
+  /** エンドレス（星が尽きると次の波が来る。ボールが尽きるまで続くスコアアタック） */
+  endless?: { seed: number };
   /** 盤面の色合い（0..1 の色相） */
   hue?: number;
 }
@@ -162,5 +164,71 @@ export const stages: StageDef[] = [
     links: chainLinks(0, 13),
     bumpers: [{ x: 6.9, y: 16.2, r: 0.4 }],
     hue: 0.66,
+  },
+  {
+    id: 'scorpius',
+    slings: true, outlanes: true, rollovers: true,
+    name: '蠍',
+    hint: '赤い心臓から尾の毒針まで。壁際の星は惑星で跳ねて狙え',
+    stars: [
+      { x: 12.0, y: 3.6, r: 0.4 }, { x: 9.8, y: 2.4, r: 0.4 }, { x: 10.4, y: 4.6, r: 0.42 },
+      { x: 9.0, y: 6.2, r: 0.62 }, { x: 8.0, y: 8.0, r: 0.42 }, { x: 6.8, y: 9.6, r: 0.42 },
+      { x: 5.2, y: 10.8, r: 0.4 }, { x: 3.6, y: 11.4, r: 0.4 }, { x: 2.4, y: 12.8, r: 0.4 }, { x: 2.3, y: 14.4, r: 0.38 }, { x: 3.4, y: 15.3, r: 0.38 },
+    ],
+    links: [[0, 2], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 9], [9, 10]],
+    bumpers: [{ x: 10.2, y: 11.6, r: 0.6 }, { x: 4.6, y: 5.2, r: 0.5 }, { x: 6.9, y: 15.8, r: 0.42 }],
+    hue: 0.98,
+  },
+  {
+    id: 'cygnus',
+    slings: true, outlanes: true, rollovers: true,
+    name: '白鳥',
+    hint: '翼の先から胴へ。十字の真ん中が鍵',
+    stars: [
+      { x: 6.9, y: 3.0, r: 0.5 }, { x: 6.9, y: 5.4, r: 0.45 }, { x: 6.9, y: 7.8, r: 0.6 }, { x: 6.9, y: 10.3, r: 0.45 }, { x: 6.9, y: 12.7, r: 0.45 },
+      { x: 4.5, y: 7.0, r: 0.42 }, { x: 2.5, y: 8.6, r: 0.42 }, { x: 9.3, y: 7.0, r: 0.42 }, { x: 11.3, y: 8.6, r: 0.42 },
+      { x: 4.8, y: 11.2, r: 0.38, loose: true }, { x: 9.0, y: 11.2, r: 0.38, loose: true },
+    ],
+    links: [[0, 1], [1, 2], [2, 3], [3, 4], [2, 5], [5, 6], [2, 7], [7, 8]],
+    bumpers: [{ x: 6.9, y: 15.6, r: 0.42 }],
+    hue: 0.58,
+  },
+  {
+    id: 'dipper',
+    slings: true, outlanes: true, rollovers: true, noKickbackStart: true,
+    name: '北斗',
+    hint: '七つの星は離れている。漂う星を運んで橋をかけろ',
+    stars: [
+      { x: 3.0, y: 8.0, r: 0.38 }, { x: 3.5, y: 11.2, r: 0.38 }, { x: 6.6, y: 11.6, r: 0.38 }, { x: 6.4, y: 8.4, r: 0.38 },
+      { x: 8.9, y: 6.9, r: 0.38 }, { x: 10.6, y: 4.9, r: 0.38 }, { x: 12.0, y: 2.9, r: 0.38 },
+      { x: 4.8, y: 9.8, r: 0.36, loose: true }, { x: 9.6, y: 9.4, r: 0.36, loose: true },
+    ],
+    links: [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4], [4, 5], [5, 6]],
+    bumpers: [{ x: 6.9, y: 4.6, r: 0.7 }, { x: 10.6, y: 13.4, r: 0.45 }],
+    hue: 0.64,
+  },
+  {
+    id: 'galaxy',
+    slings: true, outlanes: true, rollovers: true, noKickbackStart: true,
+    name: '銀河の核',
+    hint: '輪をすべて灯してから、中心の大きな星で一気に',
+    stars: [
+      ...arc(6.9, 8.4, 3.7, -Math.PI / 2, Math.PI * 1.5 - (Math.PI * 2) / 12, 12, 0.32),
+      { x: 6.9, y: 8.4, r: 0.85 },
+      { x: 3.0, y: 14.0, r: 0.36, loose: true }, { x: 10.8, y: 14.0, r: 0.36, loose: true },
+    ],
+    links: [...chainLinks(0, 12), [11, 0], [12, 0], [12, 3], [12, 6], [12, 9]],
+    bumpers: [{ x: 4.4, y: 14.8, r: 0.45 }, { x: 9.4, y: 14.8, r: 0.45 }, { x: 6.9, y: 16.4, r: 0.42 }, { x: 2.2, y: 9.2, r: 0.5 }, { x: 11.6, y: 9.2, r: 0.5 }],
+    hue: 0.82,
+  },
+  {
+    id: 'endless',
+    slings: true, outlanes: true, rollovers: true,
+    name: 'エンドレス',
+    hint: '星が尽きると次の波。ボールが尽きるまでスコアを伸ばせ',
+    stars: [],
+    links: [],
+    endless: { seed: 20261124 },
+    hue: 0.7,
   },
 ];
