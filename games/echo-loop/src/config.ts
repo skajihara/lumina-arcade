@@ -34,7 +34,7 @@ const base = (p: NovaConfig): EchoConfig => ({
 export const presets: Record<string, EchoConfig> = {
   やさしい: { ...base(novaPresets['やさしい']), maxLoops: 8, loopSec: 11 },
   ふつう: base(novaPresets['ふつう']),
-  むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 5, loopSec: 9 },
+  むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 6, loopSec: 9.5, blastRadius: 2.6 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';
