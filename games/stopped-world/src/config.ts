@@ -23,6 +23,10 @@ export interface StopConfig {
   nestGrip: number;
   /** 止めている間に見える予測線の秒数（0 で無し） */
   predictSec: number;
+  /** ひねり：0 なし／1 壊すと時間が戻る（ゲージ回復）／2 向きを変える（速さを保って矢印の向きへ）／3 両方 */
+  twist: number;
+  /** ひねり1：箱を壊す・爆弾が爆発するたびに戻るゲージ（秒） */
+  refill: number;
   gameSpeed: number;
   shake: number;
   particles: number;
@@ -42,6 +46,8 @@ export const schema: Schema<StopConfig> = {
   bombForce: { label: '爆弾の強さ', min: 1, max: 60, step: 0.5, folder: '物体' },
   nestGrip: { label: '巣が卵を受け止める強さ', min: 0, max: 10, step: 0.1, folder: '物体' },
   predictSec: { label: '予測線の長さ（秒、0で無し）', min: 0, max: 3, step: 0.1, folder: '時間停止' },
+  twist: { label: 'ひねり（0なし 1壊すと時間が戻る 2向きを変える 3両方）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
+  refill: { label: '壊すと戻る時間（秒）', min: 0, max: 3, step: 0.05, folder: 'ルール' },
   gameSpeed: { label: 'ゲーム速度', min: 0.3, max: 1.5, step: 0.05, folder: '演出' },
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
   particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
@@ -61,6 +67,8 @@ const normal: StopConfig = {
   bombForce: 22,
   nestGrip: 3,
   predictSec: 1,
+  twist: 1,
+  refill: 0.6,
   gameSpeed: 1,
   shake: 1,
   particles: 1,

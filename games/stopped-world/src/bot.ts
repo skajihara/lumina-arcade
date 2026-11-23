@@ -12,11 +12,14 @@ export interface Plan {
   steps: Record<number, Action[]>;
 }
 
-/** ランダムな計画を1つ作る */
-export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng): Plan {
+/**
+ * ランダムな計画を1つ作る。
+ * human：人に近い速さで止める（止めている時間＝考えて矢印を置く時間：1秒＋1本0.6秒）。ゲージの減り方を測る時に使う
+ */
+export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng, human = false): Plan {
   const steps: Record<number, Action[]> = {};
   const movable = stage.objects.map((o, i) => ({ o, i })).filter(({ o }) => !o.fixed);
-  const stops = rng.int(1, 3);
+  const stops = rng.int(1, human ? 4 : 3);
   let tick = 30;
   for (let k = 0; k < stops; k++) {
     const acts: Action[] = [{ t: 'stop' }];
@@ -27,8 +30,9 @@ export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng): Plan {
       acts.push({ t: 'hit', id: i, dx: Math.cos(a), dy: Math.sin(a) });
     }
     steps[tick] = acts;
-    steps[tick + 1] = [{ t: 'resume' }];
-    tick += rng.int(Math.round(HZ * 0.4), Math.round(HZ * 2.5));
+    const hold = human ? Math.round(HZ * (1 + 0.6 * n)) : 1;
+    steps[tick + hold] = [{ t: 'resume' }];
+    tick += (human ? hold : 0) + rng.int(Math.round(HZ * 0.4), Math.round(HZ * 2.5));
   }
   return { steps };
 }

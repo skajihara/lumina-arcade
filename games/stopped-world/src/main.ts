@@ -78,6 +78,9 @@ async function main() {
   let drag: { id: number; x: number; y: number; ex: number; ey: number } | null = null;
   let flashColor = 0;
   let t = 0;
+  /** ひねり1：壊した所から時間停止ゲージへ飛んでいく「時の粒」 */
+  let refillFx: { x: number; y: number; age: number; amount: number }[] = [];
+  let gaugeGlow = 0;
 
   const closeMenu = () => { menu?.remove(); menu = null; };
 
@@ -99,6 +102,8 @@ async function main() {
     sim = new StopSim(stages[i], cfg);
     pending = [];
     drag = null;
+    refillFx = [];
+    gaugeGlow = 0;
     botRng = new Rng(i + 7);
     botSearch = null;
     resultTimer = -1;
@@ -124,7 +129,7 @@ async function main() {
       <h1>${cleared ? 'CLEAR' : 'FAILED'}</h1><h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
       <p>${cleared ? `残りの時間停止 ${sim.gauge.toFixed(1)} 秒` : '卵が割れた／もう動かせない'}</p>
-      <p style="font-size:13px">★：時間停止ゲージを多く残すほど高い（★3：半分以上　★2：2割以上）</p>
+      <p style="font-size:13px">★：時間停止ゲージを多く残すほど高い（★3：半分以上　★2：2割以上）${Math.round(cfg.twist) % 2 === 1 ? '<br>壊して連鎖させると、ゲージが戻る' : ''}</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
     if (cleared && stageIndex < stages.length - 1) {
@@ -150,7 +155,8 @@ async function main() {
       <h1>STOPPED WORLD</h1>
       <h2>時 止 め の 一 撃</h2>
       <p>時間を止めると、世界は色を失って静止する。止まった物体を叩いても動かない — 力が矢印として溜まるだけ。<br>
-      時間を戻した瞬間、溜めた力が<b style="color:var(--ink)">全部同時に</b>解き放たれる。止めている間は、戻した直後の動きが点線で見える。</p>
+      時間を戻した瞬間、溜めた力が<b style="color:var(--ink)">全部同時に</b>解き放たれる。止めている間は、戻した直後の動きが点線で見える。<br>
+      ${Math.round(cfg.twist) % 2 === 1 ? '箱が壊れる・爆弾が弾けるたびに、<b style="color:#7ff0ff">止められる時間が少し戻る</b>。連鎖させるほど、もう一度止められる。' : ''}</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>Space</kbd> 時間を止める／戻す　物体を<b>ドラッグ</b>で力を置く（向きと長さ）<br>
@@ -341,6 +347,10 @@ async function main() {
           synth.noise(0.3, { vol: 0.25, from: 3000, to: 300 });
           if (e.kind === 'egg') toast('卵が割れた');
           break;
+        case 'refill':
+          refillFx.push({ x: e.x * SCALE, y: e.y * SCALE, age: 0, amount: e.amount });
+          synth.arp([7, 9, 11], 0.035, 0.07);
+          break;
         case 'clear':
           juice.slowmo(0.25, 1.4);
           juice.doFlash(0.7, 0xffe7a8);
@@ -417,6 +427,25 @@ async function main() {
       if (o.alive) arrow(ag, drag.x * SCALE, drag.y * SCALE, drag.ex * SCALE, drag.ey * SCALE, 0xffffff, 0.8);
     }
     if (stopped && cfg.predictSec > 0) drawPrediction(ag, sim);
+    // 時の粒：壊した所で時計の輪が開き、粒がゲージ（右上）へ吸い込まれる
+    const gx = VIEW_W - 70, gy = 18;
+    for (const f of refillFx) {
+      f.age += dt;
+      const k = Math.min(1, f.age / 0.9);
+      const ring = Math.min(1, f.age / 0.35);
+      if (ring < 1) ag.circle(f.x, f.y, 12 + ring * 40).stroke({ width: 3, color: 0x7ff0ff, alpha: 1 - ring });
+      for (let j = 0; j < 7; j++) {
+        const kj = Math.max(0, Math.min(1, k * 1.25 - j * 0.04));
+        const e2 = kj * kj * (3 - 2 * kj);
+        const bend = Math.sin(kj * Math.PI) * (40 + j * 12);
+        const x = f.x + (gx - f.x) * e2 + bend * 0.6;
+        const y = f.y + (gy - f.y) * e2 - bend;
+        if (kj < 1) ag.circle(x, y, 4 - j * 0.4).fill({ color: j % 2 ? 0xffffff : 0x7ff0ff, alpha: 0.9 - j * 0.08 });
+      }
+      if (k >= 1 && f.amount > 0) { gaugeGlow = 1; f.amount = 0; synth.hbell(9, 0.06); }
+    }
+    refillFx = refillFx.filter((f) => f.age < 1.1);
+    gaugeGlow = Math.max(0, gaugeGlow - dt * 2);
     if (stopped) {
       // 止まっている印：画面の縁
       ag.rect(3, 3, VIEW_W - 6, VIEW_H - 6).stroke({ width: 4, color: 0xffffff, alpha: 0.25 + 0.1 * Math.sin(t * 3) });
@@ -427,7 +456,8 @@ async function main() {
     const gauge = Math.max(0, sim.gauge);
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
-    tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:${stopped ? '#fff' : 'var(--accent)'}">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}`;
+    const barCol = gaugeGlow > 0 ? `rgb(${Math.round(127 + 128 * gaugeGlow)},240,255)` : stopped ? '#fff' : 'var(--accent)';
+    tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}`;
   };
 
   // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
