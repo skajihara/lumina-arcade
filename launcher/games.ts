@@ -30,7 +30,7 @@ export const games: GameEntry[] = [
     at: [0.63, 0.27], hue: '#c3a6ff',
   },
   {
-    id: 'stopped-world', title: 'Stopped World', jp: '時止めの一撃', status: 'wip',
+    id: 'stopped-world', title: 'Stopped World', jp: '時止めの一撃', status: 'ready',
     desc: '時間を止めて力を溜め、解除の瞬間に全部まとめて解き放つ。',
     shape: [[0.5, 0.5], [0.5, 0.1], [0.9, 0.5], [0.5, 0.9], [0.1, 0.5]], edges: [[1, 2], [2, 3], [3, 4], [4, 1], [0, 1], [0, 3]],
     at: [0.84, 0.48], hue: '#e8e8ff',
