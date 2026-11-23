@@ -1,0 +1,52 @@
+/**
+ * Stopped World のボット（ランダム探索）。
+ * 「止める→いくつか叩く→戻す」を何回か行う計画をランダムに作って最後まで試し、クリアできた計画を探す。
+ * ステージが解けることの確認（難易度測定）と、自動プレイに使う。
+ */
+import { Rng } from '@engine/rng';
+import { StopSim, HZ, type Action, type StageDef } from './sim';
+import type { StopConfig } from './config';
+
+export interface Plan {
+  /** ティック → そのティックの操作 */
+  steps: Record<number, Action[]>;
+}
+
+/** ランダムな計画を1つ作る */
+export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng): Plan {
+  const steps: Record<number, Action[]> = {};
+  const movable = stage.objects.map((o, i) => ({ o, i })).filter(({ o }) => !o.fixed);
+  const stops = rng.int(1, 3);
+  let tick = 30;
+  for (let k = 0; k < stops; k++) {
+    const acts: Action[] = [{ t: 'stop' }];
+    const n = rng.int(1, Math.round(cfg.maxForces));
+    for (let j = 0; j < n; j++) {
+      const { i } = rng.pick(movable);
+      const a = rng.range(-Math.PI, 0.3); // ほとんど上向き〜横
+      acts.push({ t: 'hit', id: i, dx: Math.cos(a), dy: Math.sin(a) });
+    }
+    steps[tick] = acts;
+    steps[tick + 1] = [{ t: 'resume' }];
+    tick += rng.int(Math.round(HZ * 0.4), Math.round(HZ * 2.5));
+  }
+  return { steps };
+}
+
+/** 計画を最後まで試す */
+export function runPlan(stage: StageDef, cfg: StopConfig, plan: Plan, maxSec = 20): StopSim {
+  const sim = new StopSim(stage, cfg);
+  const end = Math.round(maxSec * HZ);
+  while (sim.phase === 'play' && sim.tick < end) sim.step(plan.steps[sim.tick] ?? []);
+  return sim;
+}
+
+/** クリアできる計画を探す。見つからなければ null */
+export function search(stage: StageDef, cfg: StopConfig, tries = 300, seed = 1): { plan: Plan; tries: number } | null {
+  const rng = new Rng(seed);
+  for (let t = 1; t <= tries; t++) {
+    const plan = randomPlan(stage, cfg, rng);
+    if (runPlan(stage, cfg, plan).phase === 'clear') return { plan, tries: t };
+  }
+  return null;
+}
