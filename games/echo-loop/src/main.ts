@@ -298,6 +298,17 @@ async function main() {
           synth.tone(196, 1.2, { type: 'sine', vol: 0.15, slideTo: 60 });
           hudApi.toast('時間切れ — 残響は消えていく');
         }
+        else if ((e as { t: string }).t === 'resonance') {
+          // 共鳴：過去の自分と今の自分が同じ星を同時に打った。二人の色の光が交わり、時間が一瞬止まる
+          const r = e as unknown as { x: number; y: number; a: number; b: number };
+          const cur = es.loop;
+          view.particles.emit(r.x * SCALE, r.y * SCALE, { count: 70, speed: [120, 520], life: [0.4, 1.1], size: [0.05, 0.22], color: [echoColor(cur - r.a), echoColor(cur - r.b), 0xffe7a8], drag: 1.5 });
+          juice.hitstop(0.09);
+          juice.slowmo(0.35, 0.5);
+          juice.doFlash(0.35, 0xe8dcff);
+          synth.arp([0, 4, 7, 12], 0.03, 0.1);
+          hudApi.toast('共鳴 — 過去の自分と重なった');
+        }
         else if (e.t !== 'loopStart' && e.t !== 'loopEnd' && es.loop === before) view.handle(e as SimEvent);
       }
       if (es.loop !== before) onRewind(es.loop);

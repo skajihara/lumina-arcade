@@ -61,6 +61,11 @@ export interface Star {
   blastChain: number;
   /** 色（ひねりA：同じ色どうしだけ連鎖する） */
   color: number;
+  /** Echo Loop の共鳴：最後に当てたボールの持ち主と、そのティック */
+  lastOwner: number;
+  lastOwnerTick: number;
+  /** 共鳴した（違うループの自分がほぼ同時に当てた）→ 爆風が大きくなる */
+  resonant: boolean;
 }
 
 export interface Flipper {
@@ -75,6 +80,8 @@ export interface Flipper {
 
 export type SimEvent =
   | { t: 'hit'; star: number; charge: number; x: number; y: number; by?: number }
+  /** Echo Loop：違うループの自分がほぼ同時に同じ星へ当てた */
+  | { t: 'resonance'; star: number; x: number; y: number; a: number; b: number }
   | { t: 'bump'; x: number; y: number; by?: number }
   | { t: 'explode'; star: number; x: number; y: number; r: number; chain: number; last: boolean }
   | { t: 'link'; a: number; b: number }
@@ -310,7 +317,7 @@ export class NovaSim {
     this.stars.push({
       id: i, body, r, loose: !!d.loose, charge: d.charge ?? 0, decay: 0, alive: true,
       pendingAt: -1, pendingChain: 0, exploded: false, explodedChain: -1, lastHit: -999, blastChain: -1,
-      color: d.color ?? 0,
+      color: d.color ?? 0, lastOwner: -1, lastOwnerTick: -999, resonant: false,
     });
   }
 
@@ -502,7 +509,21 @@ export class NovaSim {
       for (const [x, y, bx, by] of pairs) {
         if (x.kind === 'ball' && y.kind === 'star') {
           const s = this.stars[y.id];
-          if (!s.alive || this.tick - s.lastHit < 10) continue;
+          if (!s.alive) continue;
+          // 共鳴（Echo Loop）：違う持ち主のボールが resonance 秒以内に同じ星へ当てると、すぐに大きく爆発する
+          const owner = this.ownerOf(x.id);
+          const res = (this.cfg.resonance as number | undefined) ?? 0;
+          if (res > 0 && s.lastOwner >= 0 && s.lastOwner !== owner && this.tick - s.lastOwnerTick <= Math.round(res * HZ) && !s.resonant) {
+            s.resonant = true;
+            const sp0 = by.getPosition();
+            this.events.push({ t: 'resonance', star: s.id, x: sp0.x, y: sp0.y, a: s.lastOwner, b: owner });
+            s.lastHit = this.tick;
+            this.addCharge(s, Math.round(this.cfg.maxCharge));
+            continue;
+          }
+          s.lastOwner = owner;
+          s.lastOwnerTick = this.tick;
+          if (this.tick - s.lastHit < 10) continue;
           s.lastHit = this.tick;
           s.decay = 0;
           this.addCharge(s, 1);
@@ -656,7 +677,7 @@ export class NovaSim {
     this.removeStar(s);
     this.score += 100 * this.chainCount;
 
-    const R = cfg.blastRadius * (0.75 + 0.45 * (s.r / 0.55));
+    const R = cfg.blastRadius * (0.75 + 0.45 * (s.r / 0.55)) * (s.resonant ? ((cfg.resonanceBlast as number | undefined) ?? 1) : 1);
     for (const o of this.stars) {
       if (!o.alive) continue;
       const op = o.body.getPosition();
