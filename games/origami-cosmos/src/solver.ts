@@ -106,3 +106,32 @@ export function solve(stage: StageDef, opts: { blast: number; maxFolds: number; 
   }
   return null;
 }
+
+/**
+ * 「最短で解ける1手目」が何通りあるか（折り方の形と燃える星の組で数える）。
+ * 多いほど、どこから手を付けても解ける＝ひらめきが要らない問題。
+ */
+export function optimalFirstMoves(stage: StageDef, opts: { blast: number; maxFolds: number }): number {
+  const best = solve(stage, opts);
+  if (!best) return 0;
+  const seen = new Set<string>();
+  let n = 0;
+  for (const seq of foldSequences(stage, opts.maxFolds)) {
+    const adj = adjacency(stage, seq, opts.blast);
+    const alive = stage.stars.map(() => true);
+    for (let i = 0; i < stage.stars.length; i++) {
+      // 点火した星からの連鎖（燃える星の集合）
+      const burnt = new Set([i]);
+      const q = [i];
+      while (q.length) for (const j of adj[q.pop()!]) if (!burnt.has(j)) { burnt.add(j); q.push(j); }
+      const key = [...burnt].sort((a, b) => a - b).join(',');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const rest = alive.map((_, k) => !burnt.has(k));
+      if (!rest.some(Boolean)) { n++; continue; }
+      const sol = solve(stage, { ...opts, maxIgnitions: best.ignitions - 1 }, rest);
+      if (sol && sol.ignitions <= best.ignitions - 1) n++;
+    }
+  }
+  return n;
+}
