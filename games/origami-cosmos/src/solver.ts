@@ -51,7 +51,8 @@ function chainMask(adj: number[], alive: number, start: number): number {
   return seen;
 }
 
-export function solve(stage: StageDef, opts: { blast: number; maxFolds: number; maxIgnitions?: number }): Solution | null {
+/** alive を渡すと、その途中の状態から解く */
+export function solve(stage: StageDef, opts: { blast: number; maxFolds: number; maxIgnitions?: number }, alive?: boolean[]): Solution | null {
   const n = stage.stars.length;
   if (n > 20) throw new Error('星が多すぎる');
   // 折り方ごとの隣接（ビット）。同じ隣接になる折り方は、折った回数が少ない方だけ残す
@@ -64,7 +65,8 @@ export function solve(stage: StageDef, opts: { blast: number; maxFolds: number; 
     if (!prev || prev.folds.length > seq.length) sigs.set(key, { adj, folds: seq });
   }
   const shapes = [...sigs.values()];
-  const full = (1 << n) - 1;
+  const full = alive ? alive.reduce((m, a, i) => (a ? m | (1 << i) : m), 0) : (1 << n) - 1;
+  if (full === 0) return { ignitions: 0, folds: 0, moves: [] };
   // 状態：生きている星のビット。点火回数ごとに広げ、各状態は最少の折り回数を覚える
   const best = new Map<number, { folds: number; prev: number; move: Move | null }>();
   best.set(full, { folds: 0, prev: -1, move: null });
@@ -72,19 +74,19 @@ export function solve(stage: StageDef, opts: { blast: number; maxFolds: number; 
   const limit = opts.maxIgnitions ?? n;
   for (let ign = 1; ign <= limit; ign++) {
     const layer = new Map<number, { folds: number; prev: number; move: Move }>();
-    for (const alive of frontier) {
-      const base = best.get(alive)!.folds;
+    for (const cur0 of frontier) {
+      const base = best.get(cur0)!.folds;
       for (const sh of shapes) {
-        let rest = alive;
+        let rest = cur0;
         while (rest) {
           const i = 31 - Math.clz32(rest & -rest);
-          const burnt = chainMask(sh.adj, alive, i);
+          const burnt = chainMask(sh.adj, cur0, i);
           rest &= ~burnt; // 同じ連鎖になる星は1回だけ試す
-          const next = alive & ~burnt;
+          const next = cur0 & ~burnt;
           if (best.has(next)) continue;
           const f = base + sh.folds.length;
           const cur = layer.get(next);
-          if (!cur || cur.folds > f) layer.set(next, { folds: f, prev: alive, move: { folds: sh.folds, star: i } });
+          if (!cur || cur.folds > f) layer.set(next, { folds: f, prev: cur0, move: { folds: sh.folds, star: i } });
         }
       }
     }

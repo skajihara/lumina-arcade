@@ -70,6 +70,30 @@ export function foldPoint(stage: StageDef, folds: Fold[], x: number, y: number):
   return { x: px, y: py, z, flipped: flips % 2 === 1 };
 }
 
+/**
+ * 描画用：マスの中心（x+0.5, y+0.5）の、折った後の連続座標。
+ * 最後の折りだけ t（0..1）の途中にできる：線を軸に紙が回る（幅が cos で縮んで裏返る）。
+ * scaleX/scaleY はマスの見かけの幅（裏返る途中は 0 に近づく）、lift は持ち上がりの高さ（0..1）。
+ */
+export function foldCenter(stage: StageDef, folds: Fold[], x: number, y: number, lastT = 1): { x: number; y: number; z: number; flipped: boolean; sx: number; sy: number; lift: number } {
+  let px = x + 0.5, py = y + 0.5, z = 0, flips = 0, sx = 1, sy = 1, lift = 0;
+  folds.forEach((f, k) => {
+    const L = stage.folds[f.line];
+    const c = L.axis === 'x' ? px : py;
+    const moves = f.side === 1 ? c >= L.at : c < L.at;
+    if (!moves) return;
+    const last = k === folds.length - 1;
+    const t = last ? lastT : 1;
+    const k2 = Math.cos(Math.PI * t);
+    const m = L.at + (c - L.at) * k2;
+    if (L.axis === 'x') { px = m; sx *= k2; } else { py = m; sy *= k2; }
+    z = k + 1;
+    if (t >= 0.5) flips++;
+    if (last) lift = Math.sin(Math.PI * t);
+  });
+  return { x: px, y: py, z, flipped: flips % 2 === 1, sx, sy, lift };
+}
+
 /** 星 i と j が、折った状態で爆風の届く距離にあるか */
 export function adjacency(stage: StageDef, folds: Fold[], blast: number): number[][] {
   const pos = stage.stars.map((s) => foldPoint(stage, folds, s.x, s.y));
