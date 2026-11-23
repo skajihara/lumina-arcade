@@ -347,7 +347,7 @@ export class NovaSim {
           continue;
         }
       }
-      if (s.charge > 0 && s.pendingAt < 0) {
+      if (s.charge > Math.round(this.cfg.decayFloor) && s.pendingAt < 0) {
         s.decay += DT;
         if (s.decay >= decayTicks) {
           s.decay = 0;

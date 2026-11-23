@@ -19,6 +19,7 @@ export interface NovaConfig {
   blastForce: number;
   chainDelay: number;
   decayTime: number;
+  decayFloor: number;
   chainWindow: number;
   looseHitSpeed: number;
   slowmoAt: number;
@@ -42,6 +43,7 @@ export const schema: Schema<NovaConfig> = {
   ballSave: { label: 'ボールセーブ（秒）', min: 0, max: 20, step: 0.5, folder: 'ルール' },
   maxCharge: { label: '爆発までのチャージ', min: 1, max: 6, step: 1, folder: 'ルール' },
   decayTime: { label: 'チャージが減るまで（秒）', min: 1, max: 30, step: 0.5, folder: 'ルール' },
+  decayFloor: { label: '時間で減らないチャージ（灯り）', min: 0, max: 3, step: 1, folder: 'ルール' },
   blastRadius: { label: '爆発の半径', min: 1, max: 6, step: 0.05, folder: '爆発' },
   blastCharge: { label: '爆発で増えるチャージ', min: 0, max: 4, step: 1, folder: '爆発' },
   blastForce: { label: '爆風の強さ', min: 0, max: 40, step: 0.5, folder: '爆発' },
@@ -57,18 +59,19 @@ export const schema: Schema<NovaConfig> = {
 };
 
 const normal: NovaConfig = {
-  gravity: 20,
+  gravity: 21,
   flipperSpeed: 24,
   flipperTorque: 2600,
-  flipperLength: 2.15,
+  flipperLength: 2.0,
   ballRestitution: 0.45,
   popKick: 4.5,
   launchMin: 24,
   launchMax: 34,
   balls: 3,
-  ballSave: 4,
+  ballSave: 2,
   maxCharge: 3,
-  decayTime: 6,
+  decayTime: 5,
+  decayFloor: 1,
   blastRadius: 2.6,
   blastCharge: 2,
   blastForce: 14,
@@ -86,7 +89,7 @@ const normal: NovaConfig = {
 export const presets: Record<string, NovaConfig> = {
   やさしい: { ...normal, gravity: 17, balls: 5, ballSave: 8, decayTime: 10, blastRadius: 3.0, flipperLength: 2.3, gameSpeed: 0.9 },
   ふつう: normal,
-  むずかしい: { ...normal, gravity: 23, balls: 2, ballSave: 0, decayTime: 3.5, blastRadius: 2.25, maxCharge: 4, flipperLength: 2.0 },
+  むずかしい: { ...normal, gravity: 22, balls: 3, ballSave: 0, decayTime: 3.5, decayFloor: 0, blastRadius: 2.4 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';
