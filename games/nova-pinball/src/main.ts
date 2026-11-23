@@ -99,6 +99,8 @@ async function main() {
   };
 
   const rating = (s: NovaSim) => {
+    // エンドレス：到達した波で評価
+    if (s.stage.endless) return s.wave >= 8 ? 3 : s.wave >= 5 ? 2 : s.wave >= 3 ? 1 : 0;
     let r = 1;
     if (s.supernova) r++;
     if (s.bestChain >= Math.ceil(s.stars.length * 0.6)) r++;
@@ -110,22 +112,25 @@ async function main() {
     mode = 'result';
     hudApi.chain(0);
     const st = stages[stageIndex];
+    const endless = !!st.endless;
+    if (endless) cleared = true;
     const stars = cleared ? rating(sim) : 0;
-    if (cleared) {
-      save.data.cleared[st.id] = Math.max(save.data.cleared[st.id] ?? 0, stars);
+    if (cleared && (!endless || stars > 0 || sim.score > (save.data.best[st.id] ?? 0))) {
+      if (stars > 0) save.data.cleared[st.id] = Math.max(save.data.cleared[st.id] ?? 0, stars);
       save.data.best[st.id] = Math.max(save.data.best[st.id] ?? 0, sim.score);
       save.write();
     }
     menu = el('div', { class: 'menu' });
     menu.innerHTML = `
-      <h1>${cleared ? 'STAGE CLEAR' : 'GAME OVER'}</h1>
+      <h1>${endless ? `WAVE ${sim.wave}` : cleared ? 'STAGE CLEAR' : 'GAME OVER'}</h1>
       <h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
+      ${endless ? `<p>ベストスコア <b style="color:var(--ink)">${Math.max(save.data.best[st.id] ?? 0, sim.score).toLocaleString()}</b></p>` : ''}
       <p>スコア <b style="font-size:22px;color:var(--ink)">${sim.score.toLocaleString()}</b>　最大連鎖 <b style="color:var(--ink)">${sim.bestChain}</b>　星座 ${sim.litLinks.size}/${st.links.length}</p>
-      <p style="font-size:13px">★2：星座の線を全部灯す（超新星）　★3：星の6割以上を1回の連鎖で</p>
+      <p style="font-size:13px">${endless ? '★1：WAVE 3　★2：WAVE 5　★3：WAVE 8 に到達（2波ごとに＋1ボール）' : '★2：星座の線を全部灯す（超新星）　★3：星の6割以上を1回の連鎖で'}</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
-    if (cleared && stageIndex < stages.length - 1) {
+    if (cleared && !endless && stageIndex < stages.length - 1 && !stages[stageIndex + 1].endless) {
       const nb = el('button', { class: 'btn' }, '次のステージ →');
       nb.onclick = () => startStage(stageIndex + 1);
       row.appendChild(nb);
@@ -143,12 +148,14 @@ async function main() {
     closeMenu();
     mode = 'menu';
     menu = el('div', { class: 'menu' });
-    const unlocked = (i: number) => i === 0 || params.has('all') || save.data.cleared[stages[i - 1].id] !== undefined;
+    const clearedCount = stages.filter((st) => !st.endless && save.data.cleared[st.id] !== undefined).length;
+    // エンドレスは4ステージクリアで解放
+    const unlocked = (i: number) => i === 0 || params.has('all') || (stages[i].endless ? clearedCount >= 4 : save.data.cleared[stages[i - 1].id] !== undefined);
     menu.innerHTML = `
       <h1>NOVA PINBALL</h1>
       <h2>星 爆 ピ ン ボ ー ル</h2>
       <p>星に当てるたびにチャージが溜まり、満タンで爆発。爆発は周りの星をチャージする。<br>
-      一度当てた星は灯ったまま。全部灯してから一気に点火して、夜空を燃やし尽くせ。</p>
+      一度当てた星は灯ったまま。全部灯してから、一気に点火せよ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
@@ -164,7 +171,7 @@ async function main() {
       const r = save.data.cleared[st.id];
       const ok = unlocked(i);
       const d = el('div', { class: 'stage' + (r ? ' cleared' : '') + (ok ? '' : ' locked') },
-        `<b>${i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
+        `<b>${st.endless ? '∞' : i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
       if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(); startStage(i); };
       grid.appendChild(d);
     });
@@ -238,7 +245,7 @@ async function main() {
       else synth.chargeTone(-1);
       if (sim) {
         const st = stages[stageIndex];
-        tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${sim.score.toLocaleString()}</div>`;
+        tl.innerHTML = `<div>${st.endless ? `エンドレス　WAVE ${sim.wave}` : `${stageIndex + 1}. ${st.name}`}</div><div class="big">${sim.score.toLocaleString()}</div>`;
         const balls = sim.ballsLeft + sim.balls.length;
         tr.innerHTML = `<div class="big">${'●'.repeat(Math.min(9, balls))}</div><div>残りの星 ${sim.starsAlive()}　連鎖 ${sim.bestChain}</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       }

@@ -18,6 +18,7 @@ it('nova-pinball balance report', () => {
   for (const preset of ['やさしい', 'ふつう', 'むずかしい']) {
     lines.push(`## ${preset}`, '', '| # | ステージ | skill | クリア率 | 平均クリア秒 | 平均最大連鎖 | 星座完成率 | ゲームオーバー率 |', '|---|---|---|---|---|---|---|---|');
     stages.forEach((st, i) => {
+      if (st.endless) return;
       for (const skill of [0.6, 0.85]) {
         let clears = 0, tSum = 0, chainSum = 0, nova = 0, over = 0;
         for (let r = 0; r < RUNS; r++) {
@@ -32,6 +33,25 @@ it('nova-pinball balance report', () => {
         lines.push(`| ${i + 1} | ${st.name} | ${skill} | ${Math.round((clears / RUNS) * 100)}% | ${clears ? (tSum / clears).toFixed(0) : '-'} | ${(chainSum / RUNS).toFixed(1)} | ${Math.round((nova / RUNS) * 100)}% | ${Math.round((over / RUNS) * 100)}% |`);
       }
     });
+    lines.push('');
+  }
+  // エンドレス：到達した波とスコア
+  const endless = stages.find((s) => s.endless);
+  if (endless) {
+    lines.push('## エンドレス', '', '| 難易度 | skill | 平均到達波 | 最高到達波 | 平均スコア |', '|---|---|---|---|---|');
+    for (const preset of ['やさしい', 'ふつう', 'むずかしい']) {
+      for (const skill of [0.6, 0.85]) {
+        let wSum = 0, wMax = 0, sSum = 0;
+        const n = Math.max(4, Math.round(RUNS / 2));
+        for (let r = 0; r < n; r++) {
+          const sim = new NovaSim({ ...endless, endless: { seed: 100 + r } }, { ...presets[preset] });
+          const bot = new NovaBot(500 + r, skill);
+          while (sim.phase === 'play' && sim.time < 600) sim.step(bot.input(sim));
+          wSum += sim.wave; wMax = Math.max(wMax, sim.wave); sSum += sim.score;
+        }
+        lines.push(`| ${preset} | ${skill} | ${(wSum / n).toFixed(1)} | ${wMax} | ${Math.round(sSum / n).toLocaleString()} |`);
+      }
+    }
     lines.push('');
   }
   mkdirSync(resolve(import.meta.dirname, '../../reports'), { recursive: true });

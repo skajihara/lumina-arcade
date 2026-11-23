@@ -139,7 +139,7 @@ export class NovaBot {
       // 線の相手がまだチャージされていないなら、先にそちらを育てた方が得（減点）
       const chain = this.chainFrom(sim, id);
       let lit = 0, missed = 0;
-      sim.stage.links.forEach(([a, b], i) => {
+      sim.links.forEach(([a, b], i) => {
         if (sim.litLinks.has(i)) return;
         const ia = chain.has(a), ib = chain.has(b);
         if (ia && ib) lit++;

@@ -70,6 +70,8 @@ export class NovaView {
   /** 夜空に浮かぶ星座の線画（超新星で現れる） */
   private skyArt = new Graphics();
   private skyArtT = -1;
+  /** 超新星の瞬間の星座（線と星の位置、px） */
+  private skyArtShape: { pts: { x: number; y: number }[]; links: [number, number][] } | null = null;
   /** カメラ：ズーム倍率と注視点（論理座標） */
   private cam = { zoom: 1, x: VIEW_W / 2, y: VIEW_H / 2, t: -1, peak: 1, hold: 0, dur: 0 };
 
@@ -115,7 +117,7 @@ export class NovaView {
   }
 
   private buildStars(): void {
-    for (const s of this.sim.stars) {
+    for (const s of this.sim.stars.slice(this.stars.length)) {
       const c = new Container();
       const glow = new Sprite(glowTexture());
       glow.anchor.set(0.5);
@@ -187,7 +189,7 @@ export class NovaView {
         this.juice.slowmo(0.25, 1.4);
         synth.arp([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 0.06, 0.1);
         this.hud.toast('SUPERNOVA！ 星座完成 ＋1ボール');
-        this.skyArtT = 0;
+        this.captureSkyArt();
         this.particles.emit(VIEW_W / 2, VIEW_H * 0.35, { count: 260, speed: [100, 900], life: [0.8, 2.2], size: [0.08, 0.4], color: [0xffe7a8, 0xffffff, ...this.palette], drag: 1.2 });
         break;
       case 'sling': {
@@ -214,6 +216,16 @@ export class NovaView {
         this.juice.shake(0.12 * this.cfg.shake);
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [80, 300], life: [0.3, 0.7], size: [0.05, 0.14], color: 0x7ff0ff });
         this.hud.toast('キックバック！');
+        break;
+      case 'wave':
+        this.buildStars();
+        this.linksDirty = true;
+        this.hud.toast(`WAVE ${e.n}　星 ${this.sim.stars.length - e.from} 個`);
+        synth.nextChord(0.05);
+        for (let i = e.from; i < this.sim.stars.length; i++) {
+          const sv = this.stars[i];
+          this.particles.emit(sv.x, sv.y, { count: 14, speed: [20, 120], life: [0.4, 0.9], size: [0.05, 0.14], color: this.palette });
+        }
         break;
       case 'flip':
         synth.flipper(e.side === 'L' ? 1 : 1.06);
@@ -317,29 +329,46 @@ export class NovaView {
     this.container.y = fy * (1 - z);
   }
 
+  /** 超新星の瞬間の星座の形を覚える（エンドレスでは今の波の分だけ） */
+  private captureSkyArt(): void {
+    const sim = this.sim;
+    const idx = new Map<number, number>();
+    const pts: { x: number; y: number }[] = [];
+    const links: [number, number][] = [];
+    // エンドレスは今の波の線だけ
+    const start = sim.waveLinkStart;
+    sim.links.forEach(([a, b], i) => {
+      if (i < start || !sim.litLinks.has(i)) return;
+      for (const id of [a, b]) if (!idx.has(id)) { idx.set(id, pts.length); pts.push({ x: this.stars[id].x, y: this.stars[id].y }); }
+      links.push([idx.get(a)!, idx.get(b)!]);
+    });
+    this.skyArtShape = { pts, links };
+    this.skyArtT = 0;
+  }
+
   /** 超新星：星座の線画を夜空に大きく描く */
   private drawSkyArt(): void {
     const g = this.skyArt;
     g.clear();
-    if (this.skyArtT < 0) return;
-    const st = this.sim.stage;
-    const xs = st.stars.map((p) => p.x), ys = st.stars.map((p) => p.y);
+    const shape = this.skyArtShape;
+    if (this.skyArtT < 0 || !shape || shape.pts.length === 0) return;
+    const xs = shape.pts.map((p) => p.x), ys = shape.pts.map((p) => p.y);
     const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
     const k = 1.55;
-    const P = (i: number) => ({ x: (VIEW_W / 2 + (st.stars[i].x - cx) * k * SCALE), y: (VIEW_H * 0.42 + (st.stars[i].y - cy) * k * SCALE) });
+    const P = (i: number) => ({ x: VIEW_W / 2 + (shape.pts[i].x - cx) * k, y: VIEW_H * 0.42 + (shape.pts[i].y - cy) * k });
     const tIn = Math.min(1, this.skyArtT / 1.6);
     const breathe = 0.85 + 0.15 * Math.sin(this.t * 1.3);
     const a = (tIn < 1 ? tIn * 0.9 : 0.25 + 0.65 * Math.max(0, 1 - (this.skyArtT - 1.6) / 2.5)) * breathe;
-    st.links.forEach(([i, j], n) => {
+    shape.links.forEach(([i, j], n) => {
       // 線が順に引かれていく
-      const show = Math.min(1, Math.max(0, tIn * st.links.length - n * 0.6));
+      const show = Math.min(1, Math.max(0, tIn * shape.links.length - n * 0.6));
       if (show <= 0) return;
       const A = P(i), B = P(j);
       const ex = A.x + (B.x - A.x) * show, ey = A.y + (B.y - A.y) * show;
       g.moveTo(A.x, A.y).lineTo(ex, ey).stroke({ width: 14, color: 0xffe1a8, alpha: a * 0.12, cap: 'round' });
       g.moveTo(A.x, A.y).lineTo(ex, ey).stroke({ width: 2, color: 0xfff3d6, alpha: a * 0.8, cap: 'round' });
     });
-    st.stars.forEach((_, i) => {
+    shape.pts.forEach((_, i) => {
       const p = P(i);
       g.circle(p.x, p.y, 10).fill({ color: 0xffe1a8, alpha: a * 0.15 });
       g.circle(p.x, p.y, 3).fill({ color: 0xffffff, alpha: a });
@@ -350,7 +379,7 @@ export class NovaView {
     const g = this.links;
     g.clear();
     const pulse = 0.75 + 0.25 * Math.sin(this.t * 3);
-    this.sim.stage.links.forEach(([a, b], i) => {
+    this.sim.links.forEach(([a, b], i) => {
       const A = this.stars[a], B = this.stars[b];
       const lit = this.sim.litLinks.has(i);
       if (lit) {
