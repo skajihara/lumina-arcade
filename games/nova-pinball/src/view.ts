@@ -69,6 +69,8 @@ export class NovaView {
   private hue: number;
   private palette: number[];
   private linksDirty = true;
+  /** 星座の線を走っている火（シミュレーション時間で進める） */
+  private fuses: { a: number; b: number; start: number; dur: number }[] = [];
   private bumperFlash: number[] = [];
   private gimmicks = new Graphics();
   private slingFlash = { L: 0, R: 0 };
@@ -195,6 +197,10 @@ export class NovaView {
       case 'link':
         this.linksDirty = true;
         synth.arp([3 + (e.a % 3), 5 + (e.a % 3)], 0.05, 0.07);
+        break;
+      case 'fuse':
+        this.fuses.push({ a: e.a, b: e.b, start: this.sim.time, dur: Math.max(0.05, e.dur) });
+        synth.noise(Math.min(0.5, e.dur + 0.1), { vol: 0.05, from: 2400, to: 5200, q: 3 });
         break;
       case 'supernova':
         this.juice.doFlash(0.9, 0xffe7a8);
@@ -410,6 +416,22 @@ export class NovaView {
         g.stroke({ width: 1.2, color: 0x9fb8ff, alpha: 0.28 });
       }
     });
+    // 線を走る火：明るい頭と、燃えた後の尾
+    const now = this.sim.time;
+    this.fuses = this.fuses.filter((f) => now >= f.start && now - f.start < f.dur + 0.25);
+    for (const f of this.fuses) {
+      const A = this.stars[f.a], B = this.stars[f.b];
+      const k = Math.min(1, Math.max(0, (now - f.start) / f.dur));
+      const fade = k < 1 ? 1 : Math.max(0, 1 - (now - f.start - f.dur) / 0.25);
+      const hx = A.x + (B.x - A.x) * k, hy = A.y + (B.y - A.y) * k;
+      g.moveTo(A.x, A.y).lineTo(hx, hy).stroke({ width: 7, color: 0xffb36b, alpha: 0.25 * fade });
+      g.moveTo(A.x, A.y).lineTo(hx, hy).stroke({ width: 2.5, color: 0xffe7a8, alpha: 0.9 * fade });
+      if (k < 1) {
+        g.circle(hx, hy, 9).fill({ color: 0xffd08a, alpha: 0.35 });
+        g.circle(hx, hy, 3.5).fill({ color: 0xffffff, alpha: 1 });
+        this.particles.emit(hx, hy, { count: 1, speed: [10, 60], life: [0.15, 0.35], size: [0.04, 0.09], color: 0xffd08a });
+      }
+    }
   }
 
   update(realDt: number): void {
@@ -446,7 +468,7 @@ export class NovaView {
       sv.core.scale.set(1 + sv.pulse * 0.25);
     });
     if (sim.stars.some((s) => s.loose && s.alive)) this.linksDirty = true;
-    if (this.linksDirty || sim.litLinks.size > 0) {
+    if (this.linksDirty || sim.litLinks.size > 0 || this.fuses.length > 0) {
       this.drawLinks();
       this.linksDirty = false;
     }

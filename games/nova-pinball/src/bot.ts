@@ -135,8 +135,64 @@ export class NovaBot {
     return false;
   }
 
+  /**
+   * 星座計画（超新星を狙う）：
+   * 1. まだ灯っていない星座の星を先に灯す（連鎖に巻き込める最低のチャージまで）
+   * 2. 灯った星を余計に叩かない（早すぎる起爆を避ける）
+   * 3. 起爆は「巻き込む連鎖が、まだ灯っていない線の相手を取り残さない」時だけ
+   * 線の片方が燃え尽きて超新星が無理になったら、連鎖の大きさだけで決める。
+   */
+  plan = true;
+
+  /** 超新星がまだ狙えるか（灯っていない線の両端が生きている） */
+  private novaPossible(sim: NovaSim): boolean {
+    if (!sim.links.length) return false;
+    for (let i = sim.waveLinkStart; i < sim.links.length; i++) {
+      if (sim.litLinks.has(i)) continue;
+      const [a, b] = sim.links[i];
+      if (!sim.stars[a].alive || !sim.stars[b].alive) return false;
+    }
+    return true;
+  }
+
+  private planValue(sim: NovaSim, id: number): number {
+    const max = Math.round(sim.cfg.maxCharge);
+    const need = Math.max(1, max - Math.round(sim.cfg.blastCharge));
+    const floor = Math.round(sim.cfg.decayFloor);
+    const s = sim.stars[id];
+    const possible = this.novaPossible(sim);
+    const inLink = (sid: number) => sim.links.some(([a, b], i) => !sim.litLinks.has(i) && (a === sid || b === sid));
+    if (s.charge >= max - 1) {
+      const chain = this.chainFrom(sim, id);
+      let lit = 0, missed = 0;
+      sim.links.forEach(([a, b], i) => {
+        if (sim.litLinks.has(i)) return;
+        const ia = chain.has(a), ib = chain.has(b);
+        if (ia && ib) lit++;
+        else if ((ia && sim.stars[b].alive) || (ib && sim.stars[a].alive)) missed++;
+      });
+      const all = sim.stars.filter((o) => o.alive).length;
+      const base = 0.8 + chain.size * 0.7 + (chain.size === all ? 3 : 0);
+      if (!possible) return base;
+      // 取り残しがあると超新星が消える：上手いほど我慢する
+      if (missed > 0) return base * (1 - 0.85 * this.skill) - missed * 1.5 * this.skill;
+      return base + lit * 1.4 + 1.5;
+    }
+    // 灯っているのにさらに叩くと起爆に近づくだけ。時間で減る星（灯りより上）は守る
+    if (s.charge >= need) {
+      if (s.charge > floor) return 2.2 + s.decay / sim.cfg.decayTime;
+      if (!possible) return 1.6;
+      // 星座の星が全部灯ったら、起爆役を育てる。まだなら灯った星は叩かない
+      const unlit = sim.stars.some((o) => o.alive && o.charge < need && inLink(o.id));
+      return unlit ? 0.6 : 2.9;
+    }
+    if (s.charge > 0) return 2.4 + s.decay / sim.cfg.decayTime;
+    return possible && inLink(id) ? 3.0 : 2.0;
+  }
+
   /** 星の価値（狙う優先度） */
   private value(sim: NovaSim, id: number): number {
+    if (this.plan) return this.planValue(sim, id);
     const max = Math.round(sim.cfg.maxCharge);
     const s = sim.stars[id];
     if (s.charge >= max - 1) {
@@ -173,6 +229,16 @@ export class NovaBot {
         if (!o.alive || set.has(o.id) || o.charge < need) continue;
         const q = o.body.getPosition();
         if (Math.hypot(q.x - p.x, q.y - p.y) - o.r <= Rs) {
+          set.add(o.id);
+          queue.push(o.id);
+        }
+      }
+      // 星座の線を伝う火
+      if (sim.cfg.fuseSpeed > 0) {
+        for (const [a, b] of sim.links) {
+          if (a !== s.id && b !== s.id) continue;
+          const o = sim.stars[a === s.id ? b : a];
+          if (!o.alive || set.has(o.id) || o.charge < need) continue;
           set.add(o.id);
           queue.push(o.id);
         }

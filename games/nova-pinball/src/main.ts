@@ -152,10 +152,10 @@ async function main() {
   const rating = (s: NovaSim) => {
     // エンドレス：到達した波で評価
     if (s.stage.endless) return s.wave >= 8 ? 3 : s.wave >= 5 ? 2 : s.wave >= 3 ? 1 : 0;
-    let r = 1;
-    if (s.supernova) r++;
-    if (s.bestChain >= Math.ceil(s.stars.length * 0.6)) r++;
-    return r;
+    // ★2：星座の線を7割以上灯す。★3：超新星（全部灯す）か、星の6割以上を1回の連鎖で
+    const frac = s.links.length ? s.litLinks.size / s.links.length : 1;
+    if (s.supernova || s.bestChain >= Math.ceil(s.stars.length * 0.6)) return 3;
+    return frac >= 0.7 ? 2 : 1;
   };
 
   const showResult = (cleared: boolean) => {
@@ -186,7 +186,7 @@ async function main() {
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
       ${endless ? `<p>ベストスコア <b style="color:var(--ink)">${Math.max(save.data.best[st.id] ?? 0, sim.score).toLocaleString()}</b></p>` : ''}
       <p>スコア <b style="font-size:22px;color:var(--ink)">${sim.score.toLocaleString()}</b>　最大連鎖 <b style="color:var(--ink)">${sim.bestChain}</b>　星座 ${sim.litLinks.size}/${sim.links.length}${newBest ? '　<span style="color:var(--gold)">ベスト連鎖を更新！</span>' : ''}</p>
-      <p style="font-size:13px">${endless ? '★1：WAVE 3　★2：WAVE 5　★3：WAVE 8 に到達（2波ごとに＋1ボール）' : '★2：星座の線を全部灯す（超新星）　★3：星の6割以上を1回の連鎖で'}</p>
+      <p style="font-size:13px">${endless ? '★1：WAVE 3　★2：WAVE 5　★3：WAVE 8 に到達（2波ごとに＋1ボール）' : '★2：星座の線を7割以上灯す　★3：超新星（線を全部灯す）か、星の6割以上を1回の連鎖で'}</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
     if (cleared && !endless && stageIndex < stages.length - 1 && !stages[stageIndex + 1].endless) {
@@ -227,7 +227,7 @@ async function main() {
       <h1>NOVA PINBALL</h1>
       <h2>星 爆 ピ ン ボ ー ル</h2>
       <p>星に当てるたびにチャージが溜まり、満タンで爆発。爆発は周りの星をチャージする。<br>
-      一度当てた星は灯ったまま。全部灯してから、一気に点火せよ。</p>
+      一度当てた星は灯ったまま。火は星座の線を伝って灯った星へ走る。全部灯してから、一気に点火せよ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
