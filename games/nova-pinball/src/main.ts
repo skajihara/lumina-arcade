@@ -13,6 +13,7 @@ import { stages } from './stages';
 import { NovaSim, HZ } from './sim';
 import { NovaView, VIEW_H, VIEW_W, chainTier } from './view';
 import { NovaBot } from './bot';
+import { ReplayRecorder, ReplayPlayer, type ReplayData } from './replay';
 
 interface Progress {
   cleared: Record<string, number>; // ステージID → 星評価(1-3)
@@ -34,6 +35,8 @@ async function main() {
   const tuning = createTuning<NovaConfig>('nova-pinball', schema, presets, DEFAULT_PRESET);
   const cfg = tuning.config;
   const save = new Save<Progress>('nova-pinball', { cleared: {}, best: {} });
+  // ステージごとの「ベスト連鎖」のリプレイ
+  const replays = new Save<{ best: Record<string, ReplayData> }>('nova-pinball-replays', { best: {} });
   // 登録順がビットになる：left=1(IN_LEFT), right=2(IN_RIGHT), launch=4(IN_LAUNCH)
   const input = new Input({
     left: { keys: ['ArrowLeft', 'KeyZ', 'ShiftLeft', 'KeyA'], touch: { x0: 0, y0: 0.5, x1: 0.5, y1: 1 } },
@@ -78,7 +81,10 @@ async function main() {
   let sim: NovaSim | null = null;
   let view: NovaView | null = null;
   let stageIndex = 0;
-  let mode: 'menu' | 'play' | 'pause' | 'result' = 'menu';
+  let mode: 'menu' | 'play' | 'pause' | 'result' | 'replay' = 'menu';
+  let recorder: ReplayRecorder | null = null;
+  let player: ReplayPlayer | null = null;
+  let lastReplay: ReplayData | null = null;
   let menu: HTMLElement | null = null;
   let autoplay = params.has('autoplay');
   let bot = new NovaBot(1, 0.85);
@@ -99,8 +105,48 @@ async function main() {
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);
+    recorder = new ReplayRecorder(cfg);
+    player = null;
     // ステージごとにキー（環境音の根音と和音）を変える
     synth.setKey(STAGE_KEYS[i % STAGE_KEYS.length]);
+  };
+
+  /** リプレイを再生する。highlight なら、ベスト連鎖の3秒前まで早送りしてから */
+  const startReplay = (data: ReplayData, highlight: boolean) => {
+    const i = stages.findIndex((s) => s.id === data.stage);
+    if (i < 0) return;
+    closeMenu();
+    stageIndex = i;
+    view?.destroy();
+    player = new ReplayPlayer(data, stages[i], highlight ? Math.max(0, data.highlight - HZ * 3) : 0);
+    sim = player.sim;
+    view = new NovaView(sim, juice, player.sim.cfg, hudApi);
+    ga.world.removeChildren();
+    ga.world.addChild(view.container);
+    hudApi.chain(0);
+    hudApi.toast(`REPLAY　最大 ${data.bestChain} 連鎖`);
+    mode = 'replay';
+    resultTimer = -1;
+    synth.setKey(STAGE_KEYS[i % STAGE_KEYS.length]);
+  };
+
+  const showReplayEnd = (data: ReplayData) => {
+    mode = 'result';
+    hudApi.chain(0);
+    menu = el('div', { class: 'menu' });
+    menu.innerHTML = `<h1>REPLAY</h1><h2>${stages[stageIndex].name}</h2>
+      <p>スコア <b style="color:var(--ink)">${data.score.toLocaleString()}</b>　最大連鎖 <b style="color:var(--ink)">${data.bestChain}</b></p>
+      <div class="row" style="margin-top:12px"></div>`;
+    const row = menu.querySelector('.row')!;
+    const a = el('button', { class: 'btn' }, 'もう一度見る');
+    a.onclick = () => startReplay(data, true);
+    const b = el('button', { class: 'btn' }, 'このステージを遊ぶ');
+    b.onclick = () => startStage(stageIndex);
+    const c = el('button', { class: 'btn' }, 'ステージ選択');
+    c.onclick = () => showTitle();
+    row.append(a, b, c);
+    document.body.appendChild(menu);
+    (row.firstElementChild as HTMLElement)?.focus();
   };
 
   const rating = (s: NovaSim) => {
@@ -125,13 +171,21 @@ async function main() {
       save.data.best[st.id] = Math.max(save.data.best[st.id] ?? 0, sim.score);
       save.write();
     }
+    // リプレイを残す（ベスト連鎖を更新したら保存）
+    lastReplay = recorder && !recorder.dirty ? recorder.toData(sim) : null;
+    let newBest = false;
+    if (lastReplay && lastReplay.bestChain >= 2 && lastReplay.bestChain > (replays.data.best[st.id]?.bestChain ?? 0)) {
+      replays.data.best[st.id] = lastReplay;
+      replays.write();
+      newBest = true;
+    }
     menu = el('div', { class: 'menu' });
     menu.innerHTML = `
       <h1>${endless ? `WAVE ${sim.wave}` : cleared ? 'STAGE CLEAR' : 'GAME OVER'}</h1>
       <h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
       ${endless ? `<p>ベストスコア <b style="color:var(--ink)">${Math.max(save.data.best[st.id] ?? 0, sim.score).toLocaleString()}</b></p>` : ''}
-      <p>スコア <b style="font-size:22px;color:var(--ink)">${sim.score.toLocaleString()}</b>　最大連鎖 <b style="color:var(--ink)">${sim.bestChain}</b>　星座 ${sim.litLinks.size}/${st.links.length}</p>
+      <p>スコア <b style="font-size:22px;color:var(--ink)">${sim.score.toLocaleString()}</b>　最大連鎖 <b style="color:var(--ink)">${sim.bestChain}</b>　星座 ${sim.litLinks.size}/${sim.links.length}${newBest ? '　<span style="color:var(--gold)">ベスト連鎖を更新！</span>' : ''}</p>
       <p style="font-size:13px">${endless ? '★1：WAVE 3　★2：WAVE 5　★3：WAVE 8 に到達（2波ごとに＋1ボール）' : '★2：星座の線を全部灯す（超新星）　★3：星の6割以上を1回の連鎖で'}</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
@@ -142,9 +196,22 @@ async function main() {
     }
     const rb = el('button', { class: 'btn' }, 'もう一度 (R)');
     rb.onclick = () => startStage(stageIndex);
+    row.append(rb);
+    if (lastReplay && lastReplay.bestChain >= 2) {
+      const data = lastReplay;
+      const pb = el('button', { class: 'btn' }, `▶ ${data.bestChain}連鎖を見る`);
+      pb.onclick = () => startReplay(data, true);
+      row.append(pb);
+    }
+    const best = replays.data.best[st.id];
+    if (best && !newBest) {
+      const bb = el('button', { class: 'btn' }, `★ ベスト ${best.bestChain}連鎖`);
+      bb.onclick = () => startReplay(best, true);
+      row.append(bb);
+    }
     const mb = el('button', { class: 'btn' }, 'ステージ選択');
     mb.onclick = () => showTitle();
-    row.append(rb, mb);
+    row.append(mb);
     document.body.appendChild(menu);
     (row.firstElementChild as HTMLElement)?.focus();
   };
@@ -178,6 +245,13 @@ async function main() {
       const d = el('div', { class: 'stage' + (r ? ' cleared' : '') + (ok ? '' : ' locked') },
         `<b>${st.endless ? '∞' : i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
       if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(); startStage(i); };
+      const rp = replays.data.best[st.id];
+      if (ok && rp) {
+        const a = el('span', { class: 'replay', title: 'ベスト連鎖のリプレイ' }, `▶ ${rp.bestChain}連鎖`);
+        a.style.cssText = 'display:block;font-size:11px;color:var(--accent);margin-top:2px;cursor:pointer';
+        a.onclick = (ev) => { ev.stopPropagation(); synth.unlock(); synth.startAmbient(); startReplay(rp, true); };
+        d.appendChild(a);
+      }
       grid.appendChild(d);
     });
     document.body.appendChild(menu);
@@ -205,6 +279,7 @@ async function main() {
 
   window.addEventListener('keydown', (e) => {
     synth.unlock();
+    if ((e.code === 'KeyP' || e.code === 'Escape') && mode === 'replay') { showTitle(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
     if (e.code === 'KeyR' && (mode === 'play' || mode === 'result' || mode === 'pause')) startStage(stageIndex);
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
@@ -215,6 +290,8 @@ async function main() {
   tuning.onChange((key, restart) => {
     if (key === 'volume') synth.setVolume(cfg.volume);
     if (key === 'bloom') ga.setBloom(cfg.bloom);
+    // 見た目・音以外の設定を途中で変えたら、そのプレイのリプレイは再現できないので保存しない
+    if (mode === 'play' && recorder && !['volume', 'bloom', 'shake', 'particles', 'gameSpeed', 'slowmoAt'].includes(String(key))) recorder.dirty = true;
     if (restart && mode === 'play' && key !== '*') hudApi.toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
@@ -223,10 +300,23 @@ async function main() {
   const loop = new FixedLoop({
     update: () => {
       const mask = input.sample();
-      if (mode !== 'play' || !sim || !view) return;
+      if ((mode !== 'play' && mode !== 'replay') || !sim || !view) return;
+      if (mode === 'replay' && player) {
+        const live = sim.phase === 'play' && !player.done;
+        sim.step(live ? player.next() : 0);
+        for (const e of sim.events) view.handle(e);
+        if (!live && resultTimer < 0) resultTimer = sim.tick + HZ * 2.2;
+        if (resultTimer >= 0 && sim.tick >= resultTimer) {
+          resultTimer = -1;
+          showReplayEnd(player.data);
+        }
+        return;
+      }
       let m = mask;
       if (autoplay) m |= bot.input(sim);
+      recorder?.record(m);
       sim.step(m);
+      recorder?.observe(sim);
       for (const e of sim.events) {
         view.handle(e);
         if (e.t === 'clear') resultTimer = sim.tick + HZ * 2.2;
@@ -252,7 +342,7 @@ async function main() {
         const st = stages[stageIndex];
         tl.innerHTML = `<div>${st.endless ? `エンドレス　WAVE ${sim.wave}` : `${stageIndex + 1}. ${st.name}`}</div><div class="big">${sim.score.toLocaleString()}</div>`;
         const balls = sim.ballsLeft + sim.balls.length;
-        tr.innerHTML = `<div class="big">${'●'.repeat(Math.min(9, balls))}</div><div>残りの星 ${sim.starsAlive()}　連鎖 ${sim.bestChain}</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+        tr.innerHTML = `<div class="big">${'●'.repeat(Math.min(9, balls))}</div><div>残りの星 ${sim.starsAlive()}　連鎖 ${sim.bestChain}</div>${mode === 'replay' ? '<div style="color:var(--accent)">▶ REPLAY（P で終了）</div>' : autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       }
       hook.frames++;
     },
@@ -271,9 +361,12 @@ async function main() {
   hook.start = (i: number) => startStage(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
   hook.sim = () => sim;
+  hook.lastReplay = () => lastReplay;
+  hook.playReplay = (highlight = true) => { if (lastReplay) startReplay(lastReplay, highlight); };
   /** 演出確認用：全部の星を灯して1つ目を点火する（大連鎖→超新星→最後の爆発） */
   hook.ignite = () => {
     if (!sim) return;
+    if (recorder) recorder.dirty = true; // 入力によらない変更なので、リプレイは残さない
     for (const s of sim.stars) if (s.alive) s.charge = Math.max(s.charge, 1);
     const first = sim.stars.find((s) => s.alive);
     if (first) (sim as unknown as { addCharge(s: unknown, n: number): void }).addCharge(first, 9);

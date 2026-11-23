@@ -411,7 +411,11 @@ export class NovaView {
     // 星
     sim.stars.forEach((s, i) => {
       const sv = this.stars[i];
-      if (!s.alive) return;
+      if (!s.alive) {
+        // リプレイの早送りなどで、描画の前に消えていた星は隠す
+        sv.c.visible = false;
+        return;
+      }
       const p = s.body.getPosition();
       sv.x = p.x * SCALE; sv.y = p.y * SCALE;
       sv.c.x = sv.x; sv.c.y = sv.y;
