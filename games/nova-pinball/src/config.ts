@@ -30,6 +30,7 @@ export interface NovaConfig {
   shake: number;
   particles: number;
   bloom: boolean;
+  twist: number;
   volume: number;
 }
 
@@ -61,6 +62,7 @@ export const schema: Schema<NovaConfig> = {
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
   particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
   bloom: { label: '発光（ブルーム）', folder: '演出' },
+  twist: { label: 'ひねり（0なし 1同色連鎖 2押せる星 3重力）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
   volume: { label: '音量', min: 0, max: 1, step: 0.01, folder: '演出' },
 };
 
@@ -92,6 +94,7 @@ const normal: NovaConfig = {
   shake: 1,
   particles: 1,
   bloom: true,
+  twist: 3,
   volume: 0.7,
 };
 

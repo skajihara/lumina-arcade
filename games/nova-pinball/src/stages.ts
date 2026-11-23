@@ -10,6 +10,8 @@ export interface StarDef {
   loose?: boolean;
   /** 初期チャージ */
   charge?: number;
+  /** 色（ひねりA 用。省略時は番号順に 0,1,2） */
+  color?: number;
 }
 
 export interface BumperDef {

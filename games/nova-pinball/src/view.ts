@@ -24,6 +24,8 @@ const TIER_COLORS: number[][] = [
   [0x7ff0ff, 0xffd27f, 0xffa3e0, 0xa3ffb0, 0xffffff, 0xc9a3ff],
 ];
 const TRAIL_MAX = 24;
+/** ひねりA の星の色 */
+const STAR_HUES = [0x7ff0ff, 0xffc86b, 0xff8fd8];
 
 interface StarView {
   c: Container;
@@ -423,7 +425,7 @@ export class NovaView {
       const hot = s.pendingAt >= 0 ? 0.3 * Math.sin(this.t * 60) : 0;
       const base = (s.r * SCALE * 4.2) / 128;
       sv.glow.scale.set(base * (1 + ch * 0.32 + sv.pulse * 0.5 + hot));
-      sv.glow.tint = CHARGE_COLORS[Math.min(ch, 4)];
+      sv.glow.tint = this.cfg.twist === 1 ? lerpColor(STAR_HUES[s.color % 3], CHARGE_COLORS[Math.min(ch, 4)], 0.35) : CHARGE_COLORS[Math.min(ch, 4)];
       sv.glow.alpha = 0.55 + ch * 0.12;
       sv.core.rotation += realDt * (0.2 + ch * 0.6);
       sv.core.scale.set(1 + sv.pulse * 0.25);
@@ -578,6 +580,20 @@ export class NovaView {
         }
         g.poly(pts).fill({ color: lit ? 0xfff3d6 : 0x48508a, alpha: lit ? 1 : 0.7 });
       });
+    }
+    // ひねりC：重力が爆発の方へ向いている間、ボールのまわりに引かれる向きの印
+    if (sim.gravityTwistUntil >= 0) {
+      const left = (sim.gravityTwistUntil - sim.tick) / (0.45 * 120);
+      const d = sim.gravityDir;
+      for (const b of sim.balls) {
+        const p = b.body.getPosition();
+        for (let k = 1; k <= 3; k++) {
+          const cx = (p.x + d.x * (0.5 + k * 0.45)) * SCALE, cy = (p.y + d.y * (0.5 + k * 0.45)) * SCALE;
+          const nx = -d.y * 6, ny = d.x * 6;
+          g.moveTo(cx - d.x * 6 + nx, cy - d.y * 6 + ny).lineTo(cx, cy).lineTo(cx - d.x * 6 - nx, cy - d.y * 6 - ny)
+            .stroke({ width: 2, color: 0xc9a3ff, alpha: Math.max(0, left) * (0.9 - k * 0.2), cap: 'round', join: 'round' });
+        }
+      }
     }
     // キックバックの灯り（アウトレーンの上向き矢印）
     if (sim.stage.outlanes) {
