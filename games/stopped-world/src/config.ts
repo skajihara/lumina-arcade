@@ -19,6 +19,8 @@ export interface StopConfig {
   /** 爆弾の爆風の半径と強さ */
   bombRadius: number;
   bombForce: number;
+  /** 巣が卵を受け止める強さ（巣の中での減衰） */
+  nestGrip: number;
   /** 止めている間に見える予測線の秒数（0 で無し） */
   predictSec: number;
   gameSpeed: number;
@@ -38,6 +40,7 @@ export const schema: Schema<StopConfig> = {
   crateBreak: { label: '箱が壊れる衝撃', min: 2, max: 40, step: 0.5, folder: '物体' },
   bombRadius: { label: '爆弾の半径', min: 1, max: 8, step: 0.1, folder: '物体' },
   bombForce: { label: '爆弾の強さ', min: 1, max: 60, step: 0.5, folder: '物体' },
+  nestGrip: { label: '巣が卵を受け止める強さ', min: 0, max: 10, step: 0.1, folder: '物体' },
   predictSec: { label: '予測線の長さ（秒、0で無し）', min: 0, max: 3, step: 0.1, folder: '時間停止' },
   gameSpeed: { label: 'ゲーム速度', min: 0.3, max: 1.5, step: 0.05, folder: '演出' },
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
@@ -56,6 +59,7 @@ const normal: StopConfig = {
   crateBreak: 9,
   bombRadius: 3.2,
   bombForce: 22,
+  nestGrip: 3,
   predictSec: 1,
   gameSpeed: 1,
   shake: 1,
