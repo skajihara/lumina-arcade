@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ChronoSim, defaults } from './sim';
+import { ChronoSim, chronoStages, defaults } from './sim';
+import { ChronoBot } from './bot';
 
 describe('時空の絵筆（実験）', () => {
   it('遅い時間の中では星がゆっくり落ちる', () => {
@@ -34,4 +35,27 @@ describe('時空の絵筆（実験）', () => {
     for (let i = 0; i < 130; i++) s.step();
     expect(s.zones.length).toBe(0);
   });
+
+  it('風は世界の時間で吹く：遅らせた星ほど横へ運ばれる', () => {
+    const c = { ...defaults, windBias: 100, wind: 0, zoneLife: 0 };
+    const a = new ChronoSim(c, 3);
+    const b = new ChronoSim(c, 3);
+    for (let i = 0; i < 70; i++) { a.step(); b.step(); }
+    b.paint(b.stars[0].x, b.stars[0].y + 30, 'slow');
+    while (a.stars[0].alive) a.step();
+    while (b.stars[0].alive) b.step();
+    expect(b.stars[0].x).toBeGreaterThan(a.stars[0].x + 30);
+  });
+
+  it('全ステージ：何もしないとクリアできず、先読みボットならクリアできる', () => {
+    for (const st of chronoStages) {
+      const idle = ChronoSim.of(st);
+      while (!idle.done) idle.step();
+      expect(idle.cleared).toBe(false);
+      const sim = ChronoSim.of(st);
+      const bot = new ChronoBot(0.85);
+      while (!sim.done) { bot.act(sim); sim.step(); }
+      expect(sim.cleared, st.name).toBe(true);
+    }
+  }, 30_000);
 });

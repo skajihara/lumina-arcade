@@ -28,6 +28,12 @@ export class Rng {
   get state(): number {
     return this.s;
   }
+  /** 同じ状態の別の乱数（先読み用） */
+  clone(): Rng {
+    const r = new Rng(1);
+    r.s = this.s;
+    return r;
+  }
   set state(v: number) {
     this.s = v >>> 0;
   }
