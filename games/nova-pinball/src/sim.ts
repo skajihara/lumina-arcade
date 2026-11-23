@@ -37,6 +37,11 @@ export interface Ball {
   still: number;
   /** キックバック中（1=左から, -1=右から, 0=なし） */
   kicked: number;
+  /** 持ち主（Echo Loop では何ループ目のボールか。通常は 0） */
+  owner: number;
+  /** 持ち主ごとの発射の溜め（ownerInputs を使う時だけ） */
+  charge: number;
+  prevLaunch: boolean;
 }
 
 export interface Star {
@@ -171,6 +176,12 @@ export class NovaSim {
   supernova = false;
   events: SimEvent[] = [];
   launchCharge = 0;
+  /** false なら、落ちたボールは補充されず、ゲームオーバーにもならない（Echo Loop 用） */
+  respawn = true;
+  /** 持ち主ごとの入力（発射だけに使う）。null なら従来通り input で発射する（Echo Loop 用） */
+  ownerInputs: number[] | null = null;
+  /** ボールどうしをぶつけるか（Echo Loop 用。null なら常にぶつかる） */
+  ballCollide: ((a: Ball, b: Ball) => boolean) | null = null;
   chainId = 0;
   chainCount = 0;
   chainUntil = -1;
@@ -197,6 +208,14 @@ export class NovaSim {
     this.kickback = { L: kb, R: kb };
     this.spawnBall();
     this.world.on('begin-contact', (c: Contact) => this.onContact(c));
+    this.world.on('pre-solve', (c: Contact) => {
+      if (!this.ballCollide) return;
+      const a = c.getFixtureA().getBody().getUserData() as Tag | null;
+      const b = c.getFixtureB().getBody().getUserData() as Tag | null;
+      if (a?.kind !== 'ball' || b?.kind !== 'ball') return;
+      const ba = this.balls.find((x) => x.id === a.id), bb = this.balls.find((x) => x.id === b.id);
+      if (ba && bb && !this.ballCollide(ba, bb)) c.setEnabled(false);
+    });
   }
 
   private buildBoard(): void {
@@ -321,9 +340,9 @@ export class NovaSim {
     this.events.push({ t: 'wave', n: this.wave, from });
   }
 
-  spawnBall(at = { x: 13.8, y: 23.8 }): Ball {
+  spawnBall(at = { x: 13.8, y: 23.8 }, owner = 0): Ball {
     const body = this.world.createBody({ type: 'dynamic', position: at, bullet: true });
-    const ball: Ball = { id: this.nextBallId++, body, saveUntil: -1, launched: false, trail: [], still: 0, kicked: 0 };
+    const ball: Ball = { id: this.nextBallId++, body, saveUntil: -1, launched: false, trail: [], still: 0, kicked: 0, owner, charge: 0, prevLaunch: false };
     body.setUserData({ kind: 'ball', id: ball.id } as Tag);
     body.createFixture(new Circle(BALL_R), { density: 1, friction: 0.08, restitution: this.cfg.ballRestitution });
     this.balls.push(ball);
@@ -385,9 +404,10 @@ export class NovaSim {
     }
 
     // 発射（レーンにいるボールだけ）
-    const laneBall = this.balls.find((b) => this.inLane(b));
-    if (input & IN_LAUNCH) this.launchCharge = Math.min(1, this.launchCharge + DT / 0.9);
-    if (released & IN_LAUNCH) {
+    if (this.ownerInputs) this.launchByOwner(this.ownerInputs);
+    const laneBall = this.ownerInputs ? undefined : this.balls.find((b) => this.inLane(b));
+    if (!this.ownerInputs && input & IN_LAUNCH) this.launchCharge = Math.min(1, this.launchCharge + DT / 0.9);
+    if (!this.ownerInputs && released & IN_LAUNCH) {
       if (laneBall) {
         const power = this.launchCharge;
         const v = cfg.launchMin + (cfg.launchMax - cfg.launchMin) * power;
@@ -417,6 +437,29 @@ export class NovaSim {
     this.processPending();
     this.updateBalls();
     this.checkEnd();
+  }
+
+  /** 持ち主ごとに、自分のボールだけを発射する */
+  private launchByOwner(masks: number[]): void {
+    const cfg = this.cfg;
+    for (const b of this.balls) {
+      const on = ((masks[b.owner] ?? 0) & IN_LAUNCH) !== 0;
+      if (on) b.charge = Math.min(1, b.charge + DT / 0.9);
+      if (!on && b.prevLaunch) {
+        if (this.inLane(b)) {
+          const v = cfg.launchMin + (cfg.launchMax - cfg.launchMin) * b.charge;
+          b.body.setLinearVelocity({ x: 0, y: -v });
+          b.body.setAwake(true);
+          b.launched = true;
+          this.events.push({ t: 'launch', power: b.charge });
+        }
+        b.charge = 0;
+      }
+      b.prevLaunch = on;
+    }
+    // 描画の発射メーター用：一番新しい持ち主の溜め
+    const mine = this.balls.find((b) => b.owner === masks.length - 1);
+    this.launchCharge = mine?.charge ?? 0;
   }
 
   inLane(b: Ball): boolean {
@@ -671,6 +714,7 @@ export class NovaSim {
         this.balls.splice(i, 1);
         const saved = b.saveUntil >= 0 && this.tick <= b.saveUntil;
         this.events.push({ t: 'drain', saved });
+        if (!this.respawn) continue;
         if (saved) this.spawnBall();
         else if (this.balls.length === 0) {
           if (this.ballsLeft > 0) {
