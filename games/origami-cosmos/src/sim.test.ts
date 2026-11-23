@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { presets } from './config';
 import { OrigamiSim, foldPoint, adjacency, chain, type StageDef } from './sim';
 import { solve, foldSequences } from './solver';
+import { stages } from './stages';
 
 const cfg = () => ({ ...presets['むずかしい'] });
 
@@ -87,5 +88,22 @@ describe('ソルバー', () => {
 
   it('折れなければ点火回数が増える', () => {
     expect(solve(stage, { blast: 1, maxFolds: 0 })!.ignitions).toBe(3);
+  });
+});
+
+describe('問題', () => {
+  it('全問、ソルバーで解があり、ignitions が最短と一致する', () => {
+    for (const st of stages) {
+      const sol = solve(st, { blast: 1, maxFolds: st.maxFolds });
+      expect(sol?.ignitions, st.name).toBe(st.ignitions);
+    }
+  });
+
+  it('途中の状態からも解ける（ヒント用）', () => {
+    const st = stages[2];
+    const sim = new OrigamiSim(st, cfg());
+    sim.ignite(4);
+    const sol = solve(st, { blast: 1, maxFolds: st.maxFolds }, sim.alive)!;
+    expect(sol.moves.every((m) => sim.alive[m.star])).toBe(true);
   });
 });
