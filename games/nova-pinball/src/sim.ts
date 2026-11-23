@@ -74,8 +74,8 @@ export interface Flipper {
 }
 
 export type SimEvent =
-  | { t: 'hit'; star: number; charge: number; x: number; y: number }
-  | { t: 'bump'; x: number; y: number }
+  | { t: 'hit'; star: number; charge: number; x: number; y: number; by?: number }
+  | { t: 'bump'; x: number; y: number; by?: number }
   | { t: 'explode'; star: number; x: number; y: number; r: number; chain: number; last: boolean }
   | { t: 'link'; a: number; b: number }
   | { t: 'supernova' }
@@ -88,7 +88,7 @@ export type SimEvent =
   | { t: 'clear' }
   | { t: 'gameover' }
   | { t: 'chainEnd'; chain: number }
-  | { t: 'sling'; side: 'L' | 'R'; x: number; y: number }
+  | { t: 'sling'; side: 'L' | 'R'; x: number; y: number; by?: number }
   | { t: 'roll'; id: number; all: boolean }
   | { t: 'wave'; n: number; from: number }
   | { t: 'kickback'; side: 'L' | 'R'; x: number; y: number };
@@ -507,13 +507,13 @@ export class NovaSim {
           this.addCharge(s, 1);
           const bp = bx.getPosition(), sp = by.getPosition();
           this.kick(bx, bp.x - sp.x, bp.y - sp.y, this.cfg.popKick);
-          this.events.push({ t: 'hit', star: s.id, charge: s.charge, x: sp.x, y: sp.y });
+          this.events.push({ t: 'hit', star: s.id, charge: s.charge, x: sp.x, y: sp.y, by: this.ownerOf(x.id) });
         } else if (x.kind === 'ball' && y.kind === 'bumper') {
           const bp = bx.getPosition(), sp = by.getPosition();
           this.kick(bx, bp.x - sp.x, bp.y - sp.y, this.cfg.popKick * 1.3);
-          this.events.push({ t: 'bump', x: sp.x, y: sp.y });
+          this.events.push({ t: 'bump', x: sp.x, y: sp.y, by: this.ownerOf(x.id) });
         } else if (x.kind === 'ball' && y.kind === 'sling') {
-          this.slingKick(bx, y.side);
+          this.slingKick(bx, y.side, this.ownerOf(x.id));
         } else if (x.kind === 'ball' && y.kind === 'roll') {
           this.rollover(y.id);
         } else if (x.kind === 'star' && y.kind === 'star' && x.id < y.id) {
@@ -534,7 +534,12 @@ export class NovaSim {
   }
 
   /** スリングショット：中央向きの辺に当たった時だけ、辺の法線方向に弾く */
-  private slingKick(ball: Body, side: 'L' | 'R'): void {
+  /** ボールの持ち主（イベントで「だれのボールか」を伝える） */
+  private ownerOf(ballId: number): number {
+    return this.balls.find((b) => b.id === ballId)?.owner ?? 0;
+  }
+
+  private slingKick(ball: Body, side: 'L' | 'R', by = 0): void {
     const [A, , C] = side === 'L' ? SLING_L : SLING_R;
     const ex = C.x - A.x, ey = C.y - A.y;
     // 中央（x=6.9）側の法線
@@ -547,7 +552,7 @@ export class NovaSim {
     if (Math.hypot(v.x, v.y) < 1.2) return;
     this.kick(ball, nx, ny, this.cfg.slingKick);
     const q = { x: (A.x + C.x) / 2, y: (A.y + C.y) / 2 };
-    this.events.push({ t: 'sling', side, x: q.x, y: q.y });
+    this.events.push({ t: 'sling', side, x: q.x, y: q.y, by });
   }
 
   private rollover(id: number): void {

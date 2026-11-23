@@ -107,6 +107,8 @@ async function main() {
     view = new NovaView(es.sim, juice, cfg, hudApi);
     const cur = es.loop;
     view.ballStyle = (b) => ({ tint: echoColor(cur - b.owner), alpha: echoAlpha(cur - b.owner) });
+    // 残響の当たり音は、古いほど小さく遠く
+    view.soundScale = (owner) => (owner === cur ? 1 : Math.max(0.25, 0.6 - (cur - owner) * 0.08));
     view.container.addChild(overlay);
     ga.world.removeChildren();
     ga.world.addChild(view.container);
