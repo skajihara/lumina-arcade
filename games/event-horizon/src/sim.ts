@@ -3,7 +3,7 @@
  *
  * - 爪の代わりに小さなブラックホールを動かす。引く（ボタンを押している間）と、近くの星のかけらを引き寄せる
  * - 近づきすぎて事象の地平の内側に入ったかけらは吸い込まれて消える。速すぎても遅すぎてもだめ — 周回させる
- * - 地平の近くにかけらがある間は、世界の時間が遅れる（ブラックホールは遅れない → 狙いやすい）
+ * - 地平の近くにかけらがある間は、世界の時間が遅れる（全体がスローになる → 解放の瞬間を狙いやすい）
  * - 解放（ホワイトホール）：周りのかけらをまとめて外へ弾き飛ばす。その後しばらく引力が消える
  * - かけらを星座の穴（ゴール）へ入れる。続けて入ると連鎖。穴はブラックホールを寄せつけないので、投げ入れるしかない
  *
@@ -11,6 +11,7 @@
  * 同じ入力の列なら同じ結果になる（決定的）。
  */
 import { World, Circle, Edge, type Body } from 'planck';
+import { Rng } from '@engine/rng';
 import type { HorizonConfig } from './config';
 
 export const HZ = 120;
@@ -56,6 +57,8 @@ export interface StageDef {
   pits?: [number, number][];
   /** ブラックホールの最初の位置 */
   start?: { x: number; y: number };
+  /** スコアアタック：穴に入ったり失ったりしたかけらの代わりが空から降ってくる。制限時間まで遊んでスコアを競う */
+  attack?: { seed: number };
 }
 
 export interface Shard {
@@ -75,6 +78,7 @@ export type HorizonEvent =
   | { t: 'capture'; id: number; goal: number; x: number; y: number; chain: number }
   | { t: 'burst'; x: number; y: number; n: number; r: number }
   | { t: 'chainEnd'; chain: number }
+  | { t: 'spawn'; id: number }
   | { t: 'clear' }
   | { t: 'fail'; why: 'lost' | 'time' };
 
@@ -107,6 +111,7 @@ export class HorizonSim {
   events: HorizonEvent[] = [];
   private chainUntil = -1;
   private prevBits = 0;
+  private rng: Rng;
 
   constructor(public stage: StageDef, public cfg: HorizonConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -126,13 +131,26 @@ export class HorizonSim {
     for (const line of stage.walls ?? []) {
       for (let i = 1; i < line.length; i++) ground.createFixture(new Edge(line[i - 1], line[i]), { friction: 0.5, restitution: 0.3 });
     }
-    stage.shards.forEach((d, id) => {
-      const kind = d.kind ?? 'dust';
-      const r = RADIUS[kind];
-      const body = this.world.createBody({ type: 'dynamic', position: { x: d.x, y: d.y }, bullet: true, linearDamping: 0.02, angularDamping: 0.5 });
-      body.createFixture(new Circle(r), { density: kind === 'heavy' ? 3 : 1, friction: 0.3, restitution: 0.5 });
-      this.shards.push({ id, kind, r, body, state: 'free', pullScale: PULL_SCALE[kind] });
-    });
+    this.rng = new Rng(stage.attack?.seed ?? 1);
+    for (const d of stage.shards) this.addShard(d);
+  }
+
+  private addShard(d: ShardDef): Shard {
+    const kind = d.kind ?? 'dust';
+    const r = RADIUS[kind];
+    const body = this.world.createBody({ type: 'dynamic', position: { x: d.x, y: d.y }, bullet: true, linearDamping: 0.02, angularDamping: 0.5 });
+    body.createFixture(new Circle(r), { density: kind === 'heavy' ? 3 : 1, friction: 0.3, restitution: 0.5 });
+    const s: Shard = { id: this.shards.length, kind, r, body, state: 'free', pullScale: PULL_SCALE[kind] };
+    this.shards.push(s);
+    return s;
+  }
+
+  /** スコアアタック：代わりのかけらを空から降らせる */
+  private respawn(): void {
+    if (!this.stage.attack) return;
+    const kind: ShardKind = this.rng.next() < 0.2 ? 'heavy' : 'dust';
+    const s = this.addShard({ kind, x: this.rng.range(2, WORLD_W - 2), y: 0.8 });
+    this.events.push({ t: 'spawn', id: s.id });
   }
 
   get time(): number {
@@ -140,6 +158,7 @@ export class HorizonSim {
   }
 
   get need(): number {
+    if (this.stage.attack) return Infinity;
     return this.stage.need ?? this.stage.shards.length;
   }
 
@@ -166,12 +185,12 @@ export class HorizonSim {
     const rise = input.bits & ~this.prevBits;
     this.prevBits = input.bits;
 
-    // ブラックホールは実時間で動く（時間の遅れを受けない）
     const tx = Math.min(WORLD_W - 0.3, Math.max(0.3, input.x));
     const ty = Math.min(WORLD_H - 0.3, Math.max(0.3, input.y));
     const dx = tx - this.bh.x, dy = ty - this.bh.y;
     const d = Math.hypot(dx, dy);
-    const maxStep = cfg.bhSpeed * DT;
+    // 時間の遅れは世界全体のスロー（ブラックホールも同じ速さで遅くなる → 人間には考える時間が増える）
+    const maxStep = cfg.bhSpeed * DT * this.timeScale;
     const ox = this.bh.x, oy = this.bh.y;
     if (d > maxStep) {
       this.bh.x += (dx / d) * maxStep;
@@ -192,7 +211,7 @@ export class HorizonSim {
       }
     }
     this.cooldown = Math.max(0, this.cooldown - DT);
-    // 世界の時間で測った速度（時間が遅れている間は、世界から見ると速く動いている）
+    // 世界の時間で測った速度
     const wdt = DT * Math.max(0.05, this.timeScale);
     this.bhVel = { x: (this.bh.x - ox) / wdt, y: (this.bh.y - oy) / wdt };
 
@@ -301,6 +320,7 @@ export class HorizonSim {
     s.state = 'lost';
     this.events.push({ t: how, id: s.id, x: p.x, y: p.y });
     this.world.destroyBody(s.body);
+    this.respawn();
   }
 
   private capture(s: Shard, goal: number): void {
@@ -313,13 +333,22 @@ export class HorizonSim {
     this.score += 100 * this.chain;
     this.events.push({ t: 'capture', id: s.id, goal, x: p.x, y: p.y, chain: this.chain });
     this.world.destroyBody(s.body);
+    this.respawn();
   }
 
   private checkEnd(): void {
     if (this.phase !== 'play') return;
+    if (this.stage.attack) {
+      // スコアアタックは制限時間まで遊んで終わり（失敗はない）
+      if (this.worldTime >= this.cfg.timeLimit) {
+        this.phase = 'clear';
+        this.events.push({ t: 'clear' });
+      }
+      return;
+    }
     if (this.captured >= this.need) {
       this.phase = 'clear';
-      this.score += Math.max(0, Math.round((this.cfg.timeLimit - this.time) * 10));
+      this.score += Math.max(0, Math.round((this.cfg.timeLimit - this.worldTime) * 10));
       this.events.push({ t: 'clear' });
       return;
     }
@@ -327,7 +356,7 @@ export class HorizonSim {
     if (alive + this.captured < this.need) {
       this.phase = 'fail';
       this.events.push({ t: 'fail', why: 'lost' });
-    } else if (this.time >= this.cfg.timeLimit) {
+    } else if (this.worldTime >= this.cfg.timeLimit) {
       this.phase = 'fail';
       this.events.push({ t: 'fail', why: 'time' });
     }

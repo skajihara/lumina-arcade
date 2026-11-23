@@ -97,7 +97,7 @@ const normal: HorizonConfig = {
 export const presets: Record<string, HorizonConfig> = {
   やさしい: { ...normal, horizon: 0.32, dilateMin: 0.25, dilateRange: 1.3, timeLimit: 150, gravity: 5, goalGuard: 1.8 },
   ふつう: normal,
-  むずかしい: { ...normal, horizon: 0.6, dilateMin: 0.5, dilateRange: 0.8, timeLimit: 70, gravity: 7, burstCooldown: 1.1, goalGuard: 3 },
+  むずかしい: { ...normal, horizon: 0.6, dilateMin: 0.5, dilateRange: 0.8, timeLimit: 80, gravity: 7, burstCooldown: 1.1, goalGuard: 3 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';

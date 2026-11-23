@@ -36,7 +36,7 @@ export const games: GameEntry[] = [
     at: [0.84, 0.48], hue: '#e8e8ff',
   },
   {
-    id: 'event-horizon', title: 'Event Horizon', jp: '事象の地平クレーン', status: 'wip',
+    id: 'event-horizon', title: 'Event Horizon', jp: '事象の地平クレーン', status: 'ready',
     desc: 'ブラックホールで物体を周回させ、ホワイトホールの爆発でゴールへ投げ飛ばす。',
     shape: [[0.5, 0.5], [0.2, 0.3], [0.8, 0.3], [0.8, 0.7], [0.2, 0.7]], edges: [[1, 2], [2, 3], [3, 4], [4, 1]],
     at: [0.6, 0.6], hue: '#ffb38a',
