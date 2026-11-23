@@ -5,6 +5,9 @@
 
 ## 遊び方（インストール不要）
 
+**ブラウザで遊ぶ**：https://skajihara.github.io/lumina-arcade/ （main に入るたびに自動で更新）
+
+**ダウンロードして遊ぶ**：
 1. `play/` フォルダをダウンロードする（または [Releases](../../releases) の zip）
 2. `play/index.html` をブラウザで開く（ダブルクリックでOK、オフラインで動きます）
 3. 星図の光っている星座をクリック
