@@ -14,7 +14,7 @@ import { lerpColor } from '@engine/gfx';
 import { injectBaseStyle, el, backLink } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
-import { EchoSim } from './sim';
+import { EchoSim, echoBias } from './sim';
 import { HZ, type SimEvent } from '../../nova-pinball/src/sim';
 import { NovaView, VIEW_H, VIEW_W, SCALE, chainTier } from '../../nova-pinball/src/view';
 import { NovaBot } from '../../nova-pinball/src/bot';
@@ -120,12 +120,13 @@ async function main() {
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);
+    bot.bias = echoBias(es);
     synth.setKey(STAGE_KEYS[i % STAGE_KEYS.length]);
   };
 
   /** 星評価：少ないループでクリアするほど高い */
   const rating = (loopsUsed: number) => {
-    const max = Math.round(cfg.maxLoops);
+    const max = es?.maxLoops ?? Math.round(cfg.maxLoops);
     return loopsUsed <= max - 3 ? 3 : loopsUsed <= max - 2 ? 2 : 1;
   };
 
@@ -149,7 +150,7 @@ async function main() {
       <h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
       <p>${cleared ? `${used} ループ目で、${used} 人の自分が同じ ${cfg.loopSec} 秒に全部の星を燃やした` : `1ループで壊せた最多 <b style="color:var(--ink)">${es.best} / ${total}</b>`}</p>
-      <p style="font-size:13px">★：少ないループでクリアするほど高い（★3：${Math.round(cfg.maxLoops) - 3}ループ以内　★2：${Math.round(cfg.maxLoops) - 2}ループ以内）</p>
+      <p style="font-size:13px">★：少ないループでクリアするほど高い（★3：${es.maxLoops - 3}ループ以内　★2：${es.maxLoops - 2}ループ以内）</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
     if (cleared && stageIndex < stages.length - 1) {
@@ -249,7 +250,7 @@ async function main() {
     synth.whoosh(1.2);
     synth.arp([8, 6, 4, 2, 0], 0.045, 0.07);
     synth.nextChord(0.05);
-    const last = loop === Math.round(cfg.maxLoops) - 1;
+    const last = loop === (es?.maxLoops ?? 0) - 1;
     hudApi.toast(last ? `最後のループ — ${loop + 1} 人の自分と` : `LOOP ${loop + 1}　残響 ${loop} 人`);
   };
 
@@ -258,7 +259,10 @@ async function main() {
       const mask = input.sample();
       if (mode !== 'play' || !es || !view) return;
       let m = mask;
-      if (autoplay) m |= bot.input(es.sim);
+      if (autoplay) {
+        bot.owner = es.loop;
+        m |= bot.input(es.sim);
+      }
       const before = es.loop;
       es.step(m);
       for (const e of es.events) {
@@ -303,7 +307,7 @@ async function main() {
       if (es) {
         drawOverlay(realDt);
         const st = stages[stageIndex];
-        const max = Math.round(cfg.maxLoops);
+        const max = es.maxLoops;
         tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">LOOP ${es.loop + 1}<span style="font-size:16px;color:var(--dim)"> / ${max}</span></div>`;
         const destroyed = es.destroyedPerLoop[es.loop] ?? 0;
         tr.innerHTML = `<div class="big">${destroyed}<span style="font-size:16px;color:var(--dim)"> / ${st.stars.length}</span></div><div>このループで壊した星　最多 ${es.best}</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;

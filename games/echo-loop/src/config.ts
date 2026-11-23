@@ -20,6 +20,9 @@ const base = (p: NovaConfig): EchoConfig => ({
   ...p,
   // 1ループが短いので、チャージは時間で減らさない（ループごとに全部戻る）
   decayFloor: 6,
+  // 10秒で群れを1つ落とせるよう、2回当てると爆発し、爆風は近くの星を必ず巻き込む
+  maxCharge: 2,
+  blastCharge: 2,
   ballSave: 0,
   balls: 1,
   twist: 0,
