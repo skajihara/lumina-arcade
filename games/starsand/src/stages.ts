@@ -68,10 +68,10 @@ export const stages: StageDef[] = [
     name: '三つの注ぎ口',
     hint: '色ごとに、その色の器へ。流れを交わらせるな',
     walls: [{ x: 0, y: 70, w: 18, h: 4 }],
-    sources: [{ x: 30, y: 2, color: 0, total: 700, rate: 3, width: 5 }, { x: 100, y: 2, color: 1, total: 700, rate: 3, width: 5 }, { x: 170, y: 2, color: 2, total: 700, rate: 3, width: 5 }],
+    sources: [{ x: 30, y: 2, color: 0, total: 700, rate: 3, width: 5 }, { x: 100, y: 2, color: 1, total: 700, rate: 3, width: 5 }, { x: 196, y: 2, color: 2, total: 700, rate: 3, width: 5 }],
     boxes: [cupBox(52, H - 22, 26, 18, 250, 0), cupBox(122, H - 22, 26, 18, 250, 1), cupBox(160, H - 50, 30, 16, 280, 2)],
     ink: 560,
-    solution: [[{ x: 22, y: 30 }, { x: 66, y: 60 }], [{ x: 92, y: 30 }, { x: 136, y: 60 }], [{ x: 178, y: 20 }, { x: 175, y: 30 }]],
+    solution: [[{ x: 22, y: 30 }, { x: 66, y: 60 }], [{ x: 92, y: 30 }, { x: 136, y: 60 }], [{ x: 199, y: 24 }, { x: 178, y: 40 }]],
   }),
   stage({
     id: 'ss-06',
