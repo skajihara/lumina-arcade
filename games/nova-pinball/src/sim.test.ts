@@ -88,6 +88,51 @@ describe('NovaSim', () => {
     expect(bot.stats.aimed).toBeGreaterThan(0);
   });
 
+  describe('盤面ギミック', () => {
+    const gStage: StageDef = { id: 'g', name: 'g', hint: '', stars: [{ x: 7, y: 10 }], links: [], outlanes: true, slings: true, rollovers: true };
+    const drop = (x: number, y: number, vy: number, c = cfg()) => {
+      const sim = new NovaSim(gStage, c);
+      const b = sim.balls[0].body;
+      b.setPosition({ x, y });
+      b.setLinearVelocity({ x: 0, y: vy });
+      const ev: string[] = [];
+      for (let i = 0; i < 360; i++) {
+        sim.step(0);
+        for (const e of sim.events) ev.push(e.t);
+      }
+      return { sim, ev };
+    };
+    it('アウトレーンに落ちるとキックバックで打ち返す（1回だけ）', () => {
+      const { sim, ev } = drop(1.0, 15, 0);
+      expect(ev).toContain('kickback');
+      expect(ev).not.toContain('drain');
+      expect(sim.kickback.L).toBe(false);
+    });
+    it('キックバックが消えていればアウトレーンはドレイン', () => {
+      const c = cfg();
+      c.kickbackStart = 0;
+      const { ev } = drop(12.7, 15, 0, c);
+      expect(ev).toContain('drain');
+    });
+    it('スリングショットが弾く', () => {
+      expect(drop(3.0, 14, 3).ev).toContain('sling');
+    });
+    it('ロールオーバーを3つ灯すとボールセーブが点く', () => {
+      const sim = new NovaSim(gStage, cfg());
+      sim.rollLit = [true, false, true];
+      const b = sim.balls[0].body;
+      b.setPosition({ x: 6.9, y: 3 });
+      b.setLinearVelocity({ x: 0, y: -8 });
+      let all = false;
+      for (let i = 0; i < 120; i++) {
+        sim.step(0);
+        for (const e of sim.events) if (e.t === 'roll' && e.all) all = true;
+      }
+      expect(all).toBe(true);
+      expect(sim.saveActive()).toBe(true);
+    });
+  });
+
   it('全ステージがボットで壊せる星を持つ（配置が壊れていない）', () => {
     for (const st of stages) {
       const sim = runBot(st, 90, 3);

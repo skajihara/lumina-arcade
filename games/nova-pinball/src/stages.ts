@@ -18,7 +18,9 @@ export interface BumperDef {
   r: number;
 }
 
-export interface StageDef {
+import type { BoardOpts } from './sim';
+
+export interface StageDef extends BoardOpts {
   id: string;
   name: string;
   hint: string;
@@ -70,6 +72,7 @@ function milkyWay(): StarDef[] {
 export const stages: StageDef[] = [
   {
     id: 'arc',
+    rollovers: true,
     name: 'はじまりの弧',
     hint: '星に3回当てると爆発。1回当てた星は灯ったまま残り、近くの爆発で連鎖する',
     stars: [
@@ -81,6 +84,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'corona',
+    slings: true, rollovers: true,
     name: '冠',
     hint: '灯した星だけが連鎖する。全部灯してから点火すれば星座が完成',
     stars: arc(6.9, 10.2, 3.9, Math.PI + 0.3, Math.PI * 2 - 0.3, 7),
@@ -89,6 +93,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'spiral',
+    slings: true, rollovers: true,
     name: '渦',
     hint: '中心から外へ。チャージを育ててから一気に',
     stars: spiral(),
@@ -98,6 +103,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'drift',
+    slings: true, rollovers: true,
     name: '漂う星',
     hint: '固定されていない星は爆風で飛ぶ。ぶつかってもチャージされる',
     stars: [
@@ -109,6 +115,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'gemini',
+    slings: true, rollovers: true,
     name: 'ふたご座',
     hint: '離れた星座は別々に点火。灯りより上のチャージは時間で減る',
     stars: [
@@ -116,11 +123,11 @@ export const stages: StageDef[] = [
       { x: 9.6, y: 5.0 }, { x: 9.6, y: 7.2 }, { x: 9.6, y: 9.4 },
     ],
     links: [[0, 1], [1, 2], [3, 4], [4, 5], [0, 3]],
-    bumpers: [{ x: 6.9, y: 14.2, r: 0.45 }],
     hue: 0.7,
   },
   {
     id: 'orion',
+    slings: true, outlanes: true, rollovers: true,
     name: 'オリオン',
     hint: '漂う星を橋にして、肩から足まで一気に繋げ',
     stars: [
@@ -130,11 +137,11 @@ export const stages: StageDef[] = [
       { x: 5.3, y: 6.4, r: 0.4, loose: true }, { x: 8.5, y: 6.8, r: 0.4, loose: true },
     ],
     links: [[0, 2], [1, 4], [2, 3], [3, 4], [4, 5], [2, 6]],
-    bumpers: [{ x: 2.6, y: 15.4, r: 0.45 }, { x: 11.2, y: 15.4, r: 0.45 }],
     hue: 0.6,
   },
   {
     id: 'libra',
+    slings: true, outlanes: true, rollovers: true,
     name: '天秤',
     hint: '惑星（灰色の玉）は爆発しないが、よく弾く',
     stars: [
@@ -148,11 +155,12 @@ export const stages: StageDef[] = [
   },
   {
     id: 'milkyway',
+    slings: true, outlanes: true, rollovers: true,
     name: '天の川',
     hint: '最後は大連鎖。全部まとめて燃やせ',
     stars: milkyWay(),
     links: chainLinks(0, 13),
-    bumpers: [{ x: 3.4, y: 15.6, r: 0.55 }, { x: 10.4, y: 16.4, r: 0.55 }, { x: 6.9, y: 16.2, r: 0.4 }],
+    bumpers: [{ x: 6.9, y: 16.2, r: 0.4 }],
     hue: 0.66,
   },
 ];

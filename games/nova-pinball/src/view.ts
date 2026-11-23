@@ -4,7 +4,7 @@ import { glowTexture, ringTexture, sparkleTexture, skyTexture, makeStarfield, hs
 import { Particles } from '@engine/particles';
 import { synth } from '@engine/audio';
 import type { Juice } from '@engine/juice';
-import { BALL_R, BOARD_H, BOARD_W, boardWalls, type NovaSim, type SimEvent } from './sim';
+import { BALL_R, BOARD_H, BOARD_W, boardWalls, SLING_L, SLING_R, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
 import type { NovaConfig } from './config';
 
 export const SCALE = 40; // 1メートル = 40px
@@ -52,6 +52,9 @@ export class NovaView {
   private palette: number[];
   private linksDirty = true;
   private bumperFlash: number[] = [];
+  private gimmicks = new Graphics();
+  private slingFlash = { L: 0, R: 0 };
+  private rollFlash = [0, 0, 0];
 
   constructor(private sim: NovaSim, private juice: Juice, private cfg: NovaConfig, private hud: { chain(n: number): void; toast(msg: string): void }) {
     this.hue = sim.stage.hue ?? 0.62;
@@ -60,7 +63,7 @@ export class NovaView {
     this.sky.width = VIEW_W;
     this.sky.height = VIEW_H;
     this.field = makeStarfield(VIEW_W, VIEW_H, 180, 11 + sim.stage.id.length);
-    this.container.addChild(this.sky, this.field.container, this.board, this.links, this.bumperG, this.starLayer);
+    this.container.addChild(this.sky, this.field.container, this.board, this.gimmicks, this.links, this.bumperG, this.starLayer);
     this.drawBoard();
     this.buildStars();
     for (const f of sim.flippers) {
@@ -81,7 +84,7 @@ export class NovaView {
   private drawBoard(): void {
     const g = this.board;
     g.clear();
-    const walls = boardWalls();
+    const walls = boardWalls(this.sim.stage);
     const col = hsl(this.hue, 0.7, 0.72);
     for (const [w, a] of [[10, 0.08], [5, 0.18], [2, 0.9]] as const) {
       for (const line of walls) {
@@ -168,6 +171,31 @@ export class NovaView {
         synth.chord(5, [0, 2, 4, 5, 7, 9], 0.07, 0.12);
         this.hud.toast('SUPERNOVA！ 星座完成 ＋1ボール');
         this.particles.emit(VIEW_W / 2, VIEW_H * 0.35, { count: 260, speed: [100, 900], life: [0.8, 2.2], size: [0.08, 0.4], color: [0xffe7a8, 0xffffff, ...this.palette], drag: 1.2 });
+        break;
+      case 'sling': {
+        this.slingFlash[e.side] = 1;
+        synth.tone(e.side === 'L' ? 523 : 587, 0.12, { type: 'square', vol: 0.06, slideTo: 880 });
+        this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 12, speed: [80, 260], life: [0.2, 0.45], size: [0.05, 0.12], color: this.palette[1] });
+        this.juice.shake(0.06 * this.cfg.shake);
+        break;
+      }
+      case 'roll': {
+        this.rollFlash[e.id] = 1;
+        const r = ROLLOVERS[e.id];
+        synth.bell(7 + e.id, 0.1);
+        this.particles.emit(r.x * SCALE, r.y * SCALE, { count: 14, speed: [40, 160], life: [0.3, 0.6], size: [0.05, 0.12], color: 0xffe1a8 });
+        if (e.all) {
+          this.rollFlash = [1, 1, 1];
+          synth.chord(7, [0, 4, 7], 0.06, 0.1);
+          this.hud.toast('三つ星そろい！ ボールセーブ点灯');
+        }
+        break;
+      }
+      case 'kickback':
+        synth.whoosh(1.4);
+        this.juice.shake(0.12 * this.cfg.shake);
+        this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [80, 300], life: [0.3, 0.7], size: [0.05, 0.14], color: 0x7ff0ff });
+        this.hud.toast('キックバック！');
         break;
       case 'flip':
         synth.click(e.side === 'L' ? 1 : 1.12);
@@ -295,6 +323,8 @@ export class NovaView {
       bg.ellipse(b.x * SCALE, b.y * SCALE, R * 1.6, R * 0.35).stroke({ width: 1.5, color: 0xbfc8e8, alpha: 0.5 });
     });
 
+    this.drawGimmicks(realDt);
+
     // フリッパー
     sim.flippers.forEach((f, i) => {
       const g = this.flippers[i];
@@ -379,6 +409,60 @@ export class NovaView {
     this.particles.update(realDt);
     // 背景の星をかすかに漂わせる
     this.field.container.y = Math.sin(this.t * 0.1) * 4;
+  }
+
+  /** スリングショット・ロールオーバー・ボールセーブの灯り */
+  private drawGimmicks(dt: number): void {
+    const g = this.gimmicks;
+    const sim = this.sim;
+    g.clear();
+    const col = hsl(this.hue, 0.7, 0.72);
+    if (sim.stage.slings) {
+      for (const [side, tri] of [['L', SLING_L], ['R', SLING_R]] as const) {
+        const f = (this.slingFlash[side] = Math.max(0, this.slingFlash[side] - dt * 4));
+        const pts = tri.flatMap((p) => [p.x * SCALE, p.y * SCALE]);
+        g.poly(pts).fill({ color: lerpColor(0x141a40, col, 0.15 + f * 0.6), alpha: 0.9 }).stroke({ width: 2, color: col, alpha: 0.85 });
+        const [A, , C] = tri;
+        g.moveTo(A.x * SCALE, A.y * SCALE).lineTo(C.x * SCALE, C.y * SCALE).stroke({ width: 4 + f * 8, color: 0xffffff, alpha: 0.35 + f * 0.6, cap: 'round' });
+      }
+    }
+    if (sim.stage.rollovers) {
+      ROLLOVERS.forEach((r, i) => {
+        const f = (this.rollFlash[i] = Math.max(0, this.rollFlash[i] - dt * 1.5));
+        const lit = sim.rollLit[i];
+        const x = r.x * SCALE, y = r.y * SCALE;
+        const R = ROLL_R * SCALE;
+        g.circle(x, y, R + 6 + f * 10).fill({ color: 0xffe1a8, alpha: (lit ? 0.18 : 0.04) + f * 0.3 });
+        g.circle(x, y, R).stroke({ width: 1.5, color: lit ? 0xffe1a8 : col, alpha: lit ? 0.95 : 0.4 });
+        // 小さな星形
+        const pts: number[] = [];
+        for (let k = 0; k < 8; k++) {
+          const a = -Math.PI / 2 + (k * Math.PI) / 4;
+          const rr = k % 2 === 0 ? R * 0.55 : R * 0.2;
+          pts.push(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        g.poly(pts).fill({ color: lit ? 0xfff3d6 : 0x48508a, alpha: lit ? 1 : 0.7 });
+      });
+    }
+    // キックバックの灯り（アウトレーンの上向き矢印）
+    if (sim.stage.outlanes) {
+      for (const [side, x] of [['L', 0.95], ['R', 12.85]] as const) {
+        const on = sim.kickback[side];
+        const a = on ? 0.6 + 0.3 * Math.sin(this.t * 5) : 0.18;
+        for (let k = 0; k < 3; k++) {
+          const y = (22.6 - k * 0.45) * SCALE;
+          g.moveTo(x * SCALE - 6, y + 4).lineTo(x * SCALE, y - 3).lineTo(x * SCALE + 6, y + 4)
+            .stroke({ width: 2, color: on ? 0x7ff0ff : col, alpha: a * (1 - k * 0.2), cap: 'round', join: 'round' });
+        }
+      }
+    }
+    // ボールセーブの灯り（フリッパーの間）
+    const cx = ((PIVOT_L.x + PIVOT_R.x) / 2) * SCALE, cy = (PIVOT_L.y + 1.4) * SCALE;
+    if (sim.saveActive()) {
+      const a = 0.55 + 0.35 * Math.sin(this.t * 8);
+      g.circle(cx, cy, 14).fill({ color: 0x7ff0ff, alpha: a * 0.25 });
+      g.circle(cx, cy, 5).fill({ color: 0xcffaff, alpha: a });
+    } else g.circle(cx, cy, 4).stroke({ width: 1, color: col, alpha: 0.3 });
   }
 
   destroy(): void {
