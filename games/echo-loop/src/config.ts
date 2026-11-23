@@ -7,6 +7,10 @@ export interface EchoConfig extends NovaConfig {
   maxLoops: number;
   /** 残響どうしがぶつかるか（0/1）。今のボールと残響は常にぶつかる */
   echoCollide: number;
+  /** ひねり「共鳴」：違うループの自分が、この秒数以内に同じ星へ当てるとすぐ爆発（0 で無し） */
+  resonance: number;
+  /** 共鳴した星の爆風の大きさ（倍） */
+  resonanceBlast: number;
 }
 
 // ループの項目を先に（調整パネルで上に出る）
@@ -14,6 +18,8 @@ export const schema = Object.assign({
   loopSec: { label: '1ループの秒数', min: 5, max: 20, step: 0.5, folder: 'ループ', restart: true },
   maxLoops: { label: '最大ループ数', min: 2, max: 12, step: 1, folder: 'ループ', restart: true },
   echoCollide: { label: '残響どうしがぶつかる（0/1）', min: 0, max: 1, step: 1, folder: 'ループ', restart: true },
+  resonance: { label: '共鳴：同時とみなす秒数（0で無し）', min: 0, max: 1.5, step: 0.05, folder: 'ループ' },
+  resonanceBlast: { label: '共鳴の爆風の大きさ（倍）', min: 1, max: 3, step: 0.05, folder: 'ループ' },
 }, novaSchema) as Schema<EchoConfig>;
 
 const base = (p: NovaConfig): EchoConfig => ({
@@ -31,6 +37,8 @@ const base = (p: NovaConfig): EchoConfig => ({
   loopSec: 10,
   maxLoops: 6,
   echoCollide: 0,
+  resonance: 0.4,
+  resonanceBlast: 1.6,
 });
 
 export const presets: Record<string, EchoConfig> = {

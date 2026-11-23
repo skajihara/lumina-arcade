@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { hashNumbers } from '@engine/rng';
 import { presets, DEFAULT_PRESET } from './config';
-import { EchoSim } from './sim';
+import { EchoSim, echoBias } from './sim';
+import { stages as echoStages } from './stages';
 import { stages } from '../../nova-pinball/src/stages';
 import { NovaBot } from '../../nova-pinball/src/bot';
 import type { StageDef } from '../../nova-pinball/src/stages';
@@ -83,4 +84,20 @@ describe('EchoSim', () => {
     for (let i = 0; i < 60 && es.phase === 'play'; i++) es.step(0);
     expect(es.phase).toBe('clear');
   });
+
+  it('共鳴：違うループの自分がほぼ同時に同じ星を打つと共鳴が起き、共鳴なしの設定では起きない', () => {
+    const count = (res: number) => {
+      let n = 0;
+      for (let r = 0; r < 4; r++) {
+        const st = echoStages[8];
+        const es = new EchoSim(st, { ...cfg(), resonance: res });
+        const bot = new NovaBot(r + 1 + 8 * 31, 0.85);
+        bot.bias = echoBias(es);
+        while (es.phase === 'play') { bot.owner = es.loop; es.step(bot.input(es.sim)); n += es.events.filter((e) => (e as { t: string }).t === 'resonance').length; }
+      }
+      return n;
+    };
+    expect(count(0.4)).toBeGreaterThan(0);
+    expect(count(0)).toBe(0);
+  }, 60_000);
 });
