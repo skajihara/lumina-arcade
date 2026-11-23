@@ -19,6 +19,8 @@ interface Progress {
 }
 
 const params = new URLSearchParams(location.search);
+/** ステージごとのキー（C からの半音） */
+const STAGE_KEYS = [0, 5, -3, 2, 7, -2, 4, -5, 1, 6, -4, 3];
 
 async function main() {
   injectBaseStyle();
@@ -92,6 +94,8 @@ async function main() {
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);
+    // ステージごとにキー（環境音の根音と和音）を変える
+    synth.setKey(STAGE_KEYS[i % STAGE_KEYS.length]);
   };
 
   const rating = (s: NovaSim) => {
@@ -229,6 +233,9 @@ async function main() {
       ga.flash.alpha = juice.flash;
       ga.flash.tint = juice.flashColor;
       view?.update(realDt);
+      // 発射の溜め音
+      if (mode === 'play' && sim && sim.launchCharge > 0) synth.chargeTone(sim.launchCharge);
+      else synth.chargeTone(-1);
       if (sim) {
         const st = stages[stageIndex];
         tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${sim.score.toLocaleString()}</div>`;

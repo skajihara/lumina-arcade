@@ -10,12 +10,53 @@ export function pentatonicFreq(step: number, root = 261.63): number {
   return root * Math.pow(2, oct + deg / 12);
 }
 
+/**
+ * 和音進行（キーの根音からの半音）。連鎖が進むと次の和音へ移る。
+ * Imaj9 → vi9 → IVmaj9 → V9sus：夜空らしい、解決しきらない浮遊感のある進行
+ */
+export const PROGRESSION: number[][] = [
+  [0, 4, 7, 11, 14],
+  [-3, 0, 4, 7, 11],
+  [-7, -3, 0, 4, 7],
+  [-5, 0, 2, 5, 9],
+];
+
+export class Harmony {
+  chordIdx = 0;
+  /** キー（C からの半音） */
+  key = 0;
+  constructor(public progression: number[][] = PROGRESSION) {}
+  chord(): number[] {
+    return this.progression[this.chordIdx % this.progression.length];
+  }
+  /** 今の和音の n 番目の音（構成音を上へ積む）。C4 からの半音 */
+  semis(n: number): number {
+    const c = this.chord();
+    const len = c.length;
+    const k = ((n % len) + len) % len;
+    return this.key + c[k] + 12 * Math.floor(n / len);
+  }
+  freq(n: number, base = 261.63): number {
+    return base * Math.pow(2, this.semis(n) / 12);
+  }
+  advance(): void {
+    this.chordIdx++;
+  }
+  reset(key = 0): void {
+    this.key = key;
+    this.chordIdx = 0;
+  }
+}
+
 export class Synth {
   ctx: AudioContext | null = null;
   private master!: GainNode;
   private reverbSend!: GainNode;
   private noiseBuf!: AudioBuffer;
-  private ambient: { stop(): void } | null = null;
+  private ambient: { stop(): void; oscs: OscillatorNode[] } | null = null;
+  private ambientRoot = 65.41;
+  private charging: { o: OscillatorNode; g: GainNode } | null = null;
+  readonly harmony = new Harmony();
   volume = 0.7;
   muted = false;
 
@@ -117,12 +158,86 @@ export class Synth {
     this.tone(f * 3.98, 0.25, { vol: vol * 0.12, wet: 0.7 });
   }
 
-  /** 爆発音。intensity 0..1、step は連鎖段数 */
+  /** 和音の n 番目の音を鈴の音色で鳴らす */
+  hbell(n: number, vol = 0.12, dur = 0.9): void {
+    const f = this.harmony.freq(n, 392 / Math.pow(2, 7 / 12));
+    this.tone(f, dur, { vol, wet: 0.7 });
+    this.tone(f * 2.01, dur * 0.55, { vol: vol * 0.35, wet: 0.7 });
+    this.tone(f * 3.98, dur * 0.28, { vol: vol * 0.12, wet: 0.7 });
+  }
+
+  /** 和音の構成音を順に鳴らす（アルペジオ） */
+  arp(notes: number[], spread = 0.07, vol = 0.1): void {
+    if (!this.ctx) return;
+    notes.forEach((n, k) => setTimeout(() => this.hbell(n, vol), k * spread * 1000));
+  }
+
+  /** 今の和音を柔らかい持続音で鳴らす */
+  pad(vol = 0.05, dur = 2.6): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (let k = 0; k < 4; k++) {
+      const f = this.harmony.freq(k, 130.81);
+      this.tone(f, dur, { type: 'triangle', vol, attack: 0.25, wet: 0.9 });
+    }
+  }
+
+  /** 次の和音へ進む（持続音と環境音も一緒に移る） */
+  nextChord(padVol = 0.05): void {
+    this.harmony.advance();
+    this.pad(padVol);
+    this.retuneAmbient();
+  }
+
+  /** 爆発音。intensity 0..1、step は連鎖段数（和音の構成音を上がっていく） */
   boom(intensity: number, step: number): void {
     const i = Math.min(1, Math.max(0, intensity));
     this.noise(0.35 + i * 0.5, { vol: 0.25 + i * 0.35, from: 2500 + i * 3000, to: 80 });
     this.tone(110 - i * 40, 0.5 + i * 0.4, { type: 'sine', vol: 0.35 + i * 0.2, slideTo: 35, wet: 0.2 });
-    this.bell(step, 0.1 + i * 0.05);
+    this.hbell(step + 2, 0.1 + i * 0.05);
+  }
+
+  /** フリッパー：低い「トン」と軽い打鍵音 */
+  flipper(pitch = 1): void {
+    this.tone(160 * pitch, 0.09, { type: 'sine', vol: 0.16, slideTo: 70, wet: 0.05 });
+    this.tone(1400 * pitch, 0.03, { type: 'triangle', vol: 0.04, wet: 0.1 });
+    this.noise(0.05, { vol: 0.06, from: 3000, to: 600, wet: 0 });
+  }
+
+  /** 発射の溜め：押している間、音が上がっていく。level<0 で止める */
+  chargeTone(level: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (level < 0) {
+      if (this.charging) {
+        const c = this.charging;
+        c.g.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
+        setTimeout(() => c.o.stop(), 200);
+        this.charging = null;
+      }
+      return;
+    }
+    if (!this.charging) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      o.connect(g);
+      this.out(g, 0.4);
+      o.start();
+      this.charging = { o, g };
+    }
+    const f = this.harmony.freq(Math.floor(level * 6), 130.81);
+    this.charging.o.frequency.setTargetAtTime(f, ctx.currentTime, 0.02);
+    this.charging.g.gain.setTargetAtTime(0.025 + level * 0.035, ctx.currentTime, 0.05);
+  }
+
+  /** 発射：風切り音と、強さに応じて駆け上がるアルペジオ */
+  launch(power: number): void {
+    this.chargeTone(-1);
+    this.whoosh(0.6 + power);
+    const n = 2 + Math.round(power * 4);
+    this.arp(Array.from({ length: n }, (_, k) => 4 + k), 0.035, 0.05 + power * 0.03);
   }
 
   click(pitch = 1): void {
@@ -154,10 +269,11 @@ export class Synth {
     const lfoG = ctx.createGain();
     lfoG.gain.value = 300;
     lfo.connect(lfoG).connect(f.frequency);
+    this.ambientRoot = rootHz;
     const oscs = [1, 1.5, 2.005, 3.01].map((m, k) => {
       const o = ctx.createOscillator();
       o.type = k % 2 ? 'triangle' : 'sine';
-      o.frequency.value = rootHz * m;
+      o.frequency.value = this.ambientFreq(k) * (m === 2.005 ? 1.0025 : 1);
       o.detune.value = (k - 1.5) * 6;
       o.connect(f);
       o.start();
@@ -167,12 +283,32 @@ export class Synth {
     this.out(g, 0.8);
     lfo.start();
     this.ambient = {
+      oscs,
       stop: () => {
         g.gain.setTargetAtTime(0, ctx.currentTime, 0.5);
         setTimeout(() => { oscs.forEach((o) => o.stop()); lfo.stop(); }, 2000);
       },
     };
   }
+  /** 環境音の k 番目の声：今の和音の構成音（低音域） */
+  private ambientFreq(k: number): number {
+    const c = this.harmony.chord();
+    const semis = [c[0] - 12, c[2] - 12, c[0], c[1]][k] ?? 0;
+    return this.ambientRoot * Math.pow(2, (semis + this.harmony.key) / 12);
+  }
+
+  private retuneAmbient(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.ambient) return;
+    this.ambient.oscs.forEach((o, k) => o.frequency.setTargetAtTime(this.ambientFreq(k), ctx.currentTime, 0.8));
+  }
+
+  /** ステージのキー（C からの半音）を決め、和音進行を最初に戻す */
+  setKey(key: number): void {
+    this.harmony.reset(key);
+    this.retuneAmbient();
+  }
+
   stopAmbient(): void {
     this.ambient?.stop();
     this.ambient = null;
