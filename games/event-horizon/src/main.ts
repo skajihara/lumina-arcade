@@ -102,6 +102,7 @@ async function main() {
   const goalFlash: number[] = [];
   let burstRings: { x: number; y: number; r: number; age: number }[] = [];
   let whiteHole = 0;
+  let holdTold = false;
   let lastInput: HorizonInput = { x: 0, y: 0, bits: 0 };
 
   const closeMenu = () => { menu?.remove(); menu = null; };
@@ -232,7 +233,7 @@ async function main() {
       <h1>EVENT HORIZON</h1>
       <h2>事 象 の 地 平 ク レ ー ン</h2>
       <p>爪の代わりに、小さなブラックホール。<br>引き寄せたかけらは輪に乗って周回する。<br>
-      速く動かしすぎると、地平の内へ落ちて消える。<br>地平のそばでは時間が遅れる。<br>
+      速く動かしすぎると、地平の内へ落ちる${Math.round(cfg.twist) % 2 === 1 ? ` — 落ちたかけらは ${cfg.holdSec} 秒だけ抱えていられる。<b style="color:#7ff0ff">解放で吐き出せ</b>（遅れると蒸発）` : 'て消える'}。<br>地平のそばでは時間が遅れる。<br>
       星座の穴には近づけない — 輪ごと運んで<b style="color:var(--ink)">解放</b>で投げ入れろ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
@@ -353,6 +354,31 @@ async function main() {
         toast('地平の向こうへ…');
         break;
       }
+      case 'hold': {
+        // 地平に抱えた：吸い込まれる筋は水色。まだ失っていない
+        const bx = sim.bh.x * SCALE, by = sim.bh.y * SCALE;
+        const ang = Math.atan2(by - e.y * SCALE, bx - e.x * SCALE);
+        particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [200, 420], angle: ang, spread: 0.6, life: [0.12, 0.25], size: [0.04, 0.1], color: [0x7ff0ff, 0xffffff], drag: 0 });
+        synth.tone(220, 0.5, { type: 'sine', vol: 0.1, slideTo: 110 });
+        juice.shake(0.08 * cfg.shake);
+        if (!holdTold) { toast('地平に抱えた — 解放（Space）で吐き出せ'); holdTold = true; }
+        break;
+      }
+      case 'spit': {
+        const x = e.x * SCALE, y = e.y * SCALE;
+        particles.emit(x, y, { count: 50 + e.n * 25, speed: [150, 650], life: [0.3, 0.9], size: [0.05, 0.2], color: [0x7ff0ff, 0xffffff, 0xffd98a], drag: 1.4 });
+        juice.hitstop(0.05);
+        juice.shake((0.2 + e.n * 0.08) * cfg.shake);
+        synth.arp([7, 4, 9, 11, 14].slice(0, Math.min(5, e.n + 1)), 0.03, 0.09);
+        if (e.n >= 2) toast(`吐き出し ×${e.n}`);
+        break;
+      }
+      case 'evaporate': {
+        particles.emit(e.x * SCALE, e.y * SCALE, { count: 30, speed: [30, 140], life: [0.4, 0.9], size: [0.04, 0.1], color: [0xff8a6b, 0xffb36b], drag: 1 });
+        synth.tone(160, 0.9, { type: 'sine', vol: 0.14, slideTo: 40 });
+        toast('抱えすぎて蒸発した…');
+        break;
+      }
       case 'clink': {
         const k = Math.min(1, (e.v - 3) / 10);
         particles.emit(e.x * SCALE, e.y * SCALE, { count: 4 + Math.round(k * 10), speed: [40, 160 + k * 200], life: [0.15, 0.4], size: [0.03, 0.08], color: [0xffffff, 0xbfe8ff] });
@@ -458,6 +484,14 @@ async function main() {
         gg.moveTo(x + Math.cos(a0) * guard, y + Math.sin(a0) * guard).lineTo(x + Math.cos(a1) * guard, y + Math.sin(a1) * guard);
       }
       gg.stroke({ width: 1.2, color: 0xffd98a, alpha: 0.18 });
+      // ひねり2：かけらの入った穴は重力を持つ — 外から縁へ縮んでいく輪
+      if (s.goalGravity && s.goalFilled[i] && cfg.goalPull > 0) {
+        const reach = (g.r + cfg.goalPullR) * SCALE;
+        for (let k = 0; k < 3; k++) {
+          const f = 1 - ((t * 0.7 + k / 3) % 1);
+          gg.circle(x, y, r + (reach - r) * f).stroke({ width: 1.5, color: 0xffd98a, alpha: 0.28 * (1 - f) + 0.04 });
+        }
+      }
       gg.circle(x, y, r * 1.25).fill({ color: 0xffd98a, alpha: 0.05 + goalFlash[i] * 0.25 });
       gg.circle(x, y, r).fill({ color: 0x05040e, alpha: 0.85 }).stroke({ width: 2, color: 0xffd98a, alpha: 0.55 + goalFlash[i] * 0.45 });
       for (let k = 0; k < 6; k++) {
@@ -513,6 +547,21 @@ async function main() {
     holeG.circle(bx, by, hr + 2).stroke({ width: 2.5, color: 0xfff0c8, alpha: 0.65 + glow * 0.35 });
     holeG.circle(bx, by, hr + 6).stroke({ width: 4, color: 0xffb36b, alpha: 0.12 + glow * 0.2 });
     if (s.cooldown > 0) holeG.circle(bx, by, hr + 10).stroke({ width: 2, color: 0xffffff, alpha: Math.min(1, s.cooldown / cfg.burstCooldown) * 0.6 });
+    // ひねり1：抱えているかけら — 地平の中を小さく回る光。蒸発が近いと点滅し、赤みを帯びる
+    const held = s.held();
+    held.forEach((sh, k) => {
+      const left = (sh.heldUntil ?? 0) - s.worldTime;
+      const a = t * 5 + (k * Math.PI * 2) / held.length;
+      const rr = hr * 0.55;
+      const blink = left < 1.2 ? 0.4 + 0.6 * Math.abs(Math.sin(t * 14)) : 1;
+      holeG.circle(bx + Math.cos(a) * rr, by + Math.sin(a) * rr, sh.kind === 'heavy' ? 4 : 3).fill({ color: left < 1.2 ? 0xff8a6b : SHARD_COLOR[sh.kind], alpha: blink });
+    });
+    if (held.length) {
+      // 残り時間の弧（一番早く蒸発するかけら）
+      const left = Math.min(...held.map((h) => (h.heldUntil ?? 0) - s.worldTime));
+      const k = Math.max(0, Math.min(1, left / cfg.holdSec));
+      holeG.arc(bx, by, hr + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k).stroke({ width: 3, color: k < 0.3 ? 0xff8a6b : 0x7ff0ff, alpha: 0.85 });
+    }
     drawDisk(diskFrontG, true, bx, by, glow);
     // 解放の衝撃波の輪
     const fg = fxG;

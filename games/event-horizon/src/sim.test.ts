@@ -14,8 +14,8 @@ const stage: StageDef = {
 };
 
 /** 入力を作る関数でティックを回す */
-function run(st: StageDef, ticks: number, f: (i: number, s: HorizonSim) => HorizonInput) {
-  const sim = new HorizonSim(st, cfg());
+function run(st: StageDef, ticks: number, f: (i: number, s: HorizonSim) => HorizonInput, over: Record<string, number> = {}) {
+  const sim = new HorizonSim(st, { ...cfg(), ...over } as ReturnType<typeof cfg>);
   const ev: string[] = [];
   for (let i = 0; i < ticks; i++) {
     sim.step(f(i, sim));
@@ -50,9 +50,9 @@ describe('HorizonSim', () => {
     expect(lifted(0)).toBeGreaterThan(11.5);
   });
 
-  it('地平の内側に入ったかけらは吸い込まれて消える', () => {
+  it('地平の内側に入ったかけらは吸い込まれて消える（ひねりなし）', () => {
     // 上から勢いよく突っ込むと、輪に乗りきれずに地平の内へ入る
-    const { sim, ev } = run({ ...stage, start: { x: 5, y: 5 } }, 400, () => ({ x: 5, y: 11.6, bits: IN_PULL }));
+    const { sim, ev } = run({ ...stage, start: { x: 5, y: 5 } }, 400, () => ({ x: 5, y: 11.6, bits: IN_PULL }), { twist: 0 });
     expect(ev).toContain('swallow');
     expect(sim.shards[0].state).toBe('lost');
   });
@@ -91,5 +91,44 @@ describe('HorizonSim', () => {
     const { sim, ev } = run(st, 400, () => ({ x: 15, y: 3, bits: 0 }));
     expect(ev).toContain('fall');
     expect(sim.phase).toBe('fail');
+  });
+
+  it('ひねり1：地平に入ったかけらは抱えられ、解放で吐き出される（抱えすぎると蒸発）', () => {
+    const one: StageDef = { id: 't1', name: 't', hint: '', shards: [{ x: 10, y: 6 }], goals: [{ x: 2, y: 2, r: 1 }], need: 1, start: { x: 10, y: 6.1 } };
+    const sim = new HorizonSim(one, { ...cfg(), twist: 1, gravity: 0 });
+    sim.step({ x: 10, y: 6, bits: 0 });
+    expect(sim.shards[0].state).toBe('held');
+    expect(sim.phase).toBe('play');
+    for (let i = 0; i < 30; i++) sim.step({ x: 10, y: 6, bits: 0 });
+    sim.step({ x: 10, y: 6, bits: IN_BURST });
+    expect(sim.shards[0].state).toBe('free');
+    const v = sim.shards[0].body.getLinearVelocity();
+    expect(Math.hypot(v.x, v.y)).toBeGreaterThan(5);
+    // もう一度抱えて、解放しないと蒸発する
+    const sim2 = new HorizonSim(one, { ...cfg(), twist: 1, gravity: 0, holdSec: 1 });
+    let ev: string[] = [];
+    for (let i = 0; i < 200; i++) { sim2.step({ x: 10, y: 6, bits: 0 }); ev = ev.concat(sim2.events.map((e) => e.t)); }
+    expect(ev).toContain('evaporate');
+    expect(sim2.shards[0].state).toBe('lost');
+    expect(sim2.phase).toBe('fail');
+  });
+
+  it('ひねりなしでは、地平に入ったかけらはすぐ失われる', () => {
+    const one: StageDef = { id: 't1', name: 't', hint: '', shards: [{ x: 10, y: 6 }], goals: [{ x: 2, y: 2, r: 1 }], need: 1, start: { x: 10, y: 6.1 } };
+    const sim = new HorizonSim(one, { ...cfg(), twist: 0, gravity: 0 });
+    sim.step({ x: 10, y: 6, bits: 0 });
+    expect(sim.shards[0].state).toBe('lost');
+  });
+
+  it('ひねり2：かけらが入った穴は、縁の近くのかけらを引き込む', () => {
+    const st: StageDef = { id: 't2', name: 't', hint: '', shards: [{ x: 5, y: 5 }, { x: 5 + 1 + 1.2, y: 5 }], goals: [{ x: 5, y: 5, r: 1 }], need: 2, start: { x: 15, y: 10 } };
+    const sim = new HorizonSim(st, { ...cfg(), twist: 2, gravity: 0 });
+    sim.step({ x: 15, y: 10, bits: 0 });
+    expect(sim.goalFilled[0]).toBe(true);
+    for (let i = 0; i < 240 && sim.phase === 'play'; i++) sim.step({ x: 15, y: 10, bits: 0 });
+    expect(sim.phase).toBe('clear');
+    const off = new HorizonSim(st, { ...cfg(), twist: 0, gravity: 0 });
+    for (let i = 0; i < 240; i++) off.step({ x: 15, y: 10, bits: 0 });
+    expect(off.phase).toBe('play');
   });
 });

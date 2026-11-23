@@ -66,8 +66,10 @@ export interface Shard {
   kind: ShardKind;
   r: number;
   body: Body;
-  /** 'free' 遊んでいる / 'captured' 穴に入った / 'lost' 吸い込まれた・落ちた */
-  state: 'free' | 'captured' | 'lost';
+  /** 'free' 遊んでいる / 'captured' 穴に入った / 'lost' 吸い込まれた・落ちた / 'held' ひねり1：地平の内に抱えている */
+  state: 'free' | 'captured' | 'lost' | 'held';
+  /** 'held' の時：この世界時刻を過ぎると蒸発する */
+  heldUntil?: number;
   /** 引力の効きやすさ（重いかけらは鈍い） */
   pullScale: number;
 }
@@ -79,6 +81,12 @@ export type HorizonEvent =
   | { t: 'burst'; x: number; y: number; n: number; r: number }
   | { t: 'chainEnd'; chain: number }
   | { t: 'spawn'; id: number }
+  /** ひねり1：地平の内に抱えた（まだ失っていない） */
+  | { t: 'hold'; id: number; x: number; y: number }
+  /** ひねり1：抱えていたかけらを吐き出した */
+  | { t: 'spit'; n: number; x: number; y: number }
+  /** ひねり1：抱えすぎて蒸発した */
+  | { t: 'evaporate'; id: number; x: number; y: number }
   | { t: 'clink'; x: number; y: number; v: number }
   | { t: 'clear' }
   | { t: 'fail'; why: 'lost' | 'time' };
@@ -114,6 +122,8 @@ export class HorizonSim {
   private prevBits = 0;
   private rng: Rng;
   private clinks: HorizonEvent[] = [];
+  /** ひねり2：かけらが1つでも入った穴 */
+  goalFilled: boolean[] = [];
 
   constructor(public stage: StageDef, public cfg: HorizonConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -172,6 +182,21 @@ export class HorizonSim {
   get need(): number {
     if (this.stage.attack) return Infinity;
     return this.stage.need ?? this.stage.shards.length;
+  }
+
+  get spits(): boolean {
+    const t = Math.round(this.cfg.twist ?? 0);
+    return t === 1 || t === 3;
+  }
+
+  get goalGravity(): boolean {
+    const t = Math.round(this.cfg.twist ?? 0);
+    return t === 2 || t === 3;
+  }
+
+  /** ひねり1：地平の内に抱えているかけら */
+  held(): Shard[] {
+    return this.shards.filter((s) => s.state === 'held');
   }
 
   free(): Shard[] {
@@ -270,6 +295,22 @@ export class HorizonSim {
       }
     }
 
+    // ひねり2：かけらを1つでも入れた穴は、縁の近くのかけらを引き込む（入れるほど連鎖しやすい）
+    if (this.goalGravity && cfg.goalPull > 0) {
+      this.stage.goals.forEach((g, gi) => {
+        if (!this.goalFilled[gi]) return;
+        for (const s of this.shards) {
+          if (s.state !== 'free') continue;
+          const p = s.body.getPosition();
+          const ex = g.x - p.x, ey = g.y - p.y;
+          const r = Math.hypot(ex, ey);
+          if (r > g.r + cfg.goalPullR || r < 1e-4) continue;
+          const k = cfg.goalPull * (1 - (r - g.r) / cfg.goalPullR) * s.pullScale * s.body.getMass();
+          s.body.applyForceToCenter({ x: (ex / r) * k, y: (ey / r) * k }, true);
+        }
+      });
+    }
+
     // 時間の遅れ：地平の近くにかけらがあるほど遅く（急に変わらないよう滑らかに）
     const near = this.nearest();
     let target = 1;
@@ -294,7 +335,8 @@ export class HorizonSim {
       if (s.state !== 'free') continue;
       const p = s.body.getPosition();
       if (Math.hypot(p.x - this.bh.x, p.y - this.bh.y) < cfg.horizon) {
-        this.lose(s, 'swallow');
+        if (this.spits) this.hold(s);
+        else this.lose(s, 'swallow');
         continue;
       }
       const gi = this.stage.goals.findIndex((g) => Math.hypot(p.x - g.x, p.y - g.y) < g.r);
@@ -303,6 +345,15 @@ export class HorizonSim {
         continue;
       }
       if (p.y > WORLD_H + 1 || p.x < -1 || p.x > WORLD_W + 1) this.lose(s, 'fall');
+    }
+    // ひねり1：抱えすぎたかけらは蒸発する
+    for (const s of this.shards) {
+      if (s.state === 'held' && this.worldTime > (s.heldUntil ?? 0)) {
+        s.state = 'lost';
+        this.events.push({ t: 'evaporate', id: s.id, x: this.bh.x, y: this.bh.y });
+        this.world.destroyBody(s.body);
+        this.respawn();
+      }
     }
     if (this.chainUntil >= 0 && this.worldTime > this.chainUntil) {
       this.events.push({ t: 'chainEnd', chain: this.chain });
@@ -328,9 +379,39 @@ export class HorizonSim {
       s.body.setLinearVelocity({ x: v.x + (ex / r) * k, y: v.y + (ey / r) * k });
       s.body.setAwake(true);
     }
+    // ひねり1：抱えていたかけらを、動いている向きへ（止まっていれば全方向へ）吐き出す
+    const held = this.held();
+    if (held.length) {
+      const sp = Math.hypot(this.bhVel.x, this.bhVel.y);
+      const aim = sp > 1 ? Math.atan2(this.bhVel.y, this.bhVel.x) : -Math.PI / 2;
+      const spread = sp > 1 ? 0.9 : Math.PI * 2;
+      held.forEach((s, k) => {
+        const a = held.length === 1 ? aim : aim - spread / 2 + (spread * (k + (sp > 1 ? 0 : 0.5))) / (held.length - (sp > 1 ? 1 : 0));
+        const ux = Math.cos(a), uy = Math.sin(a);
+        const r0 = cfg.horizon + s.r + 0.2;
+        s.body.setTransform({ x: this.bh.x + ux * r0, y: this.bh.y + uy * r0 }, 0);
+        const v = cfg.burstForce * 1.15 * (s.kind === 'heavy' ? 0.75 : 1);
+        s.body.setLinearVelocity({ x: ux * v, y: uy * v });
+        s.body.setActive(true);
+        s.body.setAwake(true);
+        s.state = 'free';
+        s.heldUntil = undefined;
+        n++;
+      });
+      this.events.push({ t: 'spit', n: held.length, x: this.bh.x, y: this.bh.y });
+    }
     this.cooldown = cfg.burstCooldown;
     this.bestBurst = Math.max(this.bestBurst, n);
     this.events.push({ t: 'burst', x: this.bh.x, y: this.bh.y, n, r: cfg.burstRadius });
+  }
+
+  /** ひねり1：地平の内に抱える（体は止めて隠す。解放で吐き出すまで、holdSec 秒） */
+  private hold(s: Shard): void {
+    const p = s.body.getPosition();
+    s.state = 'held';
+    s.heldUntil = this.worldTime + this.cfg.holdSec;
+    s.body.setActive(false);
+    this.events.push({ t: 'hold', id: s.id, x: p.x, y: p.y });
   }
 
   private lose(s: Shard, how: 'swallow' | 'fall'): void {
@@ -344,6 +425,7 @@ export class HorizonSim {
   private capture(s: Shard, goal: number): void {
     const p = s.body.getPosition();
     s.state = 'captured';
+    this.goalFilled[goal] = true;
     this.captured++;
     this.chain = this.chainUntil >= 0 ? this.chain + 1 : 1;
     this.chainUntil = this.worldTime + this.cfg.chainWindow;
@@ -370,7 +452,7 @@ export class HorizonSim {
       this.events.push({ t: 'clear' });
       return;
     }
-    const alive = this.shards.filter((s) => s.state === 'free').length;
+    const alive = this.shards.filter((s) => s.state === 'free' || s.state === 'held').length;
     if (alive + this.captured < this.need) {
       this.phase = 'fail';
       this.events.push({ t: 'fail', why: 'lost' });
@@ -384,7 +466,7 @@ export class HorizonSim {
     const out = [this.tick, this.captured, this.score, this.bh.x, this.bh.y, this.timeScale];
     for (const s of this.shards) {
       if (s.state !== 'free') {
-        out.push(s.state === 'captured' ? -1 : -2);
+        out.push(s.state === 'captured' ? -1 : s.state === 'held' ? -3 : -2);
         continue;
       }
       const p = s.body.getPosition();
