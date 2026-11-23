@@ -137,11 +137,14 @@ async function main() {
     }
   };
 
-  const buildShards = () => {
-    shardLayer.removeChildren();
-    shardSprites = [];
+  /** かけらの見た目を作る（スコアアタックで増えた分だけ足す） */
+  const buildShards = (reset = false) => {
+    if (reset) {
+      shardLayer.removeChildren();
+      shardSprites = [];
+    }
     if (!sim) return;
-    for (const s of sim.shards) {
+    for (const s of sim.shards.slice(shardSprites.length)) {
       const glow = new Sprite(glowTexture());
       glow.anchor.set(0.5);
       glow.blendMode = 'add';
@@ -168,14 +171,16 @@ async function main() {
     sim.stage.goals.forEach(() => goalFlash.push(0));
     mode = 'play';
     drawStatic();
-    buildShards();
+    buildShards(true);
     synth.setKey(i % 5);
     toast(stages[i].hint);
   };
 
   /** 星評価：クリアで★1、かけらを1つも失わずに★2、1回の投げで（必要数か3つの少ない方）を連鎖して★3 */
+  const ATTACK_STARS = [5000, 10000];
   const rating = (s: HorizonSim) => {
     if (s.phase !== 'clear') return 0;
+    if (s.stage.attack) return 1 + ATTACK_STARS.filter((v) => s.score >= v).length;
     let r = 1;
     if (!s.shards.some((x) => x.state === 'lost')) r++;
     if (s.bestChain >= Math.min(s.need, 3)) r++;
@@ -198,8 +203,8 @@ async function main() {
     menu.innerHTML = `
       <h1>${cleared ? 'CLEAR' : 'FAILED'}</h1><h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
-      <p>${cleared ? `スコア ${sim.score.toLocaleString()}　最大連鎖 ${sim.bestChain}　失ったかけら ${lost}` : sim.time >= cfg.timeLimit ? '時間切れ' : 'かけらが足りなくなった'}</p>
-      <p style="font-size:13px">★2：かけらを1つも失わない　★3：1回の投げで ${Math.min(sim.need, 3)} 連鎖</p>
+      <p>${cleared ? `スコア ${sim.score.toLocaleString()}　最大連鎖 ${sim.bestChain}　失ったかけら ${lost}` : sim.worldTime >= cfg.timeLimit ? '時間切れ' : 'かけらが足りなくなった'}</p>
+      <p style="font-size:13px">${st.attack ? `★2：${ATTACK_STARS[0].toLocaleString()} 点　★3：${ATTACK_STARS[1].toLocaleString()} 点` : `★2：かけらを1つも失わない　★3：1回の投げで ${Math.min(sim.need, 3)} 連鎖`}</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
     if (cleared && stageIndex < stages.length - 1) {
@@ -221,7 +226,9 @@ async function main() {
     mode = 'menu';
     synth.chargeTone(-1);
     menu = el('div', { class: 'menu' });
-    const unlocked = (i: number) => i === 0 || params.has('all') || save.data.cleared[stages[i - 1].id] !== undefined;
+    // スコアアタックは4ステージクリアで解放
+    const clearedCount = stages.filter((x) => save.data.cleared[x.id] !== undefined).length;
+    const unlocked = (i: number) => i === 0 || params.has('all') || (stages[i].attack ? clearedCount >= 4 : save.data.cleared[stages[i - 1].id] !== undefined);
     menu.innerHTML = `
       <h1>EVENT HORIZON</h1>
       <h2>事 象 の 地 平 ク レ ー ン</h2>
@@ -243,7 +250,7 @@ async function main() {
       const r = save.data.cleared[st.id];
       const ok = unlocked(i);
       const d = el('div', { class: 'stage' + (r ? ' cleared' : '') + (ok ? '' : ' locked') },
-        `<b>${i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
+        `<b>${st.attack ? '∞' : i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
       if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(49); startStage(i); };
       grid.appendChild(d);
     });
@@ -347,6 +354,9 @@ async function main() {
         toast('地平の向こうへ…');
         break;
       }
+      case 'spawn':
+        buildShards();
+        break;
       case 'fall':
         synth.tone(300, 0.6, { type: 'triangle', vol: 0.08, slideTo: 90 });
         toast('奈落へ落ちた');
@@ -526,8 +536,8 @@ async function main() {
 
     // HUD
     const st = stages[stageIndex];
-    const left = Math.max(0, cfg.timeLimit - s.time);
-    tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">穴へ ${s.captured} / ${s.need}</div><div style="font-size:13px;color:var(--dim)">残りのかけら ${s.free().length}</div>`;
+    const left = Math.max(0, cfg.timeLimit - s.worldTime);
+    tl.innerHTML = `<div>${st.attack ? '∞' : stageIndex + 1}. ${st.name}</div><div class="big">穴へ ${s.captured}${st.attack ? '' : ` / ${s.need}`}</div><div style="font-size:13px;color:var(--dim)">残りのかけら ${s.free().length}</div>`;
     tr.innerHTML = `<div class="big">${s.score.toLocaleString()}</div><div>残り ${left.toFixed(0)} 秒</div>${dil > 0.08 ? `<div style="color:#9fb8ff">時間の遅れ ×${s.timeScale.toFixed(2)}</div>` : ''}${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
 
