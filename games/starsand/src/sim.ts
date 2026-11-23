@@ -18,6 +18,12 @@ export const WALL = 1;
 export const LINE = 2;
 /** 砂の色は SAND + 色番号（0..） */
 export const SAND = 8;
+/** 砂の色：0 金・1 水色・2 桃・3 紫（水色＋桃）・4 白（金＋水色） */
+export const COLORS = [0xffd27f, 0x7ff0ff, 0xffa3e0, 0xc9a3ff, 0xffffff];
+/** 色の混合：違う色の砂が触れて止まると、ある確率で両方が混ざった色になる */
+const MIX: Record<string, number> = { '0,1': 4, '1,0': 4, '1,2': 3, '2,1': 3 };
+/** 混ざった色の材料（器の中に材料が両方あれば、混ざる前でもその色として数える） */
+export const RECIPE: Record<number, [number, number]> = { 4: [0, 1], 3: [1, 2] };
 
 export interface Source {
   x: number;
@@ -61,6 +67,7 @@ export interface StageDef {
 
 export type SandEvent =
   | { t: 'fill'; cup: number }
+  | { t: 'mix'; x: number; y: number; color: number }
   | { t: 'clear' }
   | { t: 'fail' };
 
@@ -82,6 +89,7 @@ export class SandSim {
   grains = 0;
   private rng: Rng;
   private still = 0;
+  private doneTicks = 0;
 
   constructor(public stage: StageDef, public cfg: SandConfig, seed = 1) {
     this.rng = new Rng(seed);
@@ -104,7 +112,12 @@ export class SandSim {
 
   /** 線を引く（太さ r の円を a→b に並べる）。インクが尽きたらそこまで。引けたマス数を返す */
   drawLine(ax: number, ay: number, bx: number, by: number, r = this.cfg.lineWidth): number {
-    let n = 0;
+    return this.drawLineCells(ax, ay, bx, by, r).length;
+  }
+
+  /** drawLine と同じだが、引いたマスの番号を返す（一筆ごとに消せるように） */
+  drawLineCells(ax: number, ay: number, bx: number, by: number, r = this.cfg.lineWidth): number[] {
+    const out: number[] = [];
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
     for (let s = 0; s <= steps; s++) {
       const cx = Math.round(ax + ((bx - ax) * s) / steps), cy = Math.round(ay + ((by - ay) * s) / steps);
@@ -113,13 +126,25 @@ export class SandSim {
           if (i * i + j * j > r * r + 0.5) continue;
           const x = cx + i, y = cy + j;
           if (x < 0 || x >= W || y < 0 || y >= H) continue;
-          if (this.ink <= 0) return n;
+          if (this.ink <= 0) return out;
           if (this.grid[y * W + x] !== EMPTY) continue;
           this.grid[y * W + x] = LINE;
           this.ink--;
-          n++;
+          out.push(y * W + x);
         }
       }
+    }
+    return out;
+  }
+
+  /** マスの番号で線を消す（インクが戻る） */
+  eraseCells(cells: number[]): number {
+    let n = 0;
+    for (const c of cells) {
+      if (this.grid[c] !== LINE) continue;
+      this.grid[c] = EMPTY;
+      this.ink++;
+      n++;
     }
     return n;
   }
@@ -204,13 +229,38 @@ export class SandSim {
             break;
           }
         }
+        // 止まった砂が違う色の砂の上なら、混ざって新しい光になる
+        if (!done) {
+          // 下・左・右の順に、混ざる相手を探す
+          for (const nb of [below + x, x > 0 ? y * W + x - 1 : -1, x < W - 1 ? y * W + x + 1 : -1]) {
+            if (nb < 0) continue;
+            const u = g[nb];
+            if (u < SAND || u === v) continue;
+            const m = MIX[`${v - SAND},${u - SAND}`];
+            if (m === undefined || this.rng.next() >= this.cfg.mixRate) continue;
+            g[y * W + x] = SAND + m;
+            g[nb] = SAND + m;
+            this.events.push({ t: 'mix', x, y, color: m });
+            done = true;
+            break;
+          }
+        }
         // 斜めにも行けない時：線や壁の上なら、ときどき横へ滑る（ゆるい坂でも流れる）。
         // 砂の山の上では滑らない（山の形が残る）。段差のある方（2マス先の下が空いている方）へ滑る
         if (!done && g[below + x] <= LINE && this.rng.next() < this.cfg.slide) {
-          const drop = (d: number) => { const xx = x + d * 2; return xx >= 0 && xx < W && g[below + xx] === EMPTY; };
-          const d = drop(first) ? first : drop(-first) ? -first : first;
+          // 何マス先に段差があるか（近い方へ滑る。どちらにもなければ動かない）
+          const drop = (dd: number) => {
+            for (let k = 1; k <= 5; k++) {
+              const xx = x + dd * k;
+              if (xx < 0 || xx >= W || g[y * W + xx] !== EMPTY) return 99;
+              if (g[below + xx] === EMPTY) return k;
+            }
+            return 99;
+          };
+          const a1 = drop(first), a2 = drop(-first);
+          const d = a1 === 99 && a2 === 99 ? 0 : a1 <= a2 ? first : -first;
           const nx = x + d;
-          if (nx >= 0 && nx < W && g[y * W + nx] === EMPTY && g[below + nx] !== EMPTY && g[below + nx] <= LINE) {
+          if (d !== 0 && nx >= 0 && nx < W && g[y * W + nx] === EMPTY && g[below + nx] !== EMPTY && g[below + nx] <= LINE) {
             g[y * W + nx] = v;
             g[y * W + x] = EMPTY;
             moved++;
@@ -224,12 +274,20 @@ export class SandSim {
 
   private countCups(): void {
     this.stage.cups.forEach((c, i) => {
-      let n = 0;
+      const per = new Array(COLORS.length).fill(0);
+      let all = 0;
       for (let y = c.y; y < c.y + c.h; y++) {
         for (let x = c.x; x < c.x + c.w; x++) {
           const v = this.get(x, y);
-          if (v >= SAND && (c.color === undefined || v - SAND === c.color)) n++;
+          if (v >= SAND) { per[v - SAND]++; all++; }
         }
+      }
+      let n = all;
+      if (c.color !== undefined) {
+        n = per[c.color];
+        // 混ざった色の器：材料の2色がそろっている分も数える（器の中でいずれ混ざる）
+        const r = RECIPE[c.color];
+        if (r) n += 2 * Math.min(per[r[0]], per[r[1]]);
       }
       this.cupCount[i] = n;
       if (!this.filled[i] && n >= c.need) {
@@ -250,8 +308,9 @@ export class SandSim {
       this.events.push({ t: 'clear' });
       return;
     }
-    // 全部降り終わって、しばらく何も動かなければ失敗
-    if (this.remaining() === 0 && this.still > 30) {
+    // 全部降り終わって、しばらく何も動かなければ（または降り終わってから長くたったら）失敗
+    if (this.remaining() === 0) this.doneTicks++;
+    if (this.remaining() === 0 && (this.still > 30 || this.doneTicks > 1200)) {
       this.phase = 'fail';
       this.events.push({ t: 'fail' });
     }

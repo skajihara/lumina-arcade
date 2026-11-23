@@ -9,6 +9,8 @@ export interface SandConfig {
   lineWidth: number;
   /** 注ぎ口から降る砂の量の倍率 */
   sandScale: number;
+  /** 違う色の砂が触れて止まった時に混ざる確率（1ティックごと） */
+  mixRate: number;
   /** 斜めにも行けない砂が横へ滑る確率 */
   slide: number;
   /** 1フレームに進めるティック数（砂の速さ） */
@@ -23,6 +25,7 @@ export const schema: Schema<SandConfig> = {
   inkScale: { label: 'インクの量（倍）', min: 0.3, max: 3, step: 0.05, folder: 'ルール', restart: true },
   lineWidth: { label: '線の太さ', min: 0, max: 3, step: 1, folder: 'ルール' },
   sandScale: { label: '砂の量（倍）', min: 0.3, max: 3, step: 0.05, folder: 'ルール', restart: true },
+  mixRate: { label: '色が混ざる確率', min: 0, max: 1, step: 0.01, folder: 'ルール' },
   slide: { label: '砂が横へ滑る確率', min: 0, max: 1, step: 0.05, folder: 'ルール' },
   speed: { label: '砂の速さ', min: 1, max: 6, step: 1, folder: '演出' },
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
@@ -36,6 +39,7 @@ const normal: SandConfig = {
   lineWidth: 1,
   sandScale: 1,
   slide: 0.6,
+  mixRate: 0.5,
   speed: 2,
   shake: 1,
   particles: 1,
