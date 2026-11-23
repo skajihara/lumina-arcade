@@ -4,12 +4,17 @@
  *
  * - 1ループ = loopSec 秒。ループが終わると時間が巻き戻り、星はすべて復活する
  * - 過去のループの入力はそのまま再生される。過去の自分のボール（残響）も同じ時刻に同じ強さで発射される
- * - フリッパーは全員で共有：今の入力と、過去の全ループの入力の OR で動く
+ * - 各ループの自分は自分専用のフリッパーを持つ（他のボールはすり抜ける）
  * - 今のボールが残響にぶつかったり、残響より先に星を壊したりすると、過去が書き換わる
  * - 同じ1ループの中で全部の星を爆発させたらクリア。maxLoops を使い切ったら失敗
  */
-import { NovaSim, HZ, IN_LEFT, IN_RIGHT, type Ball, type SimEvent } from '../../nova-pinball/src/sim';
+import { NovaSim, HZ, type Ball, type SimEvent } from '../../nova-pinball/src/sim';
 import type { StageDef } from '../../nova-pinball/src/stages';
+
+/** Echo Loop のステージ：Nova の盤面に「このステージだけ増やすループ数」を足したもの */
+export interface EchoStage extends StageDef {
+  extraLoops?: number;
+}
 import type { EchoConfig } from './config';
 
 export type EchoPhase = 'play' | 'clear' | 'fail';
@@ -32,12 +37,19 @@ export class EchoSim {
   events: EchoEvent[] = [];
   /** 各ループで壊せた星の数（今のループ含む） */
   destroyedPerLoop: number[] = [];
+  /** 各ループで壊れた星の番号 */
+  destroyedIds: Set<number>[] = [];
   /** 今までで一番多く壊せた数 */
   best = 0;
   totalTicks = 0;
 
-  constructor(public stage: StageDef, public cfg: EchoConfig) {
+  constructor(public stage: EchoStage, public cfg: EchoConfig) {
     this.startLoop();
+  }
+
+  /** このステージの最大ループ数（難易度の値＋ステージごとの追加） */
+  get maxLoops(): number {
+    return Math.round(this.cfg.maxLoops) + (this.stage.extraLoops ?? 0);
   }
 
   get loopTicks(): number {
@@ -53,7 +65,12 @@ export class EchoSim {
     const sim = new NovaSim(this.stage, this.cfg);
     sim.respawn = false;
     // 最初の1個は持ち主 0。残りのループの分を足す（全員レーンから、自分の入力で発射）
-    for (let k = 1; k <= this.loop; k++) sim.spawnBall(undefined, k);
+    // 各ループの自分は自分専用のフリッパーを持つ（他人のボールはすり抜ける）。だから邪魔しなければ過去はそのまま再生される
+    for (let k = 1; k <= this.loop; k++) {
+      sim.spawnBall(undefined, k);
+      sim.addFlippers(k);
+    }
+    sim.flipperOwnerOnly = true;
     const now = this.loop;
     sim.ballCollide = (a: Ball, b: Ball) => {
       // レーンの中ではぶつけない（同じ場所に重なって待っているので）
@@ -64,6 +81,7 @@ export class EchoSim {
     this.sim = sim;
     this.current = [];
     this.destroyedPerLoop[this.loop] = 0;
+    this.destroyedIds[this.loop] = new Set();
     this.events.push({ t: 'loopStart', loop: this.loop });
   }
 
@@ -83,17 +101,15 @@ export class EchoSim {
     const t = this.sim.tick;
     this.current[t] = input;
     const masks: number[] = [];
-    let flip = 0;
-    for (let k = 0; k <= this.loop; k++) {
-      const m = k === this.loop ? input : this.history[k]?.[t] ?? 0;
-      masks.push(m);
-      flip |= m & (IN_LEFT | IN_RIGHT);
-    }
+    for (let k = 0; k <= this.loop; k++) masks.push(k === this.loop ? input : this.history[k]?.[t] ?? 0);
     this.sim.ownerInputs = masks;
-    this.sim.step(flip);
+    this.sim.step(input);
     this.totalTicks++;
     for (const e of this.sim.events) {
-      if (e.t === 'explode') this.destroyedPerLoop[this.loop]++;
+      if (e.t === 'explode') {
+        this.destroyedPerLoop[this.loop]++;
+        this.destroyedIds[this.loop].add(e.star);
+      }
       this.events.push(e);
     }
     this.best = Math.max(this.best, this.destroyedPerLoop[this.loop]);
@@ -105,7 +121,7 @@ export class EchoSim {
     if (this.sim.tick >= this.loopTicks) {
       this.events.push({ t: 'loopEnd', loop: this.loop, destroyed: this.destroyedPerLoop[this.loop] });
       this.history[this.loop] = this.current.slice();
-      if (this.loop + 1 >= Math.round(this.cfg.maxLoops)) {
+      if (this.loop + 1 >= this.maxLoops) {
         this.phase = 'fail';
         this.events.push({ t: 'echoFail' });
         return;
@@ -119,4 +135,9 @@ export class EchoSim {
   digest(): number[] {
     return [this.loop, this.totalTicks, ...this.destroyedPerLoop, ...this.sim.digest()];
   }
+}
+
+/** ボット用：前のループで壊れた星（＝残響が壊してくれそうな星）は後回しにする */
+export function echoBias(es: EchoSim): (id: number) => number {
+  return (id) => (es.loop > 0 && es.destroyedIds[es.loop - 1]?.has(id) ? -1.6 : 0);
 }

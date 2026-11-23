@@ -24,7 +24,7 @@ type Tag =
   | { kind: 'star'; id: number }
   | { kind: 'bumper'; id: number }
   | { kind: 'wall' }
-  | { kind: 'flipper'; side: 'L' | 'R' }
+  | { kind: 'flipper'; side: 'L' | 'R'; owner: number }
   | { kind: 'sling'; side: 'L' | 'R' }
   | { kind: 'roll'; id: number };
 
@@ -65,6 +65,8 @@ export interface Star {
 
 export interface Flipper {
   side: 'L' | 'R';
+  /** 持ち主（Echo Loop では各ループの自分が自分専用のフリッパーを持つ。通常は 0） */
+  owner: number;
   body: Body;
   joint: RevoluteJoint;
   pivot: { x: number; y: number };
@@ -180,6 +182,8 @@ export class NovaSim {
   respawn = true;
   /** 持ち主ごとの入力（発射だけに使う）。null なら従来通り input で発射する（Echo Loop 用） */
   ownerInputs: number[] | null = null;
+  /** true なら、ボールは自分と同じ持ち主のフリッパーとだけぶつかる（Echo Loop 用） */
+  flipperOwnerOnly = false;
   /** ボールどうしをぶつけるか（Echo Loop 用。null なら常にぶつかる） */
   ballCollide: ((a: Ball, b: Ball) => boolean) | null = null;
   chainId = 0;
@@ -209,9 +213,19 @@ export class NovaSim {
     this.spawnBall();
     this.world.on('begin-contact', (c: Contact) => this.onContact(c));
     this.world.on('pre-solve', (c: Contact) => {
-      if (!this.ballCollide) return;
       const a = c.getFixtureA().getBody().getUserData() as Tag | null;
       const b = c.getFixtureB().getBody().getUserData() as Tag | null;
+      // 持ち主の違うフリッパーとボールはすり抜ける
+      if (this.flipperOwnerOnly && a && b) {
+        const fl = a.kind === 'flipper' ? a : b.kind === 'flipper' ? b : null;
+        const bl = a.kind === 'ball' ? a : b.kind === 'ball' ? b : null;
+        if (fl && bl && fl.kind === 'flipper' && bl.kind === 'ball') {
+          const ball = this.balls.find((x) => x.id === bl.id);
+          if (ball && ball.owner !== fl.owner) c.setEnabled(false);
+          return;
+        }
+      }
+      if (!this.ballCollide) return;
       if (a?.kind !== 'ball' || b?.kind !== 'ball') return;
       const ba = this.balls.find((x) => x.id === a.id), bb = this.balls.find((x) => x.id === b.id);
       if (ba && bb && !this.ballCollide(ba, bb)) c.setEnabled(false);
@@ -235,11 +249,21 @@ export class NovaSim {
         b.createFixture(new Circle(ROLL_R), { isSensor: true });
       });
     }
+    this.ground = ground;
+    this.addFlippers(0);
+  }
+
+  private ground!: Body;
+
+  /** フリッパーを1組足す（Echo Loop：持ち主ごと。そのボールとだけぶつかる） */
+  addFlippers(owner: number): void {
+    const ground = this.ground;
     const L = this.cfg.flipperLength;
     const mk = (side: 'L' | 'R', pivot: { x: number; y: number }) => {
       const s = side === 'L' ? 1 : -1;
-      const body = this.world.createBody({ type: 'dynamic', position: pivot, bullet: true, gravityScale: 0, userData: { kind: 'flipper', side } as Tag });
-      const fd = { density: 3, friction: 0.2, restitution: 0.15 };
+      const body = this.world.createBody({ type: 'dynamic', position: pivot, bullet: true, gravityScale: 0, userData: { kind: 'flipper', side, owner } as Tag });
+      // フリッパーどうしはぶつからない（Echo Loop で同じ場所に何組も重なる）
+      const fd = { density: 3, friction: 0.2, restitution: 0.15, filterGroupIndex: -1 };
       body.createFixture(new Polygon([
         { x: 0, y: -0.26 }, { x: s * L, y: -0.11 }, { x: s * L, y: 0.11 }, { x: 0, y: 0.26 },
       ]), fd);
@@ -253,7 +277,7 @@ export class NovaSim {
         maxMotorTorque: this.cfg.flipperTorque,
         motorSpeed: 0,
       }, ground, body, pivot))!;
-      this.flippers.push({ side, body, joint, pivot, length: L });
+      this.flippers.push({ side, owner, body, joint, pivot, length: L });
     };
     mk('L', PIVOT_L);
     mk('R', PIVOT_R);
@@ -386,14 +410,17 @@ export class NovaSim {
     const pressed = input & ~this.prevInput;
     const released = ~input & this.prevInput;
 
-    // フリッパー
+    // フリッパー（持ち主ごとの入力があれば、それぞれ自分の入力で動く）
+    const me = this.ownerInputs ? this.ownerInputs.length - 1 : 0;
     for (const f of this.flippers) {
       const bit = f.side === 'L' ? IN_LEFT : IN_RIGHT;
-      const on = (input & bit) !== 0;
+      const m = this.ownerInputs ? this.ownerInputs[f.owner] ?? 0 : input;
+      const on = (m & bit) !== 0;
       const dir = f.side === 'L' ? -1 : 1;
       f.joint.setMaxMotorTorque(cfg.flipperTorque);
       f.joint.setMotorSpeed(on ? dir * cfg.flipperSpeed : -dir * cfg.flipperSpeed * 0.7);
-      if (pressed & bit) {
+      // 音・レーンチェンジは「今の自分」のフリッパーだけ
+      if (f.owner === me && pressed & bit) {
         this.events.push({ t: 'flip', side: f.side });
         // レーンチェンジ：フリッパーを押すと灯りが左右にずれる（狙って揃える）
         if (this.stage.rollovers) {

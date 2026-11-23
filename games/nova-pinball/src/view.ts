@@ -89,8 +89,14 @@ export class NovaView {
     this.container.addChild(this.sky, this.field.container, this.skyArt, this.board, this.gimmicks, this.links, this.bumperG, this.starLayer);
     this.drawBoard();
     this.buildStars();
-    for (const f of sim.flippers) {
+    // Echo Loop：過去の自分のフリッパーは淡い紫の影として描く（今の自分のものを一番上に）
+    const me = Math.max(...sim.flippers.map((f) => f.owner));
+    for (const f of [...sim.flippers].sort((a, b) => a.owner - b.owner)) {
       const g = new Graphics();
+      if (f.owner !== me) {
+        g.alpha = Math.max(0.15, 0.4 - (me - f.owner) * 0.06);
+        g.tint = 0xc9a3ff;
+      }
       const s = f.side === 'L' ? 1 : -1;
       const L = f.length * SCALE;
       const pts = [0, -0.26 * SCALE, s * L, -0.11 * SCALE, s * L, 0.11 * SCALE, 0, 0.26 * SCALE];
@@ -461,7 +467,7 @@ export class NovaView {
     this.updateCamera(realDt);
 
     // フリッパー
-    sim.flippers.forEach((f, i) => {
+    [...sim.flippers].sort((a, b) => a.owner - b.owner).forEach((f, i) => {
       const g = this.flippers[i];
       const p = f.body.getPosition();
       g.x = p.x * SCALE; g.y = p.y * SCALE;

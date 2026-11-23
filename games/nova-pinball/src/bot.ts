@@ -39,6 +39,10 @@ export class NovaBot {
   /** 直近の狙い（デバッグ用） */
   lastTarget = -1;
   stats: BotStats = { aimed: 0, saves: 0, predictions: 0 };
+  /** 操作するボールとフリッパーの持ち主（Echo Loop：今のループ番号） */
+  owner = 0;
+  /** 星ごとの狙いやすさの補正（Echo Loop：残響が壊してくれる星は後回しにする） */
+  bias: ((id: number) => number) | null = null;
 
   constructor(seed = 1, skill = 0.8) {
     this.rng = new Rng(seed);
@@ -72,7 +76,7 @@ export class NovaBot {
         } else this.pending[side] = lag - 1;
       }
     }
-    const lane = sim.balls.some((b) => sim.inLane(b));
+    const lane = sim.balls.some((b) => b.owner === this.owner && sim.inLane(b));
     if (lane) {
       if (this.holdLaunch === 0) this.holdLaunch = 20 + this.rng.int(0, 90);
       this.holdLaunch--;
@@ -86,6 +90,7 @@ export class NovaBot {
     const pv = pivotOf(side);
     const L = sim.cfg.flipperLength;
     for (const b of sim.balls) {
+      if (b.owner !== this.owner) continue;
       const p = b.body.getPosition();
       const v = b.body.getLinearVelocity();
       if (p.x > 13.2) continue;
@@ -118,7 +123,7 @@ export class NovaBot {
     if (this.rng.next() > 0.25 + 0.75 * this.skill) return false;
     const path = this.predict(sim, side, ball);
     const target = this.firstStar(sim, path);
-    const val = target >= 0 ? this.value(sim, target) : 0;
+    const val = target >= 0 ? this.value(sim, target) + (this.bias?.(target) ?? 0) : 0;
     // ボールがまだ十分フリッパーの上にある間は、良い狙いだけを待つ。端に近づくほど妥協する
     const urgency = Math.min(1, Math.max(0, dx / L));
     const need = 2.6 - 2.0 * urgency;
@@ -182,8 +187,9 @@ export class NovaBot {
     if (!this.shadow) this.shadow = new NovaSim({ ...SHADOW_STAGE, outlanes: sim.stage.outlanes, slings: sim.stage.slings }, { ...sim.cfg });
     const sh = this.shadow;
     sh.cfg = sim.cfg;
+    const mine = sim.flippers.filter((f) => f.owner === this.owner);
     for (let i = 0; i < 2; i++) {
-      const f = sim.flippers[i], g = sh.flippers[i];
+      const f = mine[i] ?? sim.flippers[i], g = sh.flippers[i];
       g.body.setTransform(f.body.getPosition(), f.body.getAngle());
       g.body.setAngularVelocity(f.body.getAngularVelocity());
       g.body.setLinearVelocity(f.body.getLinearVelocity());
