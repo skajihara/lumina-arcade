@@ -168,7 +168,7 @@ export class NovaView {
         const sv = this.stars[e.star];
         sv.pulse = 1;
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 10, speed: [60, 220], life: [0.2, 0.5], size: [0.05, 0.14], color: CHARGE_COLORS[Math.min(e.charge, 4)] });
-        synth.bell(e.charge * 2 + 2, 0.08);
+        synth.hbell(e.charge, 0.08);
         break;
       }
       case 'bump':
@@ -180,12 +180,12 @@ export class NovaView {
         break;
       case 'link':
         this.linksDirty = true;
-        synth.chord(e.a % 5 + 5, [0, 4], 0.05, 0.07);
+        synth.arp([3 + (e.a % 3), 5 + (e.a % 3)], 0.05, 0.07);
         break;
       case 'supernova':
         this.juice.doFlash(0.9, 0xffe7a8);
         this.juice.slowmo(0.25, 1.4);
-        synth.chord(5, [0, 2, 4, 5, 7, 9], 0.07, 0.12);
+        synth.arp([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 0.06, 0.1);
         this.hud.toast('SUPERNOVA！ 星座完成 ＋1ボール');
         this.skyArtT = 0;
         this.particles.emit(VIEW_W / 2, VIEW_H * 0.35, { count: 260, speed: [100, 900], life: [0.8, 2.2], size: [0.08, 0.4], color: [0xffe7a8, 0xffffff, ...this.palette], drag: 1.2 });
@@ -200,11 +200,11 @@ export class NovaView {
       case 'roll': {
         this.rollFlash[e.id] = 1;
         const r = ROLLOVERS[e.id];
-        synth.bell(7 + e.id, 0.1);
+        synth.hbell(5 + e.id, 0.1);
         this.particles.emit(r.x * SCALE, r.y * SCALE, { count: 14, speed: [40, 160], life: [0.3, 0.6], size: [0.05, 0.12], color: 0xffe1a8 });
         if (e.all) {
           this.rollFlash = [1, 1, 1];
-          synth.chord(7, [0, 4, 7], 0.06, 0.1);
+          synth.arp([5, 6, 7, 8], 0.06, 0.1);
           this.hud.toast('三つ星そろい！ ボールセーブ点灯');
         }
         break;
@@ -216,10 +216,10 @@ export class NovaView {
         this.hud.toast('キックバック！');
         break;
       case 'flip':
-        synth.click(e.side === 'L' ? 1 : 1.12);
+        synth.flipper(e.side === 'L' ? 1 : 1.06);
         break;
       case 'launch':
-        synth.whoosh(0.5 + e.power);
+        synth.launch(e.power);
         break;
       case 'drain':
         if (e.saved) this.hud.toast('ボールセーブ！');
@@ -235,6 +235,8 @@ export class NovaView {
         break;
       case 'chainEnd':
         this.hud.chain(0);
+        // 連鎖が終わったら次の和音へ解決（余韻）
+        if (e.chain >= 3) synth.nextChord(0.035);
         break;
       default:
         break;
@@ -271,13 +273,15 @@ export class NovaView {
       this.juice.doFlash(0.3 + tier * 0.1, cols[0]);
       this.zoomTo(x, y, 1.04 + tier * 0.03, 0.05, 0.5);
     }
+    // 3連鎖ごとに次の和音へ（連鎖が伸びるほど曲が進む）
+    if (chain > 1 && (chain - 1) % 3 === 0) synth.nextChord(0.04 + tier * 0.01);
     synth.boom(big, chain - 1);
     if (chain >= 2) this.hud.chain(chain);
     if (e.last) {
       this.juice.doFlash(1, 0xffffff);
       this.juice.slowmo(0.15, 1.8);
       this.zoomTo(x, y, 1.45, 0.9, 1.6);
-      synth.chord(chain, [0, 2, 4, 7, 9], 0.09, 0.12);
+      synth.arp([2, 3, 4, 5, 6, 7, 8, 9], 0.08, 0.12);
       this.particles.emit(x, y, { count: 400, speed: [200, 1400], life: [1, 2.6], size: [0.08, 0.45], color: [0xffffff, ...cols, ...this.palette], drag: 1 });
     } else this.juice.doFlash(Math.min(0.35, 0.06 + chain * 0.025), cols[Math.min(2, cols.length - 1)]);
     this.linksDirty = true;
