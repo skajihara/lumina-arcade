@@ -34,7 +34,8 @@ type Anim =
   | null;
 
 async function main() {
-  injectBaseStyle();
+  // 20問を1画面に収める
+  injectBaseStyle('.grid { grid-template-columns: repeat(5, 88px); gap: 8px; margin: 10px 0; } .stage { height: 60px; } .menu h1 { font-size: 38px; } .menu p { margin: 4px 16px; }');
   const ga = await createGameApp(VIEW_W, VIEW_H);
   const juice = new Juice();
   const tuning = createTuning<OrigamiConfig>('origami-cosmos', schema, presets, DEFAULT_PRESET);

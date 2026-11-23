@@ -42,7 +42,7 @@ export const games: GameEntry[] = [
     at: [0.6, 0.6], hue: '#ffb38a',
   },
   {
-    id: 'origami-cosmos', title: 'Origami Cosmos', jp: '折紙宇宙', status: 'wip',
+    id: 'origami-cosmos', title: 'Origami Cosmos', jp: '折紙宇宙', status: 'ready',
     desc: '宇宙を折りたたんで、遠い星同士を重ね合わせて連鎖させるパズル。',
     shape: [[0.5, 0.5], [0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]], edges: [[1, 2], [2, 3], [3, 4], [4, 1], [1, 3]],
     at: [0.33, 0.6], hue: '#ffe2a8',
