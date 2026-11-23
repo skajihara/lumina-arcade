@@ -141,3 +141,26 @@ describe('NovaSim', () => {
     }
   });
 });
+
+describe('リプレイ', () => {
+  it('記録した入力と設定で同じ結果が再現される（途中から早送りしても同じ）', async () => {
+    const { ReplayRecorder, ReplayPlayer } = await import('./replay');
+    const st = stages[1];
+    const sim = new NovaSim(st, cfg());
+    const bot = new NovaBot(9, 0.85);
+    const rr = new ReplayRecorder(sim.cfg);
+    for (let i = 0; i < 120 * 40 && sim.phase === 'play'; i++) {
+      const m = bot.input(sim);
+      rr.record(m);
+      sim.step(m);
+      rr.observe(sim);
+    }
+    const data = JSON.parse(JSON.stringify(rr.toData(sim)));
+    for (const from of [0, Math.max(0, data.highlight - 360)]) {
+      const p = new ReplayPlayer(data, st, from);
+      while (!p.done) p.sim.step(p.next());
+      expect(hashNumbers(p.sim.digest())).toBe(hashNumbers(sim.digest()));
+      expect(p.sim.bestChain).toBe(sim.bestChain);
+    }
+  });
+});
