@@ -67,6 +67,8 @@ export type StopEvent =
   | { t: 'break'; id: number; kind: Kind; x: number; y: number }
   | { t: 'boom'; id: number; x: number; y: number; r: number }
   | { t: 'nest' }
+  /** ひねり1：壊した分だけ時間停止ゲージが戻った */
+  | { t: 'refill'; x: number; y: number; amount: number }
   | { t: 'clear' }
   | { t: 'fail'; why: 'egg' | 'stuck' | 'fall' };
 
@@ -209,7 +211,12 @@ export class StopSim {
       if (o.force.x !== 0 || o.force.y !== 0) {
         n++;
         const v = o.body.getLinearVelocity();
-        o.body.setLinearVelocity({ x: v.x + o.force.x, y: v.y + o.force.y });
+        if (this.redirect) {
+          // ひねり2：今の速さを保ったまま、矢印の向きへ曲げてから力を足す（飛んでいる物を止めて向きを変える）
+          const f = Math.hypot(o.force.x, o.force.y);
+          const sp = Math.hypot(v.x, v.y) + f;
+          o.body.setLinearVelocity({ x: (o.force.x / f) * sp, y: (o.force.y / f) * sp });
+        } else o.body.setLinearVelocity({ x: v.x + o.force.x, y: v.y + o.force.y });
         // 端を叩いたら回る
         o.body.setAngularVelocity(o.body.getAngularVelocity() + (o.at.x * o.force.y - o.at.y * o.force.x) * 0.6);
         o.body.setAwake(true);
@@ -219,9 +226,28 @@ export class StopSim {
     ev.forces = n;
   }
 
+  private get refills(): boolean {
+    const t = Math.round(this.cfg.twist ?? 0);
+    return t === 1 || t === 3;
+  }
+
+  private get redirect(): boolean {
+    const t = Math.round(this.cfg.twist ?? 0);
+    return t === 2 || t === 3;
+  }
+
+  /** ひねり1：壊すたびにゲージが少し戻る（連鎖するほど、もう一度止められる） */
+  private refill(x: number, y: number): void {
+    if (!this.refills || this.phase !== 'play') return;
+    const before = this.gauge;
+    this.gauge = Math.min(this.cfg.stopGauge, this.gauge + this.cfg.refill);
+    if (this.gauge > before) this.events.push({ t: 'refill', x, y, amount: this.gauge - before });
+  }
+
   private explode(o: Obj): void {
     const p = o.body.getPosition().clone();
     this.kill(o);
+    this.refill(p.x, p.y);
     const R = this.cfg.bombRadius;
     this.events.push({ t: 'boom', id: o.id, x: p.x, y: p.y, r: R });
     for (const q of this.objs) {
@@ -254,8 +280,10 @@ export class StopSim {
   private breakObj(o: Obj): void {
     const p = o.body.getPosition();
     this.events.push({ t: 'break', id: o.id, kind: o.def.kind, x: p.x, y: p.y });
+    const x = p.x, y = p.y;
     this.kill(o);
     if (o.def.kind === 'egg') this.fail('egg');
+    else if (o.def.kind === 'crate') this.refill(x, y);
   }
 
   private advance(): void {

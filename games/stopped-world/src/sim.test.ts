@@ -112,4 +112,45 @@ describe('StopSim', () => {
     const pred = sim.predict(1, 4);
     expect(pred.filter((p) => p.kind === 'crate' && p.ends === 'gone').length).toBe(2);
   });
+
+  it('ひねり1：箱を壊すと時間停止ゲージが戻る（上限まで）', () => {
+    const c = { ...cfg(), twist: 1, refill: 0.6 };
+    const sim = new StopSim(crateStage, c);
+    for (let i = 0; i < 30; i++) sim.step();
+    sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: -1 }]);
+    for (let i = 0; i < 240; i++) sim.step([]); // 2秒止めたまま
+    const before = sim.gauge;
+    sim.step([{ t: 'resume' }]);
+    let refills = sim.events.filter((e) => e.t === 'refill').length;
+    for (let i = 0; i < 240; i++) { sim.step(); refills += sim.events.filter((e) => e.t === 'refill').length; }
+    expect(refills).toBeGreaterThan(0);
+    expect(sim.gauge).toBeGreaterThan(before);
+    expect(sim.gauge).toBeLessThanOrEqual(c.stopGauge);
+    // ひねりなしでは戻らない
+    const plain = new StopSim(crateStage, { ...cfg(), twist: 0 });
+    for (let i = 0; i < 30; i++) plain.step();
+    plain.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: -1 }]);
+    for (let i = 0; i < 240; i++) plain.step([]);
+    const b2 = plain.gauge;
+    plain.step([{ t: 'resume' }]);
+    for (let i = 0; i < 240; i++) plain.step();
+    expect(plain.gauge).toBeCloseTo(b2, 5);
+  });
+
+  it('ひねり2：飛んでいる物を止めて叩くと、速さを保って矢印の向きへ曲がる', () => {
+    const sim = new StopSim(nestStage, { ...cfg(), twist: 2 });
+    for (let i = 0; i < 30; i++) sim.step();
+    sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 1, dy: 0 }]);
+    sim.step([{ t: 'resume' }]);
+    for (let i = 0; i < 12; i++) sim.step();
+    const v0 = sim.objs[0].body.getLinearVelocity();
+    const sp0 = Math.hypot(v0.x, v0.y);
+    expect(v0.x).toBeGreaterThan(1);
+    // 横へ飛んでいる卵を止めて、真上へ叩く
+    sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: -1 }]);
+    sim.step([{ t: 'resume' }]);
+    const v1 = sim.objs[0].body.getLinearVelocity();
+    expect(Math.abs(v1.x)).toBeLessThan(0.5);
+    expect(-v1.y).toBeGreaterThan(sp0);
+  });
 });
