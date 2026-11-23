@@ -61,7 +61,7 @@ async function main() {
   const toastEl = el('div', { class: 'toast' });
   center.append(toastEl);
   const hintEl = el('div');
-  hintEl.style.cssText = 'position:absolute;left:50%;top:16px;transform:translateX(-50%);font-size:15px;color:var(--dim);letter-spacing:.06em;text-align:center;text-shadow:0 0 8px #000;width:56%';
+  hintEl.style.cssText = 'position:absolute;left:50%;top:88px;transform:translateX(-50%);font-size:15px;color:var(--dim);letter-spacing:.06em;text-align:center;text-shadow:0 0 8px #000;width:50%';
   hud.append(tl, tr, center, hintEl);
   document.body.appendChild(hud);
   backLink();

@@ -1,0 +1,18 @@
+name: Release
+# v で始まるタグ（例 v1.0.0）を push すると、play/ を zip にして GitHub Releases に添付する
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cd play && zip -r ../lumina-arcade-${{ github.ref_name }}.zip . && cd ..
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Lumina Arcade ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: lumina-arcade-${{ github.ref_name }}.zip

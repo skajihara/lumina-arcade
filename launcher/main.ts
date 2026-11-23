@@ -40,6 +40,20 @@ const resize = () => {
 addEventListener('resize', resize);
 resize();
 
+/** 各ゲームの進行（localStorage の lumina:<id>）から、クリアした数と★の数を読む */
+const progress = (g: GameEntry): { cleared: number; stars: number } => {
+  try {
+    const d = JSON.parse(localStorage.getItem(`lumina:${g.id}`) ?? '{}') as { cleared?: Record<string, number> };
+    const v = Object.values(d.cleared ?? {});
+    return { cleared: v.length, stars: v.reduce((a, b) => a + (b || 0), 0) };
+  } catch {
+    return { cleared: 0, stars: 0 };
+  }
+};
+const prog = new Map(games.map((g) => [g.id, progress(g)]));
+const total = [...prog.values()].reduce((a, p) => a + p.stars, 0);
+const totalMax = games.filter((g) => g.status === 'ready').reduce((a, g) => a + g.stages * 3, 0);
+
 let hover: GameEntry | null = null;
 const size = () => Math.min(W, H) * 0.17;
 const pts = (g: GameEntry) => {
@@ -50,10 +64,12 @@ const hit = (mx: number, my: number) => games.find((g) => Math.hypot(mx - g.at[0
 
 const showCard = (g: GameEntry | null) => {
   if (!g) {
-    card.innerHTML = '<h3>星座を選んでください</h3><p>光っている星座が遊べるゲーム。灰色は制作中です。</p>';
+    card.innerHTML = `<h3>星座を選んでください</h3><p>光っている星座が遊べるゲーム。灰色は制作中です。</p>${total ? `<p style="color:#ffd98a">集めた星 ★ ${total} / ${totalMax}</p>` : ''}`;
     return;
   }
-  card.innerHTML = `<h3>${g.title}${g.status === 'wip' ? '<span class="wip">制作中</span>' : ''}</h3><small>${g.jp}</small><p>${g.desc}</p>`;
+  const p = prog.get(g.id)!;
+  const pr = g.status === 'ready' ? `<p style="color:#ffd98a">クリア ${p.cleared} / ${g.stages}　★ ${p.stars} / ${g.stages * 3}</p>` : '';
+  card.innerHTML = `<h3>${g.title}${g.status === 'wip' ? '<span class="wip">制作中</span>' : ''}</h3><small>${g.jp}</small><p>${g.desc}</p>${pr}`;
 };
 
 cv.addEventListener('pointermove', (e) => {
@@ -112,10 +128,24 @@ const frame = (now: number) => {
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(g.jp, g.at[0] * W, g.at[1] * H + size() * 0.62);
+    // クリア状況：名前の下に小さな★と、全部クリアしたら星座が金色に輪をまとう
+    const pg = prog.get(g.id)!;
+    if (ready && pg.cleared > 0) {
+      ctx.fillStyle = '#ffd98a';
+      ctx.font = '500 11px system-ui, sans-serif';
+      ctx.fillText(`★ ${pg.stars} / ${g.stages * 3}`, g.at[0] * W, g.at[1] * H + size() * 0.62 + 16);
+      if (pg.cleared >= g.stages) {
+        ctx.strokeStyle = '#ffd98a';
+        ctx.globalAlpha = 0.35 + 0.15 * Math.sin(t * 1.5);
+        ctx.beginPath();
+        ctx.arc(g.at[0] * W, g.at[1] * H, size() * 0.56, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   requestAnimationFrame(frame);
 };
 requestAnimationFrame(frame);
-(window as unknown as { __lumina: unknown }).__lumina = { game: 'launcher', ready: true, errors: [], state: () => ({ games: games.length }) };
+(window as unknown as { __lumina: unknown }).__lumina = { game: 'launcher', ready: true, errors: [], state: () => ({ games: games.length, stars: total }) };

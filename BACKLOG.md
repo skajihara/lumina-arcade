@@ -42,13 +42,14 @@
 - [ ] OC-04 Origami Cosmos の仕上げ：ドラッグで折る操作（紙をつまんで線の向こうへ）、折る音の質感、問題ごとの「ひらめき」の確認（同じ最短手数の解が多すぎる問題は差し替え）
 
 ### 全体
-- [ ] REL-01 ランチャーの仕上げ（クリア状況の星表示、BGM）、README、GitHub Releases に play/ の zip を添付して v1.0
+- [ ] REL-02 v1.0：感想を反映した後、README を最終確認し、`git tag v1.0.0 && git push --tags`（release.yml が play/ の zip を Releases に添付）
 
 ### 実験枠 Seeds（1日1個、手が空いた回に）
 - [ ] SEED-xx 新しいメカニクスの小さな試作を `games/seeds/<名前>/` に作る。面白ければ本編タスクに昇格
 
 ## 完了
 
+- [x] REL-01 ランチャーにクリア数と★（全クリアで金の輪）、README を6作品に更新、タグで Releases を作る workflow
 - [x] SS-02 Starsand の描画（画素の砂・きらめき）、器と花火、色の混合（金＋水色＝白、水色＋桃＝紫）、8ステージと解の線の検証、ランチャーで ready、REVIEW.md に確認依頼
 - [x] SS-01 Starsand の砂のシミュレーション（落ちる砂・線とインク・器・注ぎ口）、仮の3面と解の線、テスト7本
 - [x] OC-03 Origami Cosmos の20問（手作り3＋生成器17、ソルバーで検証・最短手数順）、`reports/origami-cosmos-puzzles.md`、ランチャーで ready、REVIEW.md に確認依頼
