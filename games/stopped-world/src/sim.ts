@@ -103,7 +103,7 @@ export class StopSim {
       for (let i = 1; i < line.length; i++) ground.createFixture(new Edge(line[i - 1], line[i]), { friction: 0.6 });
     }
     stage.objects.forEach((d) => this.addObj(d));
-    this.world.on('post-solve', (c: Contact) => this.onImpact(c));
+    this.world.on('begin-contact', (c: Contact) => this.onImpact(c));
   }
 
   private addObj(d: ObjDef): void {
@@ -112,6 +112,9 @@ export class StopSim {
       type: d.fixed ? 'static' : 'dynamic',
       position: { x: d.x, y: d.y },
       angle: d.angle ?? 0,
+      // 丸いものは転がり続けないよう少しだけ減衰させる（卵が巣で止まれるように）
+      angularDamping: 1.2,
+      linearDamping: 0.15,
       userData: { kind: 'obj', id } as Tag,
     });
     const round = d.kind === 'egg' || d.kind === 'ball' || d.kind === 'bomb';
@@ -128,7 +131,10 @@ export class StopSim {
     const b = ub?.kind === 'obj' ? this.objs[ub.id] : null;
     const va = c.getFixtureA().getBody().getLinearVelocity();
     const vb = c.getFixtureB().getBody().getLinearVelocity();
-    this.hits.push({ a, b, speed: Math.hypot(va.x - vb.x, va.y - vb.y) });
+    // 衝撃の強さは「ぶつかる向き（法線）」の速さの差。床の上を転がるだけでは割れない
+    const n = c.getWorldManifold(null)?.normal ?? { x: 0, y: 0 };
+    const speed = Math.abs((va.x - vb.x) * n.x + (va.y - vb.y) * n.y);
+    this.hits.push({ a, b, speed });
   }
 
   get time(): number {
