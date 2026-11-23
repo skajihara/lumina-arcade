@@ -66,7 +66,10 @@ export interface StageDef {
 }
 
 export type SandEvent =
-  | { t: 'fill'; cup: number }
+  /** 器が満ちた。chain：花火の雨から続けて満ちた数（1 で最初） */
+  | { t: 'fill'; cup: number; chain: number }
+  /** ひねり1：満ちた器の砂が花火の雨になった */
+  | { t: 'rain'; cup: number; n: number; color: number }
   | { t: 'mix'; x: number; y: number; color: number }
   | { t: 'clear' }
   | { t: 'fail' };
@@ -89,6 +92,10 @@ export class SandSim {
   grains = 0;
   private rng: Rng;
   private still = 0;
+  /** 花火の雨が降っている間（このティックまで）と、続けて満ちた数 */
+  private rainUntil = -1;
+  chain = 0;
+  bestChain = 0;
   private doneTicks = 0;
 
   constructor(public stage: StageDef, public cfg: SandConfig, seed = 1) {
@@ -292,7 +299,10 @@ export class SandSim {
       this.cupCount[i] = n;
       if (!this.filled[i] && n >= c.need) {
         this.filled[i] = true;
-        this.events.push({ t: 'fill', cup: i });
+        // 花火の雨が降っている間（4秒）に満ちたら連鎖
+        this.chain = this.tick < this.rainUntil ? this.chain + 1 : 1;
+        this.events.push({ t: 'fill', cup: i, chain: this.chain });
+        this.burstCup(i);
       }
     });
   }
@@ -313,6 +323,33 @@ export class SandSim {
     if (this.remaining() === 0 && (this.still > 30 || this.doneTicks > 1200)) {
       this.phase = 'fail';
       this.events.push({ t: 'fail' });
+    }
+  }
+
+  /** 満ちた器が弾ける：中の砂を消し、ひねり1なら一部を花火の雨として周りの空へ撒く（そのまま落ちてくる） */
+  private burstCup(i: number): void {
+    const c = this.stage.cups[i];
+    // 雨の色：色の器はその色、色なしの器は中で一番多い色
+    const per = new Array(COLORS.length).fill(0);
+    for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) { const v = this.get(x, y); if (v >= SAND) per[v - SAND]++; }
+    const color = c.color ?? per.indexOf(Math.max(...per));
+    const n = this.emptyCup(i);
+    this.bestChain = Math.max(this.bestChain, this.chain);
+    if (Math.round(this.cfg.twist ?? 0) !== 1) return;
+    const want = Math.round(n * this.cfg.rainFrac);
+    const cx = c.x + c.w / 2;
+    let put = 0;
+    for (let k = 0; k < want * 4 && put < want; k++) {
+      const x = Math.round(cx + this.rng.range(-this.cfg.rainSpread, this.cfg.rainSpread));
+      const y = Math.round(c.y - 8 - this.rng.range(0, 40));
+      if (x < 1 || x >= W - 1 || y < 1 || y >= H) continue;
+      if (this.get(x, y) !== EMPTY) continue;
+      this.grid[y * W + x] = SAND + color;
+      put++;
+    }
+    if (put > 0) {
+      this.rainUntil = this.tick + 120 * 4;
+      this.events.push({ t: 'rain', cup: i, n: put, color });
     }
   }
 

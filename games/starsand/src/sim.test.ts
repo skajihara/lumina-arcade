@@ -79,4 +79,18 @@ describe('SandSim', () => {
       expect(sim.phase, st.name).toBe('clear');
     }
   });
+
+  it('ひねり1：満ちた器の砂は花火の雨になって周りへ降る（ひねりなしでは消えるだけ）', () => {
+    const a = new SandSim(stages[1], { ...cfg(), twist: 1 }, 1);
+    for (const l of stages[1].solution ?? []) for (let k = 1; k < l.length; k++) a.drawLine(l[k - 1].x, l[k - 1].y, l[k].x, l[k].y);
+    let rain = 0;
+    for (let k = 0; k < 8000 && a.phase === 'play'; k++) { a.step(); rain += a.events.filter((e) => e.t === 'rain').length; }
+    expect(a.phase).toBe('clear');
+    expect(rain).toBeGreaterThan(0);
+    const b = new SandSim(stages[1], { ...cfg(), twist: 0 }, 1);
+    for (const l of stages[1].solution ?? []) for (let k = 1; k < l.length; k++) b.drawLine(l[k - 1].x, l[k - 1].y, l[k].x, l[k].y);
+    let rain0 = 0;
+    for (let k = 0; k < 8000 && b.phase === 'play'; k++) { b.step(); rain0 += b.events.filter((e) => e.t === 'rain').length; }
+    expect(rain0).toBe(0);
+  });
 });
