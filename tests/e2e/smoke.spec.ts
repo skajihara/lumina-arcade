@@ -5,21 +5,26 @@
  * ・スクリーンショットを test-results/shots に保存（PR に添付する）
  */
 import { test, expect, type Page } from '@playwright/test';
-import { readdirSync, mkdirSync } from 'node:fs';
+import { readdirSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const playDir = resolve(import.meta.dirname, '../../play');
 const shots = resolve(import.meta.dirname, '../../test-results/shots');
 mkdirSync(shots, { recursive: true });
-const pages = readdirSync(playDir).filter((f) => f.endsWith('.html'));
+// 実験枠（play/seeds/）も起動とエラーだけ確かめる
+const seedsDir = resolve(playDir, 'seeds');
+const pages = [
+  ...readdirSync(playDir).filter((f) => f.endsWith('.html')),
+  ...(existsSync(seedsDir) ? readdirSync(seedsDir).filter((f) => f.endsWith('.html')).map((f) => `seeds/${f}`) : []),
+];
 
 async function waitReady(page: Page) {
   await page.waitForFunction(() => (window as unknown as { __lumina?: { ready: boolean } }).__lumina?.ready === true, null, { timeout: 30_000 });
 }
 
 for (const file of pages) {
-  const name = file.replace('.html', '');
+  const name = file.replace('.html', '').replace('/', '-');
   test(`${name}: 起動してエラーが出ない`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -31,7 +36,7 @@ for (const file of pages) {
     expect(errors).toEqual([]);
   });
 
-  if (name === 'index') continue;
+  if (name === 'index' || file.startsWith('seeds/')) continue;
   test(`${name}: 自動プレイで30秒動く`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
