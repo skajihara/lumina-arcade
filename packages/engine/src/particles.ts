@@ -59,6 +59,9 @@ export class Particles {
       const c = o.color ?? 0xffffff;
       p.sp.tint = Array.isArray(c) ? c[Math.floor(Math.random() * c.length)] : c;
       p.sp.alpha = o.alpha ?? 1;
+      // update() を待たずに位置と大きさを決める（止まった世界で出した粒が左上に大きく出ないように）
+      p.sp.x = x; p.sp.y = y;
+      p.sp.scale.set(p.size);
       p.alive = true;
       this.container.addChild(p.sp);
       this.active.push(p);

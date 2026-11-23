@@ -87,4 +87,28 @@ describe('StopSim', () => {
     expect(a.sim.objs[0].alive).toBe(true);
     expect(a.sim.objs[0].body.getPosition().x).toBeGreaterThan(6);
   });
+
+  it('予測線：止めている間の先読みが、実際に戻した後の動きとほぼ一致する', () => {
+    const sim = new StopSim(nestStage, cfg());
+    for (let i = 0; i < 60; i++) sim.step();
+    sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 1, dy: -0.4 }]);
+    const before = sim.digest();
+    const pred = sim.predict(1, 4);
+    // 先読みは元の世界を変えない
+    expect(sim.digest()).toEqual(before);
+    expect(pred.length).toBe(1);
+    const last = pred[0].pts[pred[0].pts.length - 1];
+    sim.step([{ t: 'resume' }]);
+    for (let i = 1; i < 120; i++) sim.step();
+    const p = sim.objs[0].body.getPosition();
+    expect(Math.hypot(p.x - last.x, p.y - last.y)).toBeLessThan(0.3);
+  });
+
+  it('予測線：点火した爆弾の先読みで箱が消える', () => {
+    const sim = new StopSim(crateStage, cfg());
+    for (let i = 0; i < 30; i++) sim.step();
+    sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: -1 }]);
+    const pred = sim.predict(1, 4);
+    expect(pred.filter((p) => p.kind === 'crate' && p.ends === 'gone').length).toBe(2);
+  });
 });
