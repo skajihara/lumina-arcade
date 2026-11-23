@@ -3,26 +3,20 @@ import { presets } from '../../games/nova-pinball/src/config';
 import { stages } from '../../games/nova-pinball/src/stages';
 import { NovaSim } from '../../games/nova-pinball/src/sim';
 import { NovaBot } from '../../games/nova-pinball/src/bot';
-const RUNS = Number(process.env.R ?? 10);
-it('quick', () => {
-  for (const preset of (process.env.P ?? 'ふつう').split(',')) {
-    let line = preset + '\n';
-    for (const skill of (process.env.K ?? '0.6,0.85').split(',').map(Number)) {
-      line += ` s${skill}:`;
-      stages.forEach((st, i) => {
-        if (process.env.ONLY && !process.env.ONLY.split(',').includes(String(i + 1))) return;
-        let c = 0, ch = 0, nv = 0, t = 0, go = 0;
-        for (let r = 0; r < RUNS; r++) {
-          const sim = new NovaSim(st, { ...presets[preset], ...JSON.parse(process.env.O ?? '{}') });
-          const bot = new NovaBot(1000 + r * 7 + i, skill);
-          while (sim.phase === 'play' && sim.time < 240) sim.step(bot.input(sim));
-          if (sim.phase === 'clear') { c++; t += sim.time; } if (sim.phase === 'gameover') go++;
-          ch += sim.bestChain; if (sim.supernova) nv++;
-        }
-        line += ` ${i + 1}:${Math.round(c / RUNS * 100)}%/${(ch / RUNS).toFixed(1)}/n${nv}/${c ? Math.round(t / c) : '-'}s`;
-      });
-      line += '\n';
-    }
-    console.log(line);
+const RUNS = Number(process.env.R ?? 8);
+it('twist', () => {
+  for (const twist of [0, 1, 2, 3]) {
+    let c = 0, ch = 0, nv = 0, t = 0, n = 0, explo = 0, links = 0;
+    stages.forEach((st, i) => {
+      if (st.endless) return;
+      for (let r = 0; r < RUNS; r++) {
+        const sim = new NovaSim(st, { ...presets['ふつう'], twist });
+        const bot = new NovaBot(1000 + r * 7 + i, 0.85);
+        while (sim.phase === 'play' && sim.time < 240) { sim.step(bot.input(sim)); for (const e of sim.events) if (e.t === 'explode' && e.chain >= 3) explo++; }
+        n++; if (sim.phase === 'clear') { c++; t += sim.time; }
+        ch += sim.bestChain; if (sim.supernova) nv++; links += sim.litLinks.size / Math.max(1, sim.links.length);
+      }
+    });
+    console.log(`twist${twist}: clear ${Math.round(c / n * 100)}% chain ${(ch / n).toFixed(1)} nova ${Math.round(nv / n * 100)}% links ${Math.round(links / n * 100)}% t ${Math.round(t / Math.max(1, c))}s chain3+/game ${(explo / n).toFixed(1)}`);
   }
 });

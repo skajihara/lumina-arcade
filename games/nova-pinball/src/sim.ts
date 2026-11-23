@@ -54,6 +54,8 @@ export interface Star {
   lastHit: number;
   /** 最後に爆風チャージを受けた連鎖ID（1つの連鎖で受けるのは1回だけ） */
   blastChain: number;
+  /** 色（ひねりA：同じ色どうしだけ連鎖する） */
+  color: number;
 }
 
 export interface Flipper {
@@ -177,6 +179,10 @@ export class NovaSim {
   private nextBallId = 1;
   private contacts: { a: Tag; b: Tag; rel: number; ba: Body; bb: Body }[] = [];
   private gravityNow = 0;
+  /** ひねりC：重力が爆発の方へ向いている間（ティック）。-1 なら通常 */
+  gravityTwistUntil = -1;
+  /** ひねりC：今の重力の向き（描画用） */
+  gravityDir = { x: 0, y: 1 };
 
   constructor(public stage: StageDef, public cfg: NovaConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -235,7 +241,9 @@ export class NovaSim {
   }
 
   private buildStage(): void {
-    this.stage.stars.forEach((d) => this.addStar(d));
+    // 色（ひねりA）：省略時は番号順に3つのまとまりへ分ける（線でつながった隣どうしは同じ色になりやすい）
+    const n = this.stage.stars.length;
+    this.stage.stars.forEach((d, i) => this.addStar({ ...d, color: d.color ?? Math.floor((i * 3) / Math.max(1, n)) }));
     (this.stage.bumpers ?? []).forEach((b, i) => {
       const body = this.world.createBody({ type: 'static', position: { x: b.x, y: b.y }, userData: { kind: 'bumper', id: i } as Tag });
       body.createFixture(new Circle(b.r), { restitution: 0.9 });
@@ -258,6 +266,7 @@ export class NovaSim {
     this.stars.push({
       id: i, body, r, loose: !!d.loose, charge: d.charge ?? 0, decay: 0, alive: true,
       pendingAt: -1, pendingChain: 0, exploded: false, explodedChain: -1, lastHit: -999, blastChain: -1,
+      color: d.color ?? 0,
     });
   }
 
@@ -305,7 +314,7 @@ export class NovaSim {
       order.push(best);
       left.delete(best);
     }
-    order.forEach((i) => this.addStar(pts[i]));
+    order.forEach((i, k) => this.addStar({ ...pts[i], color: Math.floor((k * 2) / order.length) }));
     this.waveLinkStart = this.links.length;
     for (let k = 0; k < order.length - 1; k++) this.links.push([from + k, from + k + 1]);
     this.supernova = false;
@@ -347,7 +356,11 @@ export class NovaSim {
   step(input: number): void {
     const cfg = this.cfg;
     this.events.length = 0;
-    if (cfg.gravity !== this.gravityNow) {
+    if (this.gravityTwistUntil >= 0 && this.tick >= this.gravityTwistUntil) {
+      this.gravityTwistUntil = -1;
+      this.gravityNow = NaN;
+    }
+    if (this.gravityTwistUntil < 0 && cfg.gravity !== this.gravityNow) {
       this.world.setGravity({ x: 0, y: cfg.gravity });
       this.gravityNow = cfg.gravity;
     }
@@ -496,6 +509,12 @@ export class NovaSim {
   private addCharge(s: Star, n: number, chainFrom = -1, delay = 0): void {
     if (!s.alive) return;
     s.charge += n;
+    // ひねりB：灯った星はボールで押して運べる
+    if (this.cfg.twist === 2 && !s.loose && s.charge > 0) {
+      s.loose = true;
+      s.body.setDynamic();
+      s.body.setLinearDamping(2.2);
+    }
     const max = Math.round(this.cfg.maxCharge);
     if (s.charge >= max && s.pendingAt < 0) {
       s.charge = max;
@@ -568,6 +587,8 @@ export class NovaSim {
       const d = Math.hypot(op.x - p.x, op.y - p.y) - o.r;
       if (d <= R) {
         if (o.loose) this.blast(o.body, p.x, p.y, R);
+        // ひねりA：違う色の星はチャージされない
+        if (cfg.twist === 1 && o.color !== s.color) continue;
         // 同じ連鎖で2回以上は爆風チャージを受けない → 先に当てておいた星だけが連鎖する
         if (o.blastChain === this.chainId) continue;
         o.blastChain = this.chainId;
@@ -576,6 +597,15 @@ export class NovaSim {
       }
     }
     for (const b of this.balls) this.blast(b.body, p.x, p.y, R * 1.15);
+    // ひねりC：重力が一瞬、爆発の方へ向く（ボールが星の方へ吸い寄せられる）
+    if (cfg.twist === 3) {
+      const b0 = this.balls[0]?.body.getPosition() ?? { x: 6.9, y: 20 };
+      const dx = p.x - b0.x, dy = p.y - b0.y;
+      const d = Math.hypot(dx, dy) || 1;
+      this.gravityDir = { x: dx / d, y: dy / d };
+      this.world.setGravity({ x: (dx / d) * cfg.gravity * 0.8, y: (dy / d) * cfg.gravity * 0.8 });
+      this.gravityTwistUntil = this.tick + Math.round(0.45 * HZ);
+    }
 
     const last = this.starsAlive() === 0 && !this.stars.some((x) => x.alive && x.pendingAt >= 0);
     this.events.push({ t: 'explode', star: s.id, x: p.x, y: p.y, r: R, chain: this.chainCount, last });

@@ -1,5 +1,6 @@
 /** Nova Pinball：画面遷移・HUD・入力をまとめる */
 import { createGameApp, installDebugHook } from '@engine/app';
+import { Graphics } from 'pixi.js';
 import { FixedLoop } from '@engine/loop';
 import { Input } from '@engine/input';
 import { Juice } from '@engine/juice';
@@ -26,6 +27,10 @@ async function main() {
   injectBaseStyle();
   const ga = await createGameApp(VIEW_W, VIEW_H);
   const juice = new Juice();
+  // カメラが寄っても盤面の外へはみ出さないよう、論理画面で切り抜く
+  const worldMask = new Graphics().rect(0, 0, VIEW_W, VIEW_H).fill({ color: 0xffffff });
+  ga.root.addChild(worldMask);
+  ga.world.mask = worldMask;
   const tuning = createTuning<NovaConfig>('nova-pinball', schema, presets, DEFAULT_PRESET);
   const cfg = tuning.config;
   const save = new Save<Progress>('nova-pinball', { cleared: {}, best: {} });
