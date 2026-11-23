@@ -10,9 +10,10 @@
     "build:one": "node scripts/build-all.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "e2e": "playwright test",
+    "e2e": "playwright test smoke",
     "check": "npm run typecheck && npm run test && npm run build && npm run e2e",
-    "balance": "vitest run --config vitest.balance.config.ts"
+    "balance": "vitest run --config vitest.balance.config.ts",
+    "qa": "playwright test flow && python3 scripts/contact-sheet.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
