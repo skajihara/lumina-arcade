@@ -17,4 +17,21 @@ describe('時空の絵筆（実験）', () => {
     expect(run()).toEqual(run());
     expect(run()[2]).toBe(true);
   });
+
+  it('逆再生の中では、星が来た道を戻る（上へ）', () => {
+    const s = new ChronoSim({ ...defaults, zoneLife: 0 }, 3);
+    for (let i = 0; i < 120; i++) s.step();
+    const st = s.stars[0];
+    const y0 = st.y;
+    s.paint(st.x, st.y, 'rewind');
+    for (let i = 0; i < 20; i++) s.step();
+    expect(s.stars[0].y).toBeLessThan(y0);
+  });
+
+  it('塗った時間は消える', () => {
+    const s = new ChronoSim({ ...defaults, zoneLife: 1 }, 3);
+    s.paint(500, 300, 'slow');
+    for (let i = 0; i < 130; i++) s.step();
+    expect(s.zones.length).toBe(0);
+  });
 });
