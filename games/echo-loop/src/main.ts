@@ -99,12 +99,17 @@ async function main() {
 
   const attachView = () => {
     if (!es) return;
-    view?.destroy();
+    // 重ね絵はカメラ（ズーム）と一緒に動くよう view の中に入れる。view を壊す前に外す
+    if (view) {
+      view.container.removeChild(overlay);
+      view.destroy();
+    }
     view = new NovaView(es.sim, juice, cfg, hudApi);
     const cur = es.loop;
     view.ballStyle = (b) => ({ tint: echoColor(cur - b.owner), alpha: echoAlpha(cur - b.owner) });
+    view.container.addChild(overlay);
     ga.world.removeChildren();
-    ga.world.addChild(view.container, overlay);
+    ga.world.addChild(view.container);
   };
 
   const startStage = (i: number) => {
@@ -114,6 +119,7 @@ async function main() {
     paths = [];
     prevPaths = [];
     rewritten.clear();
+    finaleT = -1;
     attachView();
     hudApi.chain(0);
     hudApi.toast(stages[i].hint);
@@ -238,6 +244,24 @@ async function main() {
   synth.setVolume(cfg.volume);
   ga.setBloom(cfg.bloom);
 
+  /** 全員そろって燃やしきった瞬間：残響ひとりひとりから光が弾け、和音が人数分だけ積み上がる */
+  let finaleT = -1;
+  const onAllClear = () => {
+    if (!es || !view) return;
+    const n = es.loop + 1;
+    finaleT = 0;
+    juice.slowmo(0.12, 2.6);
+    juice.doFlash(0.8, 0xffe7a8);
+    for (const b of es.sim.balls) {
+      const p = b.body.getPosition();
+      const age = es.loop - b.owner;
+      view.particles.emit(p.x * SCALE, p.y * SCALE, { count: 90, speed: [60, 700], life: [0.8, 2.2], size: [0.06, 0.34], color: [echoColor(age), 0xffe7a8, 0xffffff], drag: 1.2 });
+    }
+    synth.arp(Array.from({ length: Math.min(12, n + 4) }, (_, k) => k), 0.07, 0.11);
+    synth.pad(0.07, 4);
+    hudApi.toast(`${n} 人の自分が、同じ ${cfg.loopSec} 秒で`);
+  };
+
   /** ループが巻き戻った瞬間 */
   const onRewind = (loop: number) => {
     prevPaths = paths;
@@ -266,7 +290,12 @@ async function main() {
       const before = es.loop;
       es.step(m);
       for (const e of es.events) {
-        if (e.t === 'echoClear' || e.t === 'echoFail') resultTimer = es.totalTicks + Math.round(HZ * (e.t === 'echoClear' ? 2.4 : 1.2));
+        if (e.t === 'echoClear' || e.t === 'echoFail') resultTimer = es.totalTicks + Math.round(HZ * (e.t === 'echoClear' ? 3.2 : 1.2));
+        if (e.t === 'echoClear') onAllClear();
+        if (e.t === 'echoFail') {
+          synth.tone(196, 1.2, { type: 'sine', vol: 0.15, slideTo: 60 });
+          hudApi.toast('時間切れ — 残響は消えていく');
+        }
         else if (e.t !== 'loopStart' && e.t !== 'loopEnd' && es.loop === before) view.handle(e as SimEvent);
       }
       if (es.loop !== before) onRewind(es.loop);
@@ -350,10 +379,28 @@ async function main() {
         g.stroke({ width: 2, color: col, alpha: 0.45 });
       }
     });
-    // ループの時計（盤面の上端の光の帯。残り2秒で桃色に）
+    // 最後のループ：盤面の縁が金色に脈打つ
+    const lastLoop = es.loop === es.maxLoops - 1;
+    if (lastLoop && es.phase === 'play') {
+      const a = 0.12 + 0.08 * Math.sin(t * 0.08);
+      g.rect(4, 4, VIEW_W - 8, VIEW_H - 8).stroke({ width: 6, color: 0xffd27f, alpha: a });
+    }
+    // 全員クリア：残響それぞれから金の光の線が中央へ集まる
+    if (finaleT >= 0) {
+      finaleT += dt;
+      const k2 = Math.min(1, finaleT / 1.2);
+      const cx = VIEW_W / 2, cy = VIEW_H * 0.4;
+      for (const b of es.sim.balls) {
+        const p = b.body.getPosition();
+        const x = p.x * SCALE, y = p.y * SCALE;
+        g.moveTo(x, y).lineTo(x + (cx - x) * k2, y + (cy - y) * k2).stroke({ width: 2, color: echoColor(es.loop - b.owner), alpha: 0.8 * (1 - Math.max(0, finaleT - 2) / 1.5) });
+      }
+      g.circle(cx, cy, 20 + 60 * k2).stroke({ width: 3, color: 0xffe7a8, alpha: Math.max(0, 0.7 - finaleT * 0.2) });
+    }
+    // ループの時計（盤面の上端の光の帯。残り2秒で桃色に。最後のループは金）
     const k = Math.min(1, t / es.loopTicks);
     const left = es.cfg.loopSec * (1 - k);
-    const col = left < 2 ? lerpColor(0xffa3e0, 0xffffff, 0.5 + 0.5 * Math.sin(t * 0.3)) : 0xc9a3ff;
+    const col = left < 2 ? lerpColor(0xffa3e0, 0xffffff, 0.5 + 0.5 * Math.sin(t * 0.3)) : lastLoop ? 0xffd27f : 0xc9a3ff;
     const x0 = 3.0 * SCALE, x1 = 11.8 * SCALE, y = 0.32 * SCALE;
     g.moveTo(x0, y).lineTo(x1, y).stroke({ width: 3, color: 0x2a2450, alpha: 0.9, cap: 'round' });
     g.moveTo(x0, y).lineTo(x0 + (x1 - x0) * (1 - k), y).stroke({ width: 3, color: col, alpha: 0.95, cap: 'round' });
@@ -383,6 +430,11 @@ async function main() {
   hook.start = (i: number) => startStage(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
   hook.es = () => es;
+  /** 演出確認用：全部の星を点火してクリアさせる */
+  hook.ignite = () => {
+    if (!es) return;
+    for (const st of es.sim.stars) if (st.alive) (es.sim as unknown as { addCharge(s: unknown, n: number): void }).addCharge(st, 9);
+  };
 
   loop.start();
   if (params.has('stage')) startStage(Math.min(stages.length - 1, Number(params.get('stage')) || 0));
