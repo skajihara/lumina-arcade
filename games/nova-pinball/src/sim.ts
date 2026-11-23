@@ -23,7 +23,9 @@ type Tag =
   | { kind: 'star'; id: number }
   | { kind: 'bumper'; id: number }
   | { kind: 'wall' }
-  | { kind: 'flipper'; side: 'L' | 'R' };
+  | { kind: 'flipper'; side: 'L' | 'R' }
+  | { kind: 'sling'; side: 'L' | 'R' }
+  | { kind: 'roll'; id: number };
 
 export interface Ball {
   id: number;
@@ -32,6 +34,8 @@ export interface Ball {
   launched: boolean;
   trail: { x: number; y: number }[];
   still: number;
+  /** キックバック中（1=左から, -1=右から, 0=なし） */
+  kicked: number;
 }
 
 export interface Star {
@@ -73,12 +77,35 @@ export type SimEvent =
   | { t: 'fizzle'; star: number; x: number; y: number }
   | { t: 'clear' }
   | { t: 'gameover' }
-  | { t: 'chainEnd'; chain: number };
+  | { t: 'chainEnd'; chain: number }
+  | { t: 'sling'; side: 'L' | 'R'; x: number; y: number }
+  | { t: 'roll'; id: number; all: boolean }
+  | { t: 'kickback'; side: 'L' | 'R'; x: number; y: number };
 
 export type Phase = 'play' | 'clear' | 'gameover';
 
+/** 盤面のギミック（ステージ定義で ON/OFF） */
+export interface BoardOpts {
+  /** アウトレーン：壁際の細い通路。落ちるとドレイン */
+  outlanes?: boolean;
+  /** スリングショット：フリッパー上の三角キッカー */
+  slings?: boolean;
+  /** 上部のロールオーバー（3つ灯すとボールセーブ再点灯） */
+  rollovers?: boolean;
+}
+
+/** 左右対称の鏡像（盤面の中心 x=6.9） */
+const mirror = (p: { x: number; y: number }) => ({ x: +(13.8 - p.x).toFixed(3), y: p.y });
+
+/** スリングショットの三角形（左）。キックするのは A→C の辺（中央向き） */
+export const SLING_L = [{ x: 2.25, y: 16.9 }, { x: 2.25, y: 19.25 }, { x: 3.75, y: 20.35 }];
+export const SLING_R = SLING_L.map(mirror);
+/** ロールオーバーの位置 */
+export const ROLLOVERS = [{ x: 5.5, y: 1.5 }, { x: 6.9, y: 1.3 }, { x: 8.3, y: 1.5 }];
+export const ROLL_R = 0.45;
+
 /** 盤面の壁（折れ線）。描画にも使う */
-export function boardWalls(): { x: number; y: number }[][] {
+export function boardWalls(opts: BoardOpts = {}): { x: number; y: number }[][] {
   const arcPts = (cx: number, cy: number, r: number, a0: number, a1: number, n = 10) => {
     const p: { x: number; y: number }[] = [];
     for (let i = 0; i <= n; i++) {
@@ -88,6 +115,7 @@ export function boardWalls(): { x: number; y: number }[][] {
     return p;
   };
   const outer = [
+    ...(opts.outlanes ? [{ x: 0.6, y: 25.6 }] : []),
     { x: 0.6, y: 19.0 },
     ...arcPts(3.2, 3.2, 2.6, Math.PI, Math.PI * 1.5),
     ...arcPts(11.8, 3.2, 2.6, Math.PI * 1.5, Math.PI * 2),
@@ -96,9 +124,17 @@ export function boardWalls(): { x: number; y: number }[][] {
     { x: 13.2, y: 6.4 },
   ];
   // 斜面の終点はフリッパー支点の真上より少し先。ボールが支点との隙間に挟まらず、そのままフリッパーへ転がる
-  const leftSlope = [{ x: 0.6, y: 19.0 }, { x: 4.58, y: 21.76 }];
-  const rightSlope = [{ x: FIELD_RIGHT, y: 19.0 }, { x: 9.22, y: 21.76 }];
-  return [outer, leftSlope, rightSlope];
+  const end = { x: 4.58, y: 21.76 };
+  const leftSlope = opts.outlanes
+    ? [{ x: 1.3, y: 17.2 }, { x: 1.3, y: 19.45 }, end]
+    : [{ x: 0.6, y: 19.0 }, end];
+  const rightSlope = leftSlope.map(mirror);
+  const walls = [outer, leftSlope, rightSlope];
+  if (opts.outlanes) {
+    // 右のアウトレーンは発射レーンの壁の内側。壁の下端をドレインまで伸ばす
+    walls.push([{ x: FIELD_RIGHT, y: 24.4 }, { x: FIELD_RIGHT, y: 25.6 }]);
+  }
+  return walls;
 }
 
 export const PIVOT_L = { x: 4.45, y: 22.05 };
@@ -115,6 +151,10 @@ export class NovaSim {
   bumpers: { x: number; y: number; r: number }[] = [];
   flippers: Flipper[] = [];
   litLinks = new Set<number>();
+  /** 灯っているロールオーバー */
+  rollLit = [false, false, false];
+  /** アウトレーンのキックバック（落ちたボールを1回だけ打ち返す）が灯っているか */
+  kickback = { L: false, R: false };
   supernova = false;
   events: SimEvent[] = [];
   launchCharge = 0;
@@ -133,14 +173,28 @@ export class NovaSim {
     this.ballsLeft = Math.max(0, Math.round(cfg.balls) - 1);
     this.buildBoard();
     this.buildStage();
+    const kb = !!stage.outlanes && cfg.kickbackStart > 0;
+    this.kickback = { L: kb, R: kb };
     this.spawnBall();
     this.world.on('begin-contact', (c: Contact) => this.onContact(c));
   }
 
   private buildBoard(): void {
     const ground = this.world.createBody({ type: 'static', userData: { kind: 'wall' } as Tag });
-    for (const line of boardWalls()) {
+    for (const line of boardWalls(this.stage)) {
       ground.createFixture(new Chain(line, false), { friction: 0.1, restitution: 0.3 });
+    }
+    if (this.stage.slings) {
+      for (const [side, tri] of [['L', SLING_L], ['R', SLING_R]] as const) {
+        const b = this.world.createBody({ type: 'static', userData: { kind: 'sling', side } as Tag });
+        b.createFixture(new Polygon(tri), { friction: 0.1, restitution: 0.4 });
+      }
+    }
+    if (this.stage.rollovers) {
+      ROLLOVERS.forEach((r, id) => {
+        const b = this.world.createBody({ type: 'static', position: r, userData: { kind: 'roll', id } as Tag });
+        b.createFixture(new Circle(ROLL_R), { isSensor: true });
+      });
     }
     const L = this.cfg.flipperLength;
     const mk = (side: 'L' | 'R', pivot: { x: number; y: number }) => {
@@ -192,7 +246,7 @@ export class NovaSim {
 
   spawnBall(at = { x: 13.8, y: 23.8 }): Ball {
     const body = this.world.createBody({ type: 'dynamic', position: at, bullet: true });
-    const ball: Ball = { id: this.nextBallId++, body, saveUntil: -1, launched: false, trail: [], still: 0 };
+    const ball: Ball = { id: this.nextBallId++, body, saveUntil: -1, launched: false, trail: [], still: 0, kicked: 0 };
     body.setUserData({ kind: 'ball', id: ball.id } as Tag);
     body.createFixture(new Circle(BALL_R), { density: 1, friction: 0.08, restitution: this.cfg.ballRestitution });
     this.balls.push(ball);
@@ -239,7 +293,14 @@ export class NovaSim {
       const dir = f.side === 'L' ? -1 : 1;
       f.joint.setMaxMotorTorque(cfg.flipperTorque);
       f.joint.setMotorSpeed(on ? dir * cfg.flipperSpeed : -dir * cfg.flipperSpeed * 0.7);
-      if (pressed & bit) this.events.push({ t: 'flip', side: f.side });
+      if (pressed & bit) {
+        this.events.push({ t: 'flip', side: f.side });
+        // レーンチェンジ：フリッパーを押すと灯りが左右にずれる（狙って揃える）
+        if (this.stage.rollovers) {
+          const r = this.rollLit;
+          this.rollLit = f.side === 'L' ? [r[1], r[2], r[0]] : [r[2], r[0], r[1]];
+        }
+      }
     }
 
     // 発射（レーンにいるボールだけ）
@@ -300,6 +361,10 @@ export class NovaSim {
           const bp = bx.getPosition(), sp = by.getPosition();
           this.kick(bx, bp.x - sp.x, bp.y - sp.y, this.cfg.popKick * 1.3);
           this.events.push({ t: 'bump', x: sp.x, y: sp.y });
+        } else if (x.kind === 'ball' && y.kind === 'sling') {
+          this.slingKick(bx, y.side);
+        } else if (x.kind === 'ball' && y.kind === 'roll') {
+          this.rollover(y.id);
         } else if (x.kind === 'star' && y.kind === 'star' && x.id < y.id) {
           if (c.rel < this.cfg.looseHitSpeed) continue;
           for (const id of [x.id, y.id]) {
@@ -315,6 +380,43 @@ export class NovaSim {
       }
     }
     this.contacts.length = 0;
+  }
+
+  /** スリングショット：中央向きの辺に当たった時だけ、辺の法線方向に弾く */
+  private slingKick(ball: Body, side: 'L' | 'R'): void {
+    const [A, , C] = side === 'L' ? SLING_L : SLING_R;
+    const ex = C.x - A.x, ey = C.y - A.y;
+    // 中央（x=6.9）側の法線
+    let nx = ey, ny = -ex;
+    if ((side === 'L' && nx < 0) || (side === 'R' && nx > 0)) { nx = -nx; ny = -ny; }
+    const p = ball.getPosition();
+    const d = ((p.x - A.x) * nx + (p.y - A.y) * ny) / Math.hypot(nx, ny);
+    if (d < BALL_R * 0.6) return;
+    const v = ball.getLinearVelocity();
+    if (Math.hypot(v.x, v.y) < 1.2) return;
+    this.kick(ball, nx, ny, this.cfg.slingKick);
+    const q = { x: (A.x + C.x) / 2, y: (A.y + C.y) / 2 };
+    this.events.push({ t: 'sling', side, x: q.x, y: q.y });
+  }
+
+  private rollover(id: number): void {
+    if (this.rollLit[id]) return;
+    this.rollLit[id] = true;
+    this.score += 50;
+    const all = this.rollLit.every(Boolean);
+    this.events.push({ t: 'roll', id, all });
+    if (all) {
+      this.rollLit = [false, false, false];
+      this.score += 1000;
+      const until = this.tick + Math.round(this.cfg.rolloverSave * HZ);
+      for (const b of this.balls) b.saveUntil = Math.max(b.saveUntil, until);
+      if (this.stage.outlanes) this.kickback = { L: true, R: true };
+    }
+  }
+
+  /** ボールセーブが効いているか（描画用） */
+  saveActive(): boolean {
+    return this.balls.some((b) => b.saveUntil >= this.tick);
   }
 
   private kick(body: Body, dx: number, dy: number, strength: number): void {
@@ -449,6 +551,21 @@ export class NovaSim {
           this.kick(b.body, 6.9 - p.x, -3, 6);
         }
       } else b.still = 0;
+      // キックバックで打ち上げたボールは、通路を出たところで内側へ向ける
+      if (b.kicked && p.y < 16.4) {
+        b.body.setLinearVelocity({ x: b.kicked * 4.5, y: b.body.getLinearVelocity().y });
+        b.kicked = 0;
+      }
+      // アウトレーンのキックバック
+      if (this.stage.outlanes && p.y > 21 && p.y < 23) {
+        const side = p.x < 1.3 ? 'L' : p.x > 12.5 && p.x < FIELD_RIGHT ? 'R' : null;
+        if (side && this.kickback[side]) {
+          this.kickback[side] = false;
+          b.body.setLinearVelocity({ x: 0, y: -this.cfg.launchMax * 0.75 });
+          b.kicked = side === 'L' ? 1 : -1;
+          this.events.push({ t: 'kickback', side, x: p.x, y: p.y });
+        }
+      }
       if (p.y > BOARD_H + 0.5 || p.x < -1 || p.x > BOARD_W + 1) {
         this.world.destroyBody(b.body);
         this.balls.splice(i, 1);

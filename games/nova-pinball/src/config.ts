@@ -9,6 +9,9 @@ export interface NovaConfig {
   flipperLength: number;
   ballRestitution: number;
   popKick: number;
+  slingKick: number;
+  rolloverSave: number;
+  kickbackStart: number;
   launchMin: number;
   launchMax: number;
   balls: number;
@@ -37,6 +40,9 @@ export const schema: Schema<NovaConfig> = {
   flipperLength: { label: 'フリッパーの長さ', min: 1.6, max: 2.8, step: 0.05, folder: '盤面', restart: true },
   ballRestitution: { label: 'ボールの弾み', min: 0, max: 0.95, step: 0.01, folder: '盤面' },
   popKick: { label: '星に当たった時の弾き', min: 0, max: 12, step: 0.1, folder: '盤面' },
+  slingKick: { label: 'スリングショットの弾き', min: 0, max: 20, step: 0.5, folder: '盤面' },
+  kickbackStart: { label: '最初からキックバックが灯る（0/1）', min: 0, max: 1, step: 1, folder: 'ルール' },
+  rolloverSave: { label: 'ロールオーバー達成のボールセーブ（秒）', min: 0, max: 20, step: 0.5, folder: 'ルール' },
   launchMin: { label: '発射の最低速度', min: 10, max: 40, step: 0.5, folder: '盤面' },
   launchMax: { label: '発射の最高速度', min: 15, max: 50, step: 0.5, folder: '盤面' },
   balls: { label: 'ボール数', min: 1, max: 9, step: 1, folder: 'ルール', restart: true },
@@ -65,6 +71,9 @@ const normal: NovaConfig = {
   flipperLength: 2.0,
   ballRestitution: 0.45,
   popKick: 4.5,
+  slingKick: 9,
+  rolloverSave: 6,
+  kickbackStart: 1,
   launchMin: 24,
   launchMax: 34,
   balls: 3,
@@ -89,7 +98,7 @@ const normal: NovaConfig = {
 export const presets: Record<string, NovaConfig> = {
   やさしい: { ...normal, gravity: 17, balls: 5, ballSave: 8, decayTime: 10, blastRadius: 3.0, flipperLength: 2.3, gameSpeed: 0.9 },
   ふつう: normal,
-  むずかしい: { ...normal, gravity: 22, balls: 3, ballSave: 0, decayTime: 3.5, decayFloor: 0, blastRadius: 2.4 },
+  むずかしい: { ...normal, gravity: 22, balls: 3, ballSave: 0, decayTime: 4.5, decayFloor: 0, blastRadius: 2.4 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';

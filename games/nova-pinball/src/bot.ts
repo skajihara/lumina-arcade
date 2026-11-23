@@ -179,7 +179,7 @@ export class NovaBot {
   /** シャドウ盤面で「今このフリッパーを弾いたら」のボールの軌跡を先読みする */
   private predict(sim: NovaSim, side: Side, ball: Ball): { x: number; y: number }[] {
     this.stats.predictions++;
-    if (!this.shadow) this.shadow = new NovaSim(SHADOW_STAGE, { ...sim.cfg });
+    if (!this.shadow) this.shadow = new NovaSim({ ...SHADOW_STAGE, outlanes: sim.stage.outlanes, slings: sim.stage.slings }, { ...sim.cfg });
     const sh = this.shadow;
     sh.cfg = sim.cfg;
     for (let i = 0; i < 2; i++) {
