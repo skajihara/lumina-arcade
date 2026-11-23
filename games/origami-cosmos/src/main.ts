@@ -218,7 +218,7 @@ async function main() {
       点火すると紙は開く — 燃えた星は消えたまま。<br>少ない点火で、全部の星を燃やせ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
-      <div class="keys">線の片側を<b>クリック</b>で折る　星を<b>クリック</b>で点火　<kbd>Z</kbd>／右クリック 1つ戻す<br>
+      <div class="keys">線の片側を<b>クリック</b>（または紙を線の向こうへ<b>ドラッグ</b>）で折る　星を<b>クリック</b>で点火　<kbd>Z</kbd>／右クリック 1つ戻す<br>
       <kbd>H</kbd> ヒント　<kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
@@ -266,6 +266,8 @@ async function main() {
     hintMove = null;
     anim = { k: 'fold', t: 0 };
     synth.noise(cfg.foldTime + 0.1, { vol: 0.08, from: 900, to: 2600, q: 1.5 });
+    // 紙のこすれる音：短いノイズを少しずつずらして重ねる
+    for (let k = 0; k < 3; k++) window.setTimeout(() => synth.noise(0.05, { vol: 0.05, from: 4000 + k * 900, to: 1800, q: 4, wet: 0.05 }), (cfg.foldTime * 1000 * (k + 1)) / 4);
     synth.tone(330 + sim!.folds.length * 110, 0.25, { type: 'triangle', vol: 0.05, slideTo: 440 + sim!.folds.length * 110 });
     fitCamera();
   };
@@ -347,15 +349,38 @@ async function main() {
     const p = ga.toLogical(e.clientX, e.clientY);
     pointer = p;
   });
+  // クリック：星なら点火、線の近くなら（クリックした側を）折る。
+  // ドラッグ：紙をつまんで折り線の向こうへ運ぶと、つまんだ側が折れる
+  let press: { x: number; y: number } | null = null;
   ga.app.canvas.addEventListener('pointerdown', (e) => {
     synth.unlock();
     if (mode !== 'play' || !sim) return;
     if (e.button === 2) { undoFold(); return; }
     const p = ga.toLogical(e.clientX, e.clientY);
     const h = pick(p.x, p.y);
-    if (!h) return;
-    if ('star' in h) doIgnite(h.star);
-    else doFold(h.fold);
+    if (h && 'star' in h) { doIgnite(h.star); return; }
+    press = p;
+  });
+  window.addEventListener('pointerup', (e) => {
+    if (!press || !sim) return;
+    const p = ga.toLogical(e.clientX, e.clientY);
+    const start = press;
+    press = null;
+    if (Math.hypot(p.x - start.x, p.y - start.y) < 14) {
+      const h = pick(start.x, start.y);
+      if (h && 'fold' in h) doFold(h.fold);
+      return;
+    }
+    // ドラッグで越えた折り線（つまんだ所に近い線）
+    const a = toBoard(start.x, start.y), b = toBoard(p.x, p.y);
+    let best: Fold | null = null, bd = Infinity;
+    sim.stage.folds.forEach((L, line) => {
+      const ca = L.axis === 'x' ? a.x : a.y, cb = L.axis === 'x' ? b.x : b.y;
+      if ((ca - L.at) * (cb - L.at) >= 0) return;
+      const d = Math.abs(ca - L.at);
+      if (d < bd) { bd = d; best = { line, side: ca >= L.at ? 1 : -1 }; }
+    });
+    if (best) doFold(best);
   });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -525,6 +550,12 @@ async function main() {
       lg.moveTo(ax, ay).lineTo(ax + dx * cs * 1.2, ay + dy * cs * 1.2).stroke({ width: 3, color: 0xffffff, alpha: 0.8, cap: 'round' });
       const hx = ax + dx * cs * 1.2, hy = ay + dy * cs * 1.2;
       lg.moveTo(hx - dx * 10 - dy * 8, hy - dy * 10 + dx * 8).lineTo(hx, hy).lineTo(hx - dx * 10 + dy * 8, hy - dy * 10 - dx * 8).stroke({ width: 3, color: 0xffffff, alpha: 0.8, cap: 'round' });
+    }
+
+    // ドラッグ中：つまんだ所から指先まで
+    if (press && !busy()) {
+      lg.moveTo(press.x, press.y).lineTo(pointer.x, pointer.y).stroke({ width: 2, color: 0xffffff, alpha: 0.5, cap: 'round' });
+      lg.circle(press.x, press.y, 5).fill({ color: 0xffffff, alpha: 0.6 });
     }
 
     // 星座の線（元の紙の上の位置で。灯った線は金）
