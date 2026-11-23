@@ -16,6 +16,12 @@ export class Rng {
   int(min: number, maxInclusive: number): number {
     return Math.floor(this.range(min, maxInclusive + 1));
   }
+  /** 標準正規分布（Box-Muller） */
+  gauss(): number {
+    const u = Math.max(1e-9, this.next());
+    const v = this.next();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
   pick<T>(arr: readonly T[]): T {
     return arr[Math.floor(this.next() * arr.length)];
   }

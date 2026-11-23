@@ -67,6 +67,27 @@ describe('NovaSim', () => {
     expect(sim.stars[0].charge).toBe(1);
   });
 
+  it('灯り（decayFloor）までのチャージは時間で減らない', () => {
+    const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6, y: 8, charge: 2 }], links: [] };
+    const c = cfg();
+    c.decayTime = 1;
+    c.decayFloor = 1;
+    const sim = new NovaSim(stage, c);
+    for (let i = 0; i < 600; i++) sim.step(0);
+    expect(sim.stars[0].charge).toBe(1);
+    c.decayFloor = 0;
+    for (let i = 0; i < 130; i++) sim.step(0);
+    expect(sim.stars[0].charge).toBe(0);
+  });
+
+  it('ボットは先読みで星を狙って弾く', () => {
+    const sim = new NovaSim(stages[0], cfg());
+    const bot = new NovaBot(5, 1);
+    for (let i = 0; i < 120 * 40 && sim.phase === 'play'; i++) sim.step(bot.input(sim));
+    expect(bot.stats.predictions).toBeGreaterThan(0);
+    expect(bot.stats.aimed).toBeGreaterThan(0);
+  });
+
   it('全ステージがボットで壊せる星を持つ（配置が壊れていない）', () => {
     for (const st of stages) {
       const sim = runBot(st, 90, 3);

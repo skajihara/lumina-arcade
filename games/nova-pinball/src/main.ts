@@ -137,7 +137,7 @@ async function main() {
       <h1>NOVA PINBALL</h1>
       <h2>星 爆 ピ ン ボ ー ル</h2>
       <p>星に当てるたびにチャージが溜まり、満タンで爆発。爆発は周りの星をチャージする。<br>
-      育てた星を一気に点火して、全部の星を燃やし尽くせ。</p>
+      一度当てた星は灯ったまま。全部灯してから一気に点火して、夜空を燃やし尽くせ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
