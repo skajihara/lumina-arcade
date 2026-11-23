@@ -271,6 +271,13 @@ export class StopSim {
       }
     }
     this.hits = [];
+    // 巣は卵を受け止める：巣の中では卵の勢いが早く落ちる（ぴたりと収まる手触り）
+    const egg = this.stage.nest ? this.objs.find((o) => o.def.kind === 'egg' && o.alive) : undefined;
+    if (egg) {
+      const inNest = this.eggInNest();
+      egg.body.setLinearDamping(inNest ? this.cfg.nestGrip : 0.15);
+      egg.body.setAngularDamping(inNest ? 1.2 + this.cfg.nestGrip : 1.2);
+    }
     // 画面の外へ落ちた
     for (const o of this.objs) {
       if (!o.alive) continue;

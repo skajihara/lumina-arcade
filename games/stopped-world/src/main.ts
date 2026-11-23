@@ -15,6 +15,7 @@ import { skyTexture, makeStarfield } from '@engine/gfx';
 import { injectBaseStyle, el, backLink } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
 import { stages } from './stages';
+import { randomPlan, runPlan, type Plan } from './bot';
 import { StopSim, HZ, WORLD_W, WORLD_H, type Action, type Obj } from './sim';
 
 const SCALE = 50;
@@ -99,6 +100,7 @@ async function main() {
     pending = [];
     drag = null;
     botRng = new Rng(i + 7);
+    botSearch = null;
     resultTimer = -1;
     mode = 'play';
     drawGround();
@@ -253,8 +255,51 @@ async function main() {
   synth.setVolume(cfg.volume);
   ga.setBloom(cfg.bloom);
 
-  /** 自動プレイ：数秒ごとに時間を止め、卵は巣の方へ、ほかは上へ、軽く叩いて戻す */
+  /**
+   * 自動プレイ：まずランダム探索でクリアできる計画を探し（1フレームに少しずつ、世界は始めないで待つ）、
+   * 見つかったら見せるための間（止めて1つずつ矢印を置き、少し眺めてから戻す）を入れて再生する。
+   * 見つからなければ、数秒ごとに止めて軽く叩く簡単な動きにする。
+   */
+  let botSearch: { rng: Rng; tries: number; timeline: Record<number, Action[]> | null; done: boolean } | null = null;
+  const BOT_TRIES = 400;
+  const showPlan = (plan: Plan): Record<number, Action[]> => {
+    const out: Record<number, Action[]> = {};
+    let shift = 0;
+    for (const k of Object.keys(plan.steps).map(Number).sort((a, b) => a - b)) {
+      const acts = plan.steps[k];
+      if (acts[0]?.t === 'stop') {
+        out[k + shift] = [acts[0]];
+        for (const a of acts.slice(1)) {
+          shift += Math.round(HZ * 0.2);
+          out[k + shift] = [a];
+        }
+        shift += Math.round(HZ * 0.35);
+      } else out[k + shift] = acts;
+    }
+    return out;
+  };
+  /** 探索を少し進める。見つかるか諦めたら true（世界を進めてよい） */
+  const botReady = (): boolean => {
+    if (!sim) return false;
+    if (!botSearch) botSearch = { rng: new Rng(stageIndex * 31 + 5), tries: 0, timeline: null, done: false };
+    if (botSearch.done) return true;
+    const t0 = performance.now();
+    while (performance.now() - t0 < 10 && botSearch.tries < BOT_TRIES) {
+      botSearch.tries++;
+      const plan = randomPlan(sim.stage, cfg, botSearch.rng);
+      if (runPlan(sim.stage, cfg, plan).phase === 'clear') {
+        botSearch.timeline = showPlan(plan);
+        botSearch.done = true;
+        return true;
+      }
+    }
+    if (botSearch.tries >= BOT_TRIES) botSearch.done = true;
+    return botSearch.done;
+  };
+
+  /** 計画が見つからなかった時：数秒ごとに時間を止め、卵は巣の方へ、ほかは上へ、軽く叩いて戻す */
   const botActions = (s: StopSim): Action[] => {
+    if (botSearch?.timeline) return botSearch.timeline[s.tick] ?? [];
     if (s.stopped) return s.forcesThisStop > 0 ? [{ t: 'resume' }] : [];
     if (s.tick % 300 !== 90 || s.gauge < 0.5) return [];
     const live = s.objs.filter((o) => o.alive && !o.def.fixed);
@@ -382,7 +427,7 @@ async function main() {
     const gauge = Math.max(0, sim.gauge);
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
-    tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:${stopped ? '#fff' : 'var(--accent)'}">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+    tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:${stopped ? '#fff' : 'var(--accent)'}">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}`;
   };
 
   // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
@@ -441,7 +486,11 @@ async function main() {
       if (mode !== 'play' || !sim) return;
       const acts = pending;
       pending = [];
-      if (autoplay && sim.phase === 'play') acts.push(...botActions(sim));
+      if (autoplay && sim.phase === 'play') {
+        // 計画を探している間は世界を始めない
+        if (sim.tick === 0 && !botReady()) return;
+        acts.push(...botActions(sim));
+      }
       sim.step(acts);
       handleEvents();
       if (resultTimer >= 0 && sim.tick >= resultTimer) {

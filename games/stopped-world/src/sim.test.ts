@@ -60,7 +60,8 @@ describe('StopSim', () => {
   });
 
   it('強く叩きすぎると卵は割れる', () => {
-    const script: Record<number, Action[]> = { 60: [{ t: 'stop' }, ...Array.from({ length: 4 }, () => ({ t: 'hit', id: 0, dx: 1, dy: 0 }) as Action)], 61: [{ t: 'resume' }] };
+    // 巣と反対の壁へ（巣は卵を受け止めるので、巣の方へ投げると割れないことがある）
+    const script: Record<number, Action[]> = { 60: [{ t: 'stop' }, ...Array.from({ length: 4 }, () => ({ t: 'hit', id: 0, dx: -1, dy: 0 }) as Action)], 61: [{ t: 'resume' }] };
     const { sim, ev } = run(nestStage, script, 600);
     expect(ev).toContain('fail');
     expect(sim.phase).toBe('fail');
