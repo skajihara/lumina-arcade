@@ -4,7 +4,7 @@
 
 ---
 
-## 2026-11-24 03:00 — EL-02（Echo Loop の描画とUI）
+## 2026-11-24 02:15 — EL-02（Echo Loop の描画とUI）
 
 **やったこと**
 - `games/echo-loop/`（index.html、main.ts、stages.ts）。盤面の描画は Nova の `NovaView` をそのまま使い、ループごとに作り直す。その上に重ね絵（overlay）を足した
@@ -24,7 +24,7 @@
 
 ---
 
-## 2026-11-24 02:45 — EL-01（Echo Loop のシミュレーション）
+## 2026-11-24 02:10 — EL-01（Echo Loop のシミュレーション）
 
 **やったこと**
 - `games/echo-loop/src/sim.ts` の `EchoSim`：Nova Pinball の `NovaSim` をそのまま盤面として使い、外側で10秒ループを回す
