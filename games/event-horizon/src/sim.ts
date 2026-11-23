@@ -10,7 +10,7 @@
  * 入力はティックごとの { x, y, bits }（ブラックホールの目標位置と、引く・解放のボタン）。
  * 同じ入力の列なら同じ結果になる（決定的）。
  */
-import { World, Circle, Edge, type Body } from 'planck';
+import { World, Circle, Edge, type Body, type Contact } from 'planck';
 import { Rng } from '@engine/rng';
 import type { HorizonConfig } from './config';
 
@@ -79,6 +79,7 @@ export type HorizonEvent =
   | { t: 'burst'; x: number; y: number; n: number; r: number }
   | { t: 'chainEnd'; chain: number }
   | { t: 'spawn'; id: number }
+  | { t: 'clink'; x: number; y: number; v: number }
   | { t: 'clear' }
   | { t: 'fail'; why: 'lost' | 'time' };
 
@@ -112,6 +113,7 @@ export class HorizonSim {
   private chainUntil = -1;
   private prevBits = 0;
   private rng: Rng;
+  private clinks: HorizonEvent[] = [];
 
   constructor(public stage: StageDef, public cfg: HorizonConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -132,6 +134,16 @@ export class HorizonSim {
       for (let i = 1; i < line.length; i++) ground.createFixture(new Edge(line[i - 1], line[i]), { friction: 0.5, restitution: 0.3 });
     }
     this.rng = new Rng(stage.attack?.seed ?? 1);
+    // かけらが何かに強くぶつかった時（音と光のため）
+    this.world.on('begin-contact', (c: Contact) => {
+      const a = c.getFixtureA().getBody(), b = c.getFixtureB().getBody();
+      const va = a.getLinearVelocity(), vb = b.getLinearVelocity();
+      const v = Math.hypot(va.x - vb.x, va.y - vb.y);
+      if (v < 3) return;
+      const m = c.getWorldManifold(null);
+      const p = m?.points[0] ?? a.getPosition();
+      this.clinks.push({ t: 'clink', x: p.x, y: p.y, v });
+    });
     for (const d of stage.shards) this.addShard(d);
   }
 
@@ -270,6 +282,12 @@ export class HorizonSim {
     const dt = DT * this.timeScale;
     this.world.step(dt, 8, 3);
     this.worldTime += dt;
+    // 1ティックに出す衝突は強い方から3つまで
+    if (this.clinks.length) {
+      this.clinks.sort((a, b) => (b as { v: number }).v - (a as { v: number }).v);
+      this.events.push(...this.clinks.slice(0, 3));
+      this.clinks = [];
+    }
 
     // 吸い込み・穴・落下
     for (const s of this.shards) {

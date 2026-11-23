@@ -176,15 +176,14 @@ async function main() {
     toast(stages[i].hint);
   };
 
-  /** 星評価：クリアで★1、かけらを1つも失わずに★2、1回の投げで（必要数か3つの少ない方）を連鎖して★3 */
+  /** 星評価：クリアで★1、かけらを1つも失わずに★2、さらに1回の投げで2つ以上を連鎖して★3 */
   const ATTACK_STARS = [5000, 10000];
   const rating = (s: HorizonSim) => {
     if (s.phase !== 'clear') return 0;
     if (s.stage.attack) return 1 + ATTACK_STARS.filter((v) => s.score >= v).length;
-    let r = 1;
-    if (!s.shards.some((x) => x.state === 'lost')) r++;
-    if (s.bestChain >= Math.min(s.need, 3)) r++;
-    return r;
+    const kept = !s.shards.some((x) => x.state === 'lost');
+    if (!kept) return 1;
+    return s.bestChain >= 2 ? 3 : 2;
   };
 
   const showResult = () => {
@@ -204,7 +203,7 @@ async function main() {
       <h1>${cleared ? 'CLEAR' : 'FAILED'}</h1><h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
       <p>${cleared ? `スコア ${sim.score.toLocaleString()}　最大連鎖 ${sim.bestChain}　失ったかけら ${lost}` : sim.worldTime >= cfg.timeLimit ? '時間切れ' : 'かけらが足りなくなった'}</p>
-      <p style="font-size:13px">${st.attack ? `★2：${ATTACK_STARS[0].toLocaleString()} 点　★3：${ATTACK_STARS[1].toLocaleString()} 点` : `★2：かけらを1つも失わない　★3：1回の投げで ${Math.min(sim.need, 3)} 連鎖`}</p>
+      <p style="font-size:13px">${st.attack ? `★2：${ATTACK_STARS[0].toLocaleString()} 点　★3：${ATTACK_STARS[1].toLocaleString()} 点` : '★2：かけらを1つも失わない　★3：さらに、1回の投げで2つ以上を連鎖'}</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
     if (cleared && stageIndex < stages.length - 1) {
@@ -352,6 +351,12 @@ async function main() {
         synth.tone(180, 0.9, { type: 'sine', vol: 0.16, slideTo: 40 });
         juice.shake(0.15 * cfg.shake);
         toast('地平の向こうへ…');
+        break;
+      }
+      case 'clink': {
+        const k = Math.min(1, (e.v - 3) / 10);
+        particles.emit(e.x * SCALE, e.y * SCALE, { count: 4 + Math.round(k * 10), speed: [40, 160 + k * 200], life: [0.15, 0.4], size: [0.03, 0.08], color: [0xffffff, 0xbfe8ff] });
+        synth.tone(1200 + k * 900, 0.12, { type: 'sine', vol: 0.02 + k * 0.05, wet: 0.4 });
         break;
       }
       case 'spawn':
