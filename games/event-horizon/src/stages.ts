@@ -68,7 +68,7 @@ export const stages: StageDef[] = [
     hint: '穴は杯の底。縁を越えて、上から落とし込め',
     shards: row(2, 7, 5),
     goals: [{ x: 16.5, y: 9.3, r: 1.1 }],
-    need: 3,
+    need: 4,
     walls: [[{ x: 13.8, y: 6.2 }, { x: 13.8, y: 10.8 }, { x: 19.2, y: 10.8 }, { x: 19.2, y: 6.2 }]],
     start: { x: 4.5, y: 7 },
   },  {

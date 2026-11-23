@@ -29,7 +29,7 @@ it('event-horizon balance report', () => {
           chain += sim.bestChain;
           score += sim.score;
           // main.ts の星評価と同じ基準（スコアアタックは別）
-          if (sim.phase === 'clear' && !st.attack && l === 0 && sim.bestChain >= Math.min(sim.need, 3)) s3++;
+          if (sim.phase === 'clear' && !st.attack && l === 0 && sim.bestChain >= 2) s3++;
         }
         const extra = st.attack ? `平均スコア ${Math.round(score / RUNS)}` : `${Math.round((s3 / RUNS) * 100)}%`;
         lines.push(`| ${i + 1} | ${st.name} | ${skill} | ${Math.round((clears / RUNS) * 100)}% | ${clears ? (tSum / clears).toFixed(0) : '-'} | ${(lost / RUNS).toFixed(1)} | ${(chain / RUNS).toFixed(1)} | ${extra} |`);
