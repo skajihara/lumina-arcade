@@ -92,6 +92,8 @@ export class HorizonSim {
   shards: Shard[] = [];
   bh: { x: number; y: number };
   pulling = false;
+  /** ブラックホールの速度（このティックの動き） */
+  bhVel = { x: 0, y: 0 };
   /** 引力が戻るまでの残り（秒、実時間） */
   cooldown = 0;
   /** 今の時間の速さ（1 で通常、地平の近くにかけらがあると小さくなる） */
@@ -170,6 +172,7 @@ export class HorizonSim {
     const dx = tx - this.bh.x, dy = ty - this.bh.y;
     const d = Math.hypot(dx, dy);
     const maxStep = cfg.bhSpeed * DT;
+    const ox = this.bh.x, oy = this.bh.y;
     if (d > maxStep) {
       this.bh.x += (dx / d) * maxStep;
       this.bh.y += (dy / d) * maxStep;
@@ -189,6 +192,9 @@ export class HorizonSim {
       }
     }
     this.cooldown = Math.max(0, this.cooldown - DT);
+    // 世界の時間で測った速度（時間が遅れている間は、世界から見ると速く動いている）
+    const wdt = DT * Math.max(0.05, this.timeScale);
+    this.bhVel = { x: (this.bh.x - ox) / wdt, y: (this.bh.y - oy) / wdt };
 
     if (this.phase !== 'play') {
       this.world.step(DT * this.timeScale);
@@ -198,21 +204,38 @@ export class HorizonSim {
     // 解放（ホワイトホール）
     if (rise & IN_BURST && this.cooldown <= 0) this.burst();
 
-    // 引力
+    // 引力：遠くは 1/r²、輪（ringR）の近くまで来たら輪に乗せて回す。
+    // 速さはブラックホールに対する相対速度で測る → 動かすと輪ごと運べる。速く動かしすぎると輪からこぼれたり、内へ突っ込んで吸い込まれる
     this.pulling = (input.bits & IN_PULL) !== 0 && this.cooldown <= 0;
     if (this.pulling) {
+      const diskR = cfg.ringR * 1.8;
       for (const s of this.shards) {
         if (s.state !== 'free') continue;
         const p = s.body.getPosition();
         const ex = this.bh.x - p.x, ey = this.bh.y - p.y;
         const r = Math.hypot(ex, ey);
         if (r > cfg.bhReach || r < 1e-4) continue;
-        // 1/r² の引力（近すぎる所は和らげる）。届く範囲の端で滑らかに 0 へ
+        const ux = ex / r, uy = ey / r; // 内向き
+        const tx2 = -uy, ty2 = ux; // 回る向き
+        const v = s.body.getLinearVelocity();
+        const rvx = v.x - this.bhVel.x, rvy = v.y - this.bhVel.y;
+        const vIn = rvx * ux + rvy * uy;
+        const vT = rvx * tx2 + rvy * ty2;
         const soft = Math.max(r, 0.6);
         const edge = Math.min(1, (cfg.bhReach - r) / 1.0);
-        const a = (cfg.bhPull / (soft * soft)) * edge * s.pullScale;
+        let aIn = (cfg.bhPull / (soft * soft)) * edge;
+        let aT = 0;
+        if (r < diskR) {
+          // 輪の内側ほど輪の働きが強く、外側ほど 1/r² の引力に戻る
+          const w = Math.min(1, (diskR - r) / (diskR - cfg.ringR));
+          const ring = cfg.ringK * (r - cfg.ringR) - cfg.ringDamp * vIn;
+          aIn = aIn * (1 - w) + ring * w;
+          aT = (cfg.orbitSpeed - vT) * 3 * w;
+        }
+        aIn *= s.pullScale;
+        aT *= s.pullScale;
         const m = s.body.getMass();
-        s.body.applyForceToCenter({ x: (ex / r) * a * m, y: (ey / r) * a * m }, true);
+        s.body.applyForceToCenter({ x: (ux * aIn + tx2 * aT) * m, y: (uy * aIn + ty2 * aT) * m }, true);
       }
     }
 

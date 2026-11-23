@@ -51,16 +51,17 @@ describe('HorizonSim', () => {
   });
 
   it('地平の内側に入ったかけらは吸い込まれて消える', () => {
-    const { sim, ev } = run(stage, 400, () => ({ x: 5, y: 10.5, bits: IN_PULL }));
+    // 上から勢いよく突っ込むと、輪に乗りきれずに地平の内へ入る
+    const { sim, ev } = run({ ...stage, start: { x: 5, y: 5 } }, 400, () => ({ x: 5, y: 11.6, bits: IN_PULL }));
     expect(ev).toContain('swallow');
     expect(sim.shards[0].state).toBe('lost');
   });
 
   it('地平の近くにかけらがあると時間が遅れる', () => {
     let minScale = 1;
-    run(stage, 400, (_i, s) => {
+    run({ ...stage, start: { x: 5, y: 5 } }, 400, (_i, s) => {
       minScale = Math.min(minScale, s.timeScale);
-      return { x: 5, y: 10.4, bits: IN_PULL };
+      return { x: 5, y: 11.6, bits: IN_PULL };
     });
     expect(minScale).toBeLessThan(0.8);
   });
