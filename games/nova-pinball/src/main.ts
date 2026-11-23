@@ -10,7 +10,7 @@ import { injectBaseStyle, el, backLink } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type NovaConfig } from './config';
 import { stages } from './stages';
 import { NovaSim, HZ } from './sim';
-import { NovaView, VIEW_H, VIEW_W } from './view';
+import { NovaView, VIEW_H, VIEW_W, chainTier } from './view';
 import { NovaBot } from './bot';
 
 interface Progress {
@@ -52,6 +52,12 @@ async function main() {
         chainEl.textContent = `${n} CHAIN`;
         chainEl.style.opacity = '1';
         chainEl.style.transform = `scale(${1 + Math.min(0.6, n * 0.04)})`;
+        // 連鎖の段階で文字の色が変わる（青→金→桃→虹）
+        const tier = chainTier(n);
+        chainEl.style.color = ['#cfe0ff', '#ffd27f', '#ffa3e0', '#ffffff'][tier];
+        chainEl.style.textShadow = tier === 3
+          ? '0 0 12px #7ff0ff, 0 0 24px #ffa3e0, 0 0 36px #ffd27f'
+          : `0 0 18px ${['#7fa8ff', '#ffb84d', '#ff6fcf', '#fff'][tier]}`;
       } else chainEl.style.opacity = '0';
     },
     toast(msg: string) {
@@ -98,6 +104,7 @@ async function main() {
   const showResult = (cleared: boolean) => {
     if (!sim) return;
     mode = 'result';
+    hudApi.chain(0);
     const st = stages[stageIndex];
     const stars = cleared ? rating(sim) : 0;
     if (cleared) {
@@ -244,6 +251,14 @@ async function main() {
   }));
   hook.start = (i: number) => startStage(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
+  hook.sim = () => sim;
+  /** 演出確認用：全部の星を灯して1つ目を点火する（大連鎖→超新星→最後の爆発） */
+  hook.ignite = () => {
+    if (!sim) return;
+    for (const s of sim.stars) if (s.alive) s.charge = Math.max(s.charge, 1);
+    const first = sim.stars.find((s) => s.alive);
+    if (first) (sim as unknown as { addCharge(s: unknown, n: number): void }).addCharge(first, 9);
+  };
 
   loop.start();
   if (params.has('stage')) startStage(Math.min(stages.length - 1, Number(params.get('stage')) || 0));

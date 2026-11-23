@@ -13,6 +13,18 @@ export const VIEW_H = BOARD_H * SCALE;
 
 const CHARGE_COLORS = [0x9fb8ff, 0x7ff0ff, 0xffd27f, 0xffa3e0, 0xffffff, 0xffffff, 0xffffff];
 
+/** 連鎖の段階ごとの色（青→金→桃→虹） */
+export function chainTier(chain: number): number {
+  return chain >= 10 ? 3 : chain >= 6 ? 2 : chain >= 3 ? 1 : 0;
+}
+const TIER_COLORS: number[][] = [
+  [],
+  [0xffd27f, 0xffe7a8, 0xfff3d6],
+  [0xffa3e0, 0xff7fd0, 0xffe1f5, 0xc9a3ff],
+  [0x7ff0ff, 0xffd27f, 0xffa3e0, 0xa3ffb0, 0xffffff, 0xc9a3ff],
+];
+const TRAIL_MAX = 24;
+
 interface StarView {
   c: Container;
   glow: Sprite;
@@ -55,6 +67,11 @@ export class NovaView {
   private gimmicks = new Graphics();
   private slingFlash = { L: 0, R: 0 };
   private rollFlash = [0, 0, 0];
+  /** 夜空に浮かぶ星座の線画（超新星で現れる） */
+  private skyArt = new Graphics();
+  private skyArtT = -1;
+  /** カメラ：ズーム倍率と注視点（論理座標） */
+  private cam = { zoom: 1, x: VIEW_W / 2, y: VIEW_H / 2, t: -1, peak: 1, hold: 0, dur: 0 };
 
   constructor(private sim: NovaSim, private juice: Juice, private cfg: NovaConfig, private hud: { chain(n: number): void; toast(msg: string): void }) {
     this.hue = sim.stage.hue ?? 0.62;
@@ -63,7 +80,7 @@ export class NovaView {
     this.sky.width = VIEW_W;
     this.sky.height = VIEW_H;
     this.field = makeStarfield(VIEW_W, VIEW_H, 180, 11 + sim.stage.id.length);
-    this.container.addChild(this.sky, this.field.container, this.board, this.gimmicks, this.links, this.bumperG, this.starLayer);
+    this.container.addChild(this.sky, this.field.container, this.skyArt, this.board, this.gimmicks, this.links, this.bumperG, this.starLayer);
     this.drawBoard();
     this.buildStars();
     for (const f of sim.flippers) {
@@ -170,6 +187,7 @@ export class NovaView {
         this.juice.slowmo(0.25, 1.4);
         synth.chord(5, [0, 2, 4, 5, 7, 9], 0.07, 0.12);
         this.hud.toast('SUPERNOVA！ 星座完成 ＋1ボール');
+        this.skyArtT = 0;
         this.particles.emit(VIEW_W / 2, VIEW_H * 0.35, { count: 260, speed: [100, 900], life: [0.8, 2.2], size: [0.08, 0.4], color: [0xffe7a8, 0xffffff, ...this.palette], drag: 1.2 });
         break;
       case 'sling': {
@@ -228,29 +246,100 @@ export class NovaView {
     const sv = this.stars[e.star];
     sv.c.visible = false;
     const chain = e.chain;
+    const tier = chainTier(chain);
+    const cols = tier === 0 ? this.palette : TIER_COLORS[tier];
     const big = Math.min(1, 0.25 + chain * 0.07);
-    this.particles.emit(x, y, { count: 36 + chain * 5, speed: [80, 420 + chain * 25], life: [0.5, 1.4], size: [0.06, 0.32], color: this.palette, drag: 1.8 });
-    this.particles.emit(x, y, { count: 6, speed: [10, 60], life: [0.6, 1.0], size: [0.6, 1.2], color: this.palette[0], alpha: 0.5, grow: 1.5, texture: glowTexture() });
-    this.particles.emit(x, y, { count: 3, speed: [0, 20], life: [0.3, 0.6], size: [0.5, 0.9], color: 0xffffff, texture: sparkleTexture() });
-    const ring = new Sprite(ringTexture());
-    ring.anchor.set(0.5);
-    ring.blendMode = 'add';
-    ring.tint = this.palette[1];
-    ring.x = x; ring.y = y;
-    this.fxLayer.addChild(ring);
-    this.shocks.push({ sp: ring, t: 0, dur: 0.5, size: (e.r * SCALE * 2.2) / 256 });
+    const grow = 1 + tier * 0.25;
+    this.particles.emit(x, y, { count: Math.round((36 + chain * 5) * grow), speed: [80, (420 + chain * 25) * grow], life: [0.5, 1.4 + tier * 0.2], size: [0.06, 0.32 + tier * 0.06], color: cols, drag: 1.8 });
+    this.particles.emit(x, y, { count: 6 + tier * 3, speed: [10, 60 + tier * 30], life: [0.6, 1.0 + tier * 0.2], size: [0.6, 1.2 + tier * 0.4], color: cols[0], alpha: 0.5, grow: 1.5, texture: glowTexture() });
+    this.particles.emit(x, y, { count: 3 + tier * 2, speed: [0, 20 + tier * 40], life: [0.3, 0.6], size: [0.5, 0.9 + tier * 0.2], color: 0xffffff, texture: sparkleTexture() });
+    // 衝撃波：段階が上がるほど輪が増え、大きくなる
+    for (let k = 0; k <= Math.min(2, tier); k++) {
+      const ring = new Sprite(ringTexture());
+      ring.anchor.set(0.5);
+      ring.blendMode = 'add';
+      ring.tint = cols[(k + 1) % cols.length];
+      ring.x = x; ring.y = y;
+      this.fxLayer.addChild(ring);
+      this.shocks.push({ sp: ring, t: -k * 0.07, dur: 0.5 + tier * 0.08, size: ((e.r * SCALE * 2.2) / 256) * (1 + tier * 0.18 + k * 0.25) });
+    }
     this.juice.shake((0.12 + 0.035 * chain) * this.cfg.shake);
     if (chain >= 3) this.juice.hitstop(0.015 + Math.min(0.04, chain * 0.004));
     if (chain >= this.cfg.slowmoAt) this.juice.slowmo(0.38, 0.6);
+    // 段階が上がった瞬間は少し強く
+    if (tier > 0 && chainTier(chain - 1) < tier) {
+      this.juice.doFlash(0.3 + tier * 0.1, cols[0]);
+      this.zoomTo(x, y, 1.04 + tier * 0.03, 0.05, 0.5);
+    }
     synth.boom(big, chain - 1);
     if (chain >= 2) this.hud.chain(chain);
     if (e.last) {
       this.juice.doFlash(1, 0xffffff);
       this.juice.slowmo(0.15, 1.8);
+      this.zoomTo(x, y, 1.45, 0.9, 1.6);
       synth.chord(chain, [0, 2, 4, 7, 9], 0.09, 0.12);
-      this.particles.emit(x, y, { count: 400, speed: [200, 1400], life: [1, 2.6], size: [0.08, 0.45], color: [0xffffff, ...this.palette], drag: 1 });
-    } else this.juice.doFlash(Math.min(0.35, 0.06 + chain * 0.025), this.palette[2]);
+      this.particles.emit(x, y, { count: 400, speed: [200, 1400], life: [1, 2.6], size: [0.08, 0.45], color: [0xffffff, ...cols, ...this.palette], drag: 1 });
+    } else this.juice.doFlash(Math.min(0.35, 0.06 + chain * 0.025), cols[Math.min(2, cols.length - 1)]);
     this.linksDirty = true;
+  }
+
+  /** カメラを (x,y) に寄せる。peak 倍まで素早く寄り、hold 秒保ってから dur 秒で戻る */
+  private zoomTo(x: number, y: number, peak: number, hold: number, dur: number): void {
+    if (this.cam.t >= 0 && this.cam.peak > peak) return;
+    this.cam = { ...this.cam, x, y, peak, hold, dur, t: 0 };
+  }
+
+  private updateCamera(dt: number): void {
+    const c = this.cam;
+    if (c.t < 0) {
+      c.zoom = 1;
+    } else {
+      c.t += dt;
+      const inT = 0.18;
+      if (c.t < inT) c.zoom = 1 + (c.peak - 1) * (1 - Math.pow(1 - c.t / inT, 3));
+      else if (c.t < inT + c.hold) c.zoom = c.peak;
+      else {
+        const k = Math.min(1, (c.t - inT - c.hold) / c.dur);
+        c.zoom = c.peak + (1 - c.peak) * (k * k * (3 - 2 * k));
+        if (k >= 1) c.t = -1;
+      }
+    }
+    // 注視点を中心にズーム（画面の外が見えないよう、寄せる量を制限）
+    const z = c.zoom;
+    const fx = Math.min(VIEW_W * 0.75, Math.max(VIEW_W * 0.25, c.x));
+    const fy = Math.min(VIEW_H * 0.75, Math.max(VIEW_H * 0.25, c.y));
+    this.container.scale.set(z);
+    this.container.x = fx * (1 - z);
+    this.container.y = fy * (1 - z);
+  }
+
+  /** 超新星：星座の線画を夜空に大きく描く */
+  private drawSkyArt(): void {
+    const g = this.skyArt;
+    g.clear();
+    if (this.skyArtT < 0) return;
+    const st = this.sim.stage;
+    const xs = st.stars.map((p) => p.x), ys = st.stars.map((p) => p.y);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const k = 1.55;
+    const P = (i: number) => ({ x: (VIEW_W / 2 + (st.stars[i].x - cx) * k * SCALE), y: (VIEW_H * 0.42 + (st.stars[i].y - cy) * k * SCALE) });
+    const tIn = Math.min(1, this.skyArtT / 1.6);
+    const breathe = 0.85 + 0.15 * Math.sin(this.t * 1.3);
+    const a = (tIn < 1 ? tIn * 0.9 : 0.25 + 0.65 * Math.max(0, 1 - (this.skyArtT - 1.6) / 2.5)) * breathe;
+    st.links.forEach(([i, j], n) => {
+      // 線が順に引かれていく
+      const show = Math.min(1, Math.max(0, tIn * st.links.length - n * 0.6));
+      if (show <= 0) return;
+      const A = P(i), B = P(j);
+      const ex = A.x + (B.x - A.x) * show, ey = A.y + (B.y - A.y) * show;
+      g.moveTo(A.x, A.y).lineTo(ex, ey).stroke({ width: 14, color: 0xffe1a8, alpha: a * 0.12, cap: 'round' });
+      g.moveTo(A.x, A.y).lineTo(ex, ey).stroke({ width: 2, color: 0xfff3d6, alpha: a * 0.8, cap: 'round' });
+    });
+    st.stars.forEach((_, i) => {
+      const p = P(i);
+      g.circle(p.x, p.y, 10).fill({ color: 0xffe1a8, alpha: a * 0.15 });
+      g.circle(p.x, p.y, 3).fill({ color: 0xffffff, alpha: a });
+    });
   }
 
   private drawLinks(): void {
@@ -324,6 +413,11 @@ export class NovaView {
     });
 
     this.drawGimmicks(realDt);
+    if (this.skyArtT >= 0) {
+      this.skyArtT += realDt;
+      this.drawSkyArt();
+    }
+    this.updateCamera(realDt);
 
     // フリッパー
     sim.flippers.forEach((f, i) => {
@@ -346,7 +440,7 @@ export class NovaView {
         glow.scale.set((BALL_R * SCALE * 5) / 128);
         const core = new Graphics().circle(0, 0, BALL_R * SCALE).fill({ color: 0xffffff });
         const trail: Sprite[] = [];
-        for (let k = 0; k < 14; k++) {
+        for (let k = 0; k < TRAIL_MAX; k++) {
           const t = new Sprite(glowTexture());
           t.anchor.set(0.5);
           t.blendMode = 'add';
@@ -361,14 +455,22 @@ export class NovaView {
       const p = b.body.getPosition();
       const x = p.x * SCALE, y = p.y * SCALE;
       b.trail.unshift({ x, y });
-      if (b.trail.length > 14) b.trail.pop();
+      if (b.trail.length > TRAIL_MAX) b.trail.pop();
       v.glow.x = v.core.x = x;
       v.glow.y = v.core.y = y;
+      // 速いほど軌跡が長く、明るく、青白くなる
+      const bv = b.body.getLinearVelocity();
+      const sp = Math.min(1, Math.hypot(bv.x, bv.y) / 32);
+      const len = Math.round(6 + sp * (TRAIL_MAX - 6));
+      const tcol = lerpColor(0x7fa8ff, 0xe8fbff, sp);
+      v.glow.scale.set(((BALL_R * SCALE * 5) / 128) * (1 + sp * 0.35));
       v.trail.forEach((t, k) => {
         const tp = b.trail[k] ?? { x, y };
         t.x = tp.x; t.y = tp.y;
-        t.alpha = 0.35 * (1 - k / 14);
-        t.scale.set(((BALL_R * SCALE * 2.6) / 128) * (1 - k / 18));
+        t.visible = k < len;
+        t.tint = tcol;
+        t.alpha = (0.25 + 0.25 * sp) * (1 - k / len);
+        t.scale.set(((BALL_R * SCALE * 2.6) / 128) * (1 - k / (len * 1.3)));
       });
     }
     for (const [id, v] of this.ballSprites) {
