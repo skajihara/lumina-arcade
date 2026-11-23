@@ -26,6 +26,8 @@ interface Progress {
   cleared: Record<string, number>;
 }
 
+/** 混ぜて作る色の材料（sim.ts の MIX と同じ組） */
+const RECIPE: Record<number, [number, number]> = { 4: [0, 1], 3: [1, 2] };
 const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
 
 async function main() {
@@ -84,6 +86,12 @@ async function main() {
   let drawing: { erase: boolean; last: { x: number; y: number } } | null = null;
   let strokes: number[][] = [];
   let cupGlow: number[] = [];
+  /** 色つきの器の壁は、その色に染める（-1 はふつうの壁の色） */
+  let wallTint = new Int32Array(W * H).fill(-1);
+  const blend = (a: number, b: number, k: number) => {
+    const x = rgb(a), y = rgb(b);
+    return (Math.round(x[0] + (y[0] - x[0]) * k) << 16) | (Math.round(x[1] + (y[1] - x[1]) * k) << 8) | Math.round(x[2] + (y[2] - x[2]) * k);
+  };
   /** 自動プレイ：解の線を少しずつ引く */
   let botLine = 0, botT = 0;
 
@@ -95,6 +103,12 @@ async function main() {
     sim = new SandSim(stages[i], cfg, i + 1);
     strokes = [];
     cupGlow = sim.stage.cups.map(() => 0);
+    wallTint = new Int32Array(W * H).fill(-1);
+    for (const c of sim.stage.cups) {
+      if (c.color === undefined) continue;
+      const tint = blend(0x5a5f9a, COLORS[c.color], 0.7);
+      for (let y = c.y; y < Math.min(H, c.y + c.h + 2); y++) for (let x = Math.max(0, c.x - 2); x < Math.min(W, c.x + c.w + 2); x++) wallTint[y * W + x] = tint;
+    }
     resultAt = -1;
     botLine = 0;
     botT = 0;
@@ -323,7 +337,11 @@ async function main() {
       const v = g[i];
       const o = i * 4;
       if (v === 0) { d[o + 3] = 0; continue; }
-      if (v === WALL) { d[o] = wall[0]; d[o + 1] = wall[1]; d[o + 2] = wall[2]; d[o + 3] = 200; continue; }
+      if (v === WALL) {
+        const tw = wallTint[i];
+        if (tw >= 0) { d[o] = (tw >> 16) & 255; d[o + 1] = (tw >> 8) & 255; d[o + 2] = tw & 255; d[o + 3] = 235; continue; }
+        d[o] = wall[0]; d[o + 1] = wall[1]; d[o + 2] = wall[2]; d[o + 3] = 200; continue;
+      }
       if (v === LINE) { d[o] = line[0]; d[o + 1] = line[1]; d[o + 2] = line[2]; d[o + 3] = 235; continue; }
       const c = rgb(COLORS[(v - SAND) % COLORS.length]);
       const h = ((i * 2654435761) ^ (tick8 * 40503)) >>> 0;
@@ -347,13 +365,25 @@ async function main() {
       for (let j = 0; j < 3; j++) cg.moveTo(pts[j][0], pts[j][1]).lineTo(pts[j + 1][0], pts[j + 1][1]);
       cg.stroke({ width: 2, color: col, alpha: s.filled[i] ? 0.9 : 0.45 });
       for (const [px, py] of pts) cg.circle(px, py, s.filled[i] ? 4 : 2.5).fill({ color: 0xffffff, alpha: s.filled[i] ? 1 : 0.7 });
-      // 目盛り：あと何粒
-      const left = Math.max(0, c.need - s.cupCount[i]);
+      // 目盛り：どれだけ満ちたか
       if (!s.filled[i]) {
         const tw = Math.min(w, 60);
         cg.rect(x + w / 2 - tw / 2, y - 12, tw, 4).fill({ color: 0x2a2f5a, alpha: 0.8 });
         cg.rect(x + w / 2 - tw / 2, y - 12, tw * k, 4).fill({ color: col, alpha: 0.9 });
-        if (left > 0 && c.color !== undefined) cg.circle(x + w / 2 + tw / 2 + 8, y - 10, 4).fill({ color: col });
+      }
+      // 色つきの器：上に、その色の宝石（混ぜて作る色は「材料＋材料」も添える）
+      if (c.color !== undefined && !s.filled[i]) {
+        const gx = x + w / 2, gy = y - 30;
+        const pulse = 0.5 + 0.5 * Math.sin(t * 3 + i);
+        cg.circle(gx, gy, 13 + pulse * 3).fill({ color: col, alpha: 0.12 + pulse * 0.08 });
+        cg.poly([gx, gy - 9, gx + 7, gy, gx, gy + 9, gx - 7, gy]).fill({ color: col }).stroke({ width: 1.5, color: 0xffffff, alpha: 0.8 });
+        const parts = RECIPE[c.color];
+        if (parts) {
+          // 材料：宝石の左右に小さな粒を2つ
+          cg.circle(gx - 20, gy, 4).fill({ color: COLORS[parts[0]] });
+          cg.circle(gx + 20, gy, 4).fill({ color: COLORS[parts[1]] });
+          cg.moveTo(gx - 15, gy).lineTo(gx - 10, gy).moveTo(gx + 10, gy).lineTo(gx + 15, gy).stroke({ width: 1.5, color: 0xffffff, alpha: 0.5 });
+        }
       }
     });
     // 注ぎ口：残りの量で光る
