@@ -148,7 +148,7 @@ async function main() {
       <h1>STOPPED WORLD</h1>
       <h2>時 止 め の 一 撃</h2>
       <p>時間を止めると、世界は色を失って静止する。止まった物体を叩いても動かない — 力が矢印として溜まるだけ。<br>
-      時間を戻した瞬間、溜めた力が<b style="color:var(--ink)">全部同時に</b>解き放たれる。</p>
+      時間を戻した瞬間、溜めた力が<b style="color:var(--ink)">全部同時に</b>解き放たれる。止めている間は、戻した直後の動きが点線で見える。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>Space</kbd> 時間を止める／戻す　物体を<b>ドラッグ</b>で力を置く（向きと長さ）<br>
@@ -371,6 +371,7 @@ async function main() {
       const o = sim.objs[drag.id];
       if (o.alive) arrow(ag, drag.x * SCALE, drag.y * SCALE, drag.ex * SCALE, drag.ey * SCALE, 0xffffff, 0.8);
     }
+    if (stopped && cfg.predictSec > 0) drawPrediction(ag, sim);
     if (stopped) {
       // 止まっている印：画面の縁
       ag.rect(3, 3, VIEW_W - 6, VIEW_H - 6).stroke({ width: 4, color: 0xffffff, alpha: 0.25 + 0.1 * Math.sin(t * 3) });
@@ -382,6 +383,48 @@ async function main() {
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
     tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:${stopped ? '#fff' : 'var(--accent)'}">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+  };
+
+  // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
+  // 置いた力やドラッグ中の矢印が変わった時だけ計算し直す
+  let predKey = '';
+  let pred: ReturnType<StopSim['predict']> = [];
+  const dragAction = (s: StopSim): Action[] => {
+    if (!drag) return [];
+    const dx = drag.ex - drag.x, dy = drag.ey - drag.y;
+    if (Math.hypot(dx, dy) <= 0.25) return [];
+    const o = s.objs[drag.id];
+    if (!o.alive) return [];
+    const p = o.body.getPosition();
+    return [{ t: 'hit', id: drag.id, dx, dy, px: drag.x - p.x, py: drag.y - p.y }];
+  };
+  const drawPrediction = (g: Graphics, s: StopSim) => {
+    const extra = dragAction(s);
+    const key = [s.stage.id, s.worldTick, s.tick === 0 ? 0 : 1, cfg.predictSec, ...s.objs.flatMap((o) => [o.force.x, o.force.y, o.armed ? 1 : 0]),
+      ...extra.flatMap((a) => (a.t === 'hit' ? [a.id, Math.round(a.dx * 20), Math.round(a.dy * 20)] : []))].join(',');
+    if (key !== predKey) {
+      predKey = key;
+      pred = s.predict(cfg.predictSec, 3, extra);
+    }
+    const phase = (t * 1.6) % 1;
+    for (const p of pred) {
+      const col = p.kind === 'egg' ? 0xffd27f : p.kind === 'crate' ? 0xc9a3ff : 0xbfe8ff;
+      const n = p.pts.length;
+      // 点：先へ行くほど淡く、流れるように明るさが動く
+      for (let i = 1; i < n; i++) {
+        const q = p.pts[i];
+        const f = i / n;
+        const wave = 0.5 + 0.5 * Math.cos((f * 4 - phase) * Math.PI * 2);
+        g.circle(q.x * SCALE, q.y * SCALE, 2.2 + wave * 1.2).fill({ color: col, alpha: (1 - f * 0.75) * (0.35 + 0.45 * wave) });
+      }
+      const e = p.pts[n - 1];
+      const ex = e.x * SCALE, ey = e.y * SCALE;
+      if (p.ends === 'gone') {
+        // 消える（割れる・壊れる・爆発）所に×
+        const c2 = p.kind === 'egg' ? 0xff6b8a : 0xffa3e0;
+        g.moveTo(ex - 7, ey - 7).lineTo(ex + 7, ey + 7).moveTo(ex + 7, ey - 7).lineTo(ex - 7, ey + 7).stroke({ width: 3, color: c2, alpha: 0.9, cap: 'round' });
+      } else if (n > 1) g.circle(ex, ey, 5).stroke({ width: 2, color: col, alpha: 0.55 });
+    }
   };
 
   const arrow = (g: Graphics, x0: number, y0: number, x1: number, y1: number, color: number, alpha: number) => {

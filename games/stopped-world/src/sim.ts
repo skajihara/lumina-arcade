@@ -325,6 +325,67 @@ export class StopSim {
     this.events.push({ t: 'clear' });
   }
 
+  /**
+   * 今の状態を写した別の世界を作る（予測線用）。
+   * 位置・速度・角度・溜めた力・点火を写す。接触の内部状態は写らないので、厳密には少しずれる。
+   */
+  clone(): StopSim {
+    const c = new StopSim(this.stage, this.cfg);
+    c.gauge = this.gauge;
+    c.stopped = this.stopped;
+    c.forcesThisStop = this.forcesThisStop;
+    for (const o of this.objs) {
+      const q = c.objs[o.id];
+      if (!o.alive) {
+        c.kill(q);
+        continue;
+      }
+      q.body.setTransform(o.body.getPosition(), o.body.getAngle());
+      q.body.setLinearVelocity(o.body.getLinearVelocity());
+      q.body.setAngularVelocity(o.body.getAngularVelocity());
+      q.body.setAwake(o.body.isAwake());
+      q.force = { ...o.force };
+      q.at = { ...o.at };
+      q.armed = o.armed;
+    }
+    return c;
+  }
+
+  /**
+   * 今すぐ時間を戻したら、各物体がどう動くかを先読みする（seconds 秒、every ティックごとの点）。
+   * 動く物体だけを返す。爆発や破壊も先読みの中で起きる（消えた所で線が終わる）。
+   * extra：先読みの前に足す操作（ドラッグ中の、まだ置いていない力）。
+   */
+  predict(seconds = 1, every = 4, extra: Action[] = []): { id: number; kind: Kind; pts: { x: number; y: number }[]; ends: 'alive' | 'gone' }[] {
+    const c = this.clone();
+    c.events = [];
+    for (const a of extra) c.apply(a);
+    if (c.stopped) c.resume();
+    const start = this.objs.map((o) => (o.alive ? o.body.getPosition().clone() : null));
+    const paths = this.objs.map((o) => (o.alive && !o.def.fixed ? [{ x: o.body.getPosition().x, y: o.body.getPosition().y }] : []));
+    const n = Math.round(seconds * HZ);
+    for (let i = 1; i <= n; i++) {
+      c.advance();
+      if (i % every !== 0 && i !== n) continue;
+      for (const o of c.objs) {
+        if (!o.alive || o.def.fixed) continue;
+        const p = o.body.getPosition();
+        paths[o.id].push({ x: p.x, y: p.y });
+      }
+    }
+    const out: { id: number; kind: Kind; pts: { x: number; y: number }[]; ends: 'alive' | 'gone' }[] = [];
+    for (const o of this.objs) {
+      const pts = paths[o.id];
+      const s0 = start[o.id];
+      const gone = !c.objs[o.id].alive;
+      if (!s0 || (pts.length < 2 && !gone)) continue;
+      const moved = pts.some((p) => Math.hypot(p.x - s0.x, p.y - s0.y) > 0.15);
+      if (!moved && !gone) continue;
+      out.push({ id: o.id, kind: o.def.kind, pts, ends: gone ? 'gone' : 'alive' });
+    }
+    return out;
+  }
+
   digest(): number[] {
     const out = [this.tick, this.worldTick, this.gauge];
     for (const o of this.objs) {
