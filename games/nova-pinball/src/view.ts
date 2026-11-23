@@ -63,6 +63,8 @@ export class NovaView {
   particles = new Particles(3000);
   /** ボールごとの色と濃さ（Echo Loop の残響用）。null なら全部同じ */
   ballStyle: ((b: Ball) => { tint: number; alpha: number }) | null = null;
+  /** ボールの持ち主ごとの音量（Echo Loop：残響の音は遠く小さく）。null なら 1 */
+  soundScale: ((owner: number) => number) | null = null;
   private t = 0;
   private hue: number;
   private palette: number[];
@@ -180,11 +182,11 @@ export class NovaView {
         const sv = this.stars[e.star];
         sv.pulse = 1;
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 10, speed: [60, 220], life: [0.2, 0.5], size: [0.05, 0.14], color: CHARGE_COLORS[Math.min(e.charge, 4)] });
-        synth.hbell(e.charge, 0.08);
+        synth.hbell(e.charge, 0.08 * (this.soundScale?.(e.by ?? 0) ?? 1));
         break;
       }
       case 'bump':
-        synth.tone(220, 0.15, { type: 'triangle', vol: 0.12, slideTo: 330 });
+        synth.tone(220, 0.15, { type: 'triangle', vol: 0.12 * (this.soundScale?.(e.by ?? 0) ?? 1), slideTo: 330 });
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 8, speed: [80, 200], life: [0.2, 0.4], size: [0.05, 0.12], color: 0xbfc8e8 });
         break;
       case 'explode':
@@ -204,9 +206,10 @@ export class NovaView {
         break;
       case 'sling': {
         this.slingFlash[e.side] = 1;
-        synth.tone(e.side === 'L' ? 523 : 587, 0.12, { type: 'square', vol: 0.06, slideTo: 880 });
+        const k = this.soundScale?.(e.by ?? 0) ?? 1;
+        synth.tone(e.side === 'L' ? 523 : 587, 0.12, { type: 'square', vol: 0.06 * k, slideTo: 880 });
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 12, speed: [80, 260], life: [0.2, 0.45], size: [0.05, 0.12], color: this.palette[1] });
-        this.juice.shake(0.06 * this.cfg.shake);
+        this.juice.shake(0.06 * this.cfg.shake * k);
         break;
       }
       case 'roll': {
