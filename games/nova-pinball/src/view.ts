@@ -4,7 +4,7 @@ import { glowTexture, ringTexture, sparkleTexture, skyTexture, makeStarfield, hs
 import { Particles } from '@engine/particles';
 import { synth } from '@engine/audio';
 import type { Juice } from '@engine/juice';
-import { BALL_R, BOARD_H, BOARD_W, boardWalls, SLING_L, SLING_R, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
+import { BALL_R, BOARD_H, BOARD_W, boardWalls, type Ball, SLING_L, SLING_R, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
 import type { NovaConfig } from './config';
 
 export const SCALE = 40; // 1メートル = 40px
@@ -61,6 +61,8 @@ export class NovaView {
   private shocks: Shock[] = [];
   private launchMeter = new Graphics();
   particles = new Particles(3000);
+  /** ボールごとの色と濃さ（Echo Loop の残響用）。null なら全部同じ */
+  ballStyle: ((b: Ball) => { tint: number; alpha: number }) | null = null;
   private t = 0;
   private hue: number;
   private palette: number[];
@@ -497,6 +499,13 @@ export class NovaView {
       if (b.trail.length > TRAIL_MAX) b.trail.pop();
       v.glow.x = v.core.x = x;
       v.glow.y = v.core.y = y;
+      const style = this.ballStyle?.(b);
+      if (style) {
+        v.glow.tint = style.tint;
+        v.core.tint = style.tint;
+        v.core.alpha = style.alpha;
+        v.glow.alpha = style.alpha;
+      }
       // 速いほど軌跡が長く、明るく、青白くなる
       const bv = b.body.getLinearVelocity();
       const sp = Math.min(1, Math.hypot(bv.x, bv.y) / 32);
@@ -507,8 +516,9 @@ export class NovaView {
         const tp = b.trail[k] ?? { x, y };
         t.x = tp.x; t.y = tp.y;
         t.visible = k < len;
-        t.tint = tcol;
-        t.alpha = (0.25 + 0.25 * sp) * (1 - k / len);
+        if (!style) t.tint = tcol;
+        t.alpha = (0.25 + 0.25 * sp) * (1 - k / len) * (style?.alpha ?? 1);
+        if (style) t.tint = lerpColor(style.tint, tcol, 0.3);
         t.scale.set(((BALL_R * SCALE * 2.6) / 128) * (1 - k / (len * 1.3)));
       });
     }
