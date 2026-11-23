@@ -1,6 +1,7 @@
 /**
  * 実験：時空の絵筆（Chrono Brush）。本編に入れるかを決めるための小さな試作。
- * ドラッグで「遅い時間（青）」、右ドラッグで「速い時間（赤）」を塗り、降ってくる星を揺れる籠へ導く。
+ * ドラッグで「遅い時間（青）」、右ドラッグで「速い時間（赤）」、Shift＋ドラッグで「逆再生（紫）」を塗り、降ってくる星を籠へ導く。
+ * 風は世界の時間で吹くので、遅らせた星ほど風に運ばれる。6ステージ（数字キーか ?stage=N で選ぶ）。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
 import { Graphics, Sprite, Container } from 'pixi.js';
@@ -10,7 +11,8 @@ import { synth } from '@engine/audio';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el } from '@engine/hud';
-import { ChronoSim, defaults, VIEW_W, VIEW_H, HZ, type Brush } from './sim';
+import { ChronoSim, chronoStages, defaults, VIEW_W, VIEW_H, HZ, type Brush } from './sim';
+import { ChronoBot } from './bot';
 
 const params = new URLSearchParams(location.search);
 
@@ -31,17 +33,27 @@ async function main() {
   hud.append(tl, center);
   document.body.appendChild(hud);
 
-  let sim = new ChronoSim(defaults, 1);
+  let stageIndex = Math.min(chronoStages.length - 1, Math.max(0, Number(params.get('stage') ?? 0) || 0));
+  let sim = ChronoSim.of(chronoStages[stageIndex], defaults);
   let sprites: Sprite[] = [];
   let autoplay = params.has('autoplay');
   let painting: Brush | null = null;
   let t = 0;
-  const restart = () => {
-    sim = new ChronoSim(defaults, Math.floor(Math.random() * 1000));
+  let bot = new ChronoBot(0.85);
+  const voidG = new Graphics();
+  ga.world.addChildAt(voidG, 2);
+  const start = (i: number) => {
+    stageIndex = i;
+    sim = ChronoSim.of(chronoStages[i], defaults);
+    bot = new ChronoBot(0.85);
     starLayer.removeChildren();
     sprites = [];
-    center.innerHTML = '';
+    center.innerHTML = `<div style="color:var(--gold)">${chronoStages[i].hint}</div>`;
+    setTimeout(() => { if (sim === cur) center.innerHTML = ''; }, 3500);
+    const cur = sim;
   };
+  const restart = () => start(stageIndex);
+  start(stageIndex);
 
   const paintAt = (cx: number, cy: number) => {
     if (!painting) return;
@@ -52,24 +64,16 @@ async function main() {
   window.addEventListener('pointermove', (e) => paintAt(e.clientX, e.clientY));
   window.addEventListener('pointerup', () => { painting = null; });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-  window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') restart(); });
-
-  /** 自動プレイ：籠に間に合わない星の行く手に、遅い時間を塗る */
-  const bot = () => {
-    if (sim.tick % 30 !== 0) return;
-    for (const s of sim.stars) {
-      if (!s.alive || s.y < 120 || s.y > VIEW_H - 150) continue;
-      if (sim.rate(s.x, s.y + 40) < 1) continue;
-      const fall = (VIEW_H - 40 - s.y) / Math.max(60, s.vy);
-      const later = new ChronoSim(defaults);
-      later.tick = sim.tick + Math.round(fall * HZ);
-      if (Math.abs(later.basketX() - s.x) > defaults.basketW / 2) sim.paint(s.x, s.y + 50, 'slow');
-    }
-  };
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyR') restart();
+    if (e.code === 'KeyN') start((stageIndex + 1) % chronoStages.length);
+    const d = /^Digit([1-9])$/.exec(e.code);
+    if (d && Number(d[1]) <= chronoStages.length) start(Number(d[1]) - 1);
+  });
 
   const loop = new FixedLoop({
     update: () => {
-      if (autoplay) bot();
+      if (autoplay) bot.act(sim);
       sim.step();
       for (const e of sim.events) {
         if (e.t === 'catch') {
@@ -79,9 +83,14 @@ async function main() {
         } else if (e.t === 'miss') {
           particles.emit(e.x, e.y, { count: 14, speed: [30, 120], life: [0.2, 0.5], size: [0.04, 0.1], color: 0x6a74c9 });
           synth.tone(200, 0.3, { type: 'sine', vol: 0.06, slideTo: 90 });
+        } else if (e.t === 'void') {
+          particles.emit(e.x, e.y, { count: 20, speed: [20, 90], life: [0.3, 0.7], size: [0.04, 0.1], color: [0x6a3a9a, 0x2a1a4a] });
+          synth.tone(120, 0.5, { type: 'sine', vol: 0.08, slideTo: 50 });
         } else if (e.t === 'end') {
-          center.innerHTML = `<div class="chain">${sim.caught} / ${sim.cfg.stars}</div><div style="color:var(--dim)">R でもう一度</div>`;
-          if (sim.caught >= sim.cfg.stars * 0.7) { juice.doFlash(0.5, 0xffe7a8); synth.arp([0, 2, 4, 7, 9], 0.07, 0.1); }
+          const st = chronoStages[stageIndex];
+          center.innerHTML = `<div class="chain">${sim.cleared ? 'CLEAR' : 'あと少し'}　${sim.caught} / ${sim.cfg.stars}</div><div style="color:var(--dim)">必要 ${st.need}　R でもう一度　N で次のステージ</div>`;
+          if (sim.cleared) { juice.doFlash(0.5, 0xffe7a8); synth.arp([0, 2, 4, 7, 9], 0.07, 0.1); }
+          if (autoplay && sim.cleared) setTimeout(() => start((stageIndex + 1) % chronoStages.length), 2500);
         }
       }
     },
@@ -106,6 +115,16 @@ async function main() {
           zoneG.moveTo(z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr).arc(z.x, z.y, rr, a, a + 1.4).stroke({ width: 2, color: col, alpha: 0.4 * fade });
         }
       }
+      // 虚空：星を飲む黒い穴（縁がゆっくり回る）
+      voidG.clear();
+      for (const v of sim.stage?.voids ?? []) {
+        voidG.circle(v.x, v.y, v.r * 1.3).fill({ color: 0x000000, alpha: 0.35 });
+        voidG.circle(v.x, v.y, v.r).fill({ color: 0x05030c, alpha: 0.95 });
+        for (let k = 0; k < 8; k++) {
+          const a = -t * 0.8 + (k * Math.PI) / 4;
+          voidG.moveTo(v.x + Math.cos(a) * v.r, v.y + Math.sin(a) * v.r).arc(v.x, v.y, v.r, a, a + 0.3).stroke({ width: 2, color: 0x8a5acd, alpha: 0.6 });
+        }
+      }
       // 籠
       const bx = sim.basketX(), by = VIEW_H - 40, w = sim.cfg.basketW;
       basketG.clear();
@@ -127,12 +146,13 @@ async function main() {
         const r = sim.rate(s.x, s.y);
         sp.tint = r < 0 ? 0xd9b3ff : r < 1 ? 0x9fc0ff : r > 1 ? 0xffb3b3 : 0xfff3d6;
       });
-      tl.innerHTML = `<div>実験：時空の絵筆</div><div class="big">籠 ${sim.caught} / ${sim.cfg.stars}</div><div style="font-size:13px;color:var(--dim)">インク ${sim.ink}　ドラッグ＝遅い（青）　右ドラッグ＝速い（赤）　Shift＋ドラッグ＝逆再生（紫）　R＝やり直し</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+      tl.innerHTML = `<div>実験：時空の絵筆　${stageIndex + 1}. ${chronoStages[stageIndex].name}</div><div class="big">籠 ${sim.caught} / ${chronoStages[stageIndex].need}<span style="font-size:14px;color:var(--dim)">（星 ${sim.cfg.stars}）</span></div><div style="font-size:13px;color:var(--dim)">インク ${sim.ink}　ドラッグ＝遅い（青）　右ドラッグ＝速い（赤）　Shift＋ドラッグ＝逆再生（紫）<br>風は右へも左へも吹く — 遅らせた星ほど風に運ばれる　R＝やり直し　1〜6＝ステージ　N＝次</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       hook.frames++;
     },
   }, HZ);
   juice.attach(loop);
-  const hook = installDebugHook('chrono-brush', () => ({ caught: sim.caught, missed: sim.missed, ink: sim.ink, done: sim.done }));
+  const hook = installDebugHook('chrono-brush', () => ({ stage: stageIndex, caught: sim.caught, missed: sim.missed, ink: sim.ink, done: sim.done, cleared: sim.cleared }));
+  hook.start = (i: number) => start(i);
   loop.start();
   hook.ready = true;
 }
