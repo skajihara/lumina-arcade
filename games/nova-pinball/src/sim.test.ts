@@ -88,7 +88,7 @@ describe('NovaSim', () => {
   it('ひねり3：爆発の引力がボールを星の方へ引き、時間で消える（なしでは引かない）', () => {
     const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6.9, y: 6, charge: 2 }, { x: 2, y: 3 }], links: [] };
     const pull = (twist: number) => {
-      const sim = new NovaSim(stage, { ...cfg(), twist });
+      const sim = new NovaSim(stage, { ...cfg(), twist, starPull: 0 });
       const b = sim.balls[0].body;
       b.setPosition({ x: 6.9, y: 11 });
       b.setLinearVelocity({ x: 0, y: 0 });
@@ -107,6 +107,22 @@ describe('NovaSim', () => {
     expect(on.after).toBe(0);
     expect(off.wells).toBe(0);
     expect(on.minY).toBeLessThan(off.minY - 0.3); // 上の星の方へ引かれて、落ちるのが遅れる
+  });
+
+  it('NP-14 星の引力：星はいつもボールを引く（灯った星ほど強い）。0 なら引かない', () => {
+    const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 9, y: 10 }], links: [] };
+    const drift = (starPull: number, charge = 0) => {
+      const sim = new NovaSim(stage, { ...cfg(), twist: 0, starPull });
+      sim.stars[0].charge = charge;
+      const b = sim.balls[0].body;
+      b.setPosition({ x: 6.5, y: 8 });
+      b.setLinearVelocity({ x: 0, y: 0 });
+      for (let i = 0; i < 30; i++) sim.step(0);
+      return b.getPosition().x - 6.5;
+    };
+    expect(drift(0)).toBeCloseTo(0, 3);
+    expect(drift(2.5)).toBeGreaterThan(0.05); // 右の星の方へ寄る
+    expect(drift(2.5, 3)).toBeGreaterThan(drift(2.5, 0) * 1.3);
   });
 
   it('チャージは時間で減る', () => {

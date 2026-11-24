@@ -15,11 +15,13 @@ function pips(g: CanvasRenderingContext2D, x: number, y: number, n: number): voi
 
 export const novaRules: RuleFrame[] = [
   {
-    caption: 'フリッパーで打って、星に当てる',
+    caption: 'フリッパーで打って、星に当てる。星はいつもボールを引く',
     draw: (g, t) => {
       const p = phase(t, 2.4);
       const k = ease(seg(p, 0, 0.45));
-      const bx = lerp(40, 92, k), by = lerp(84, 34, k);
+      // 星に引かれて曲がる道
+      const bx = lerp(40, 92, k) - Math.sin(k * Math.PI) * 16, by = lerp(84, 34, k);
+      for (let i = 1; i <= 4; i++) { const r0 = 10 + ((t * 14 + i * 7) % 28); g.save(); g.globalAlpha = 0.25 * (1 - r0 / 38); g.strokeStyle = '#dfe6ff'; g.beginPath(); g.arc(96, 30, r0, 0, Math.PI * 2); g.stroke(); g.restore(); }
       // フリッパー
       line(g, 22, 86, 44, 92, BLUE, 0.9, 4);
       line(g, 114, 86, 92, 92, BLUE, 0.9, 4);

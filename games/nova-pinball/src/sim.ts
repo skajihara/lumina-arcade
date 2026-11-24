@@ -745,29 +745,59 @@ export class NovaSim {
     }
   }
 
-  /** 爆発の引力：生きている井戸ごとに、ボールを井戸の方へ（近いほど強く）、少し横向き（渦）にも引く */
-  private applyWells(): void {
-    if (!this.wells.length) return;
+  /**
+   * 引力の場（重力以外）：ボールがその位置で受ける加速度。
+   * ① 星の引力（starPull）：生きている星がいつも引く。灯った星（チャージがある）ほど重く、大きい星ほど重い。近いほど強く、starRange で 0
+   * ② 爆発の引力（ひねり3の井戸）：爆発した所が、しばらく強く引く（少し横向きに渦を巻く）
+   */
+  fieldAt(x: number, y: number): { x: number; y: number } {
     const cfg = this.cfg;
-    this.wells = this.wells.filter((w) => w.until > this.tick);
-    const range = cfg.wellRange ?? 7, pull = (cfg.wellPull ?? 1.5) * cfg.gravity, swirl = cfg.wellSwirl ?? 0.35;
-    for (const b of this.balls) {
-      if (this.inLane(b)) continue;
-      const p = b.body.getPosition();
-      const m = b.body.getMass();
-      let fx = 0, fy = 0;
+    let fx = 0, fy = 0;
+    const sp = cfg.starPull ?? 0;
+    if (sp > 0) {
+      const range = cfg.starRange ?? 5, G = sp * cfg.gravity, maxC = Math.max(1, Math.round(cfg.maxCharge));
+      for (const s of this.stars) {
+        if (!s.alive) continue;
+        const q = s.body.getPosition();
+        const dx = q.x - x, dy = q.y - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > range * range || d2 < 1e-4) continue;
+        const d = Math.sqrt(d2);
+        const r0 = 1.6 + s.r;
+        const mass = (s.r / 0.55) * (0.45 + 0.55 * Math.min(1, s.charge / maxC));
+        const edge = 1 - d / range;
+        const k = G * mass * (r0 * r0) / (d2 + r0 * r0) * edge;
+        fx += (dx / d) * k;
+        fy += (dy / d) * k;
+      }
+    }
+    if (this.wells.length) {
+      const range = cfg.wellRange ?? 7, pull = (cfg.wellPull ?? 1.5) * cfg.gravity, swirl = cfg.wellSwirl ?? 0.35;
       for (const w of this.wells) {
-        const dx = w.x - p.x, dy = w.y - p.y;
+        const dx = w.x - x, dy = w.y - y;
         const d = Math.hypot(dx, dy);
         if (d > range || d < 0.05) continue;
         // 届く範囲の縁で 0、近いほど強い（1m で約2倍）。時間とともに弱まる
-        const fade = (w.until - this.tick) / Math.max(1, w.until - w.born);
+        const fade = Math.max(0, (w.until - this.tick) / Math.max(1, w.until - w.born));
         const k = pull * (1 - d / range) * (1 + 0.8 / (d + 0.4)) * fade;
         const ux = dx / d, uy = dy / d;
         fx += (ux - uy * swirl) * k;
         fy += (uy + ux * swirl) * k;
       }
-      if (fx || fy) { b.body.applyForceToCenter({ x: fx * m, y: fy * m }, true); }
+    }
+    return { x: fx, y: fy };
+  }
+
+  /** 引力の場をボールに効かせる（発射レーンのボールには効かない） */
+  private applyWells(): void {
+    this.wells = this.wells.filter((w) => w.until > this.tick);
+    if (!this.wells.length && !(this.cfg.starPull > 0)) return;
+    for (const b of this.balls) {
+      if (this.inLane(b)) continue;
+      const p = b.body.getPosition();
+      const m = b.body.getMass();
+      const f = this.fieldAt(p.x, p.y);
+      if (f.x || f.y) b.body.applyForceToCenter({ x: f.x * m, y: f.y * m }, true);
     }
   }
 

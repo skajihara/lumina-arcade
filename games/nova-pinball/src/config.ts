@@ -34,6 +34,10 @@ export interface NovaConfig {
   bloom: boolean;
   twist: number;
   /** ひねり3（爆発の引力）：引力の続く秒数・強さ（重力の何倍）・届く距離（m）・渦の強さ（引く力に対する横向きの割合） */
+  /** 星の引力：生きている星がいつもボールを引く強さ（重力の倍。灯った星・大きい星ほど強い。0 で無し） */
+  starPull: number;
+  /** 星の引力が届く距離（m） */
+  starRange: number;
   wellSec: number;
   wellPull: number;
   wellRange: number;
@@ -71,6 +75,8 @@ export const schema: Schema<NovaConfig> = {
   particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
   bloom: { label: '発光（ブルーム）', folder: '演出' },
   twist: { label: 'ひねり（0なし 1同色連鎖 2押せる星 3爆発の引力）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
+  starPull: { label: '星の引力（重力の倍、0で無し）', min: 0, max: 4, step: 0.05, folder: 'ルール' },
+  starRange: { label: '星の引力が届く距離', min: 1, max: 12, step: 0.5, folder: 'ルール' },
   wellSec: { label: '爆発の引力が続く秒数', min: 0.1, max: 2, step: 0.05, folder: 'ルール' },
   wellPull: { label: '爆発の引力の強さ（重力の倍）', min: 0, max: 4, step: 0.05, folder: 'ルール' },
   wellRange: { label: '爆発の引力が届く距離', min: 1, max: 15, step: 0.5, folder: 'ルール' },
@@ -108,9 +114,11 @@ const normal: NovaConfig = {
   particles: 1,
   bloom: true,
   twist: 3,
-  wellSec: 0.8,
-  wellPull: 1.5,
-  wellRange: 7,
+  starPull: 2.5,
+  starRange: 6,
+  wellSec: 1.3,
+  wellPull: 3,
+  wellRange: 9,
   wellSwirl: 0.35,
   volume: 0.7,
 };
