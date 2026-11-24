@@ -96,10 +96,11 @@ for (const game of games) {
   });
 
   test(`${game}: 自動プレイでクリアすると進行が保存される`, async ({ page }) => {
-    test.setTimeout(120_000);
+    // ピンボール系は1面のクリア（またはゲームオーバー）までに時間がかかる。
+    // GitHub Actions の遅い描画では100秒を超えることがあったので、長めに待つ
+    test.setTimeout(300_000);
     const errors = await open(page, game, '?stage=0&autoplay=1');
-    // ピンボール系は1面のクリアに時間がかかるので、ゲームを速めて待つ
-    await page.waitForFunction(() => (window as unknown as { __lumina: Hook }).__lumina.state().mode === 'result', null, { timeout: 100_000, polling: 500 });
+    await page.waitForFunction(() => (window as unknown as { __lumina: Hook }).__lumina.state().mode === 'result', null, { timeout: 270_000, polling: 500 });
     const saved = await page.evaluate((g) => localStorage.getItem(`lumina:${g}`), game);
     const st = await state(page);
     if (st.phase === 'clear') {
