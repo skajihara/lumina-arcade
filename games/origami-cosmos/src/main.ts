@@ -14,7 +14,7 @@ import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type OrigamiConfig } from './config';
 import { stages } from './stages';
-import { ruleCards } from '@engine/rules';
+import { ruleCards, introCard } from '@engine/rules';
 import { origamiRules } from './rules';
 import { OrigamiSim, foldCenter, type Fold } from './sim';
 import { solve, type Move } from './solver';
@@ -140,6 +140,8 @@ async function main() {
     resultAt = -1;
     burnt = sim.alive.map(() => false);
     litLinks = new Set();
+    // このステージで初めて点火の回数が増える時に知らせる（RULE-01c）
+    { const n = stages[i].ignitions, prev = i > 0 ? stages[i - 1].ignitions : 1; introCard(n > prev ? { ...origamiRules[3], caption: `この問題から、点火は${n}回（難易度で増える）。1回目で燃やす星と、残す星を考えて折ろう` } : null, `点火 ${n} 回`); }
     mode = 'play';
     buildStars();
     fitCamera(true);

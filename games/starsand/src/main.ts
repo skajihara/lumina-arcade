@@ -15,7 +15,7 @@ import { skyTexture, makeStarfield } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
-import { ruleCards } from '@engine/rules';
+import { ruleCards, introCard } from '@engine/rules';
 import { sandRules } from './rules';
 import { SandSim, W, H, COLORS, type SandEvent } from './sim';
 
@@ -113,6 +113,8 @@ async function main() {
     resultAt = -1;
     botLine = 0;
     botT = 0;
+    // このステージで初めて出てくる要素の図解（RULE-01c）：4面は色の混合
+    introCard(stages[i].id === 'ss-04' ? sandRules[3] : null, '混ざる光');
     mode = 'play';
     hintEl.textContent = touchText(stages[i].hint, [['ドラッグで線', 'なぞって線'], ['右ドラッグで消す', '「消しゴム」で消す']]);
     synth.setKey(i % 5);

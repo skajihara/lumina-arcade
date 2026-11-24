@@ -15,7 +15,8 @@ import { skyTexture, makeStarfield } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
 import { stages } from './stages';
-import { ruleCards } from '@engine/rules';
+import { ruleCards, introCard } from '@engine/rules';
+import { stoppedIntros } from './intro';
 import { stoppedRules } from './rules';
 import { randomPlan, runPlan, type Plan } from './bot';
 import { StopSim, HZ, WORLD_W, WORLD_H, CRACK_RATIO, slingPower, type Action, type Obj } from './sim';
@@ -124,6 +125,8 @@ async function main() {
     botRng = new Rng(i + 7);
     botSearch = null;
     resultTimer = -1;
+    // このステージで初めて出てくる要素の図解（RULE-01c）。「壊すと時間が戻る」はひねり1の時だけ
+    { const it = stoppedIntros[stages[i].id]; introCard(it && (stages[i].id !== 'sw-fuse' || Math.round(cfg.twist) % 2 === 1) ? it.frame : null, it?.title); }
     mode = 'play';
     drawGround();
     toast(touchText(stages[i].hint, [['もう一度 Space で解放', '「解き放つ」で解放'], ['Space で時間を止め', '「時を止める」で時間を止め'], ['卵を引っぱって放す', '卵を指で引っぱって放す']]));
