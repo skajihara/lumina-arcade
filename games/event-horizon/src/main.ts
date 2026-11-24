@@ -321,6 +321,7 @@ async function main() {
     if (restart && mode === 'play' && key !== '*') toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('horizon');
   ga.setBloom(cfg.bloom);
 
   const handle = (e: HorizonEvent) => {

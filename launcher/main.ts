@@ -1,6 +1,7 @@
 /** 星図ランチャー。各ゲームが1つの星座。Canvas2D だけで描く軽量ページ */
 import { games, type GameEntry } from './games';
-import { injectBaseStyle } from '@engine/hud';
+import { injectBaseStyle, goTo } from '@engine/hud';
+import { synth } from '@engine/audio';
 
 injectBaseStyle(`
 #sky { position:fixed; inset:0; }
@@ -15,6 +16,13 @@ injectBaseStyle(`
 .card h3 { margin:0; font-size:22px; letter-spacing:.12em; }
 .card small { color:var(--dim); letter-spacing:.2em; }
 .card p { color:var(--dim); margin:8px 0 0; line-height:1.7; }
+.card { background:linear-gradient(170deg, rgba(60,70,170,.32), rgba(12,16,48,.62) 60%, rgba(40,26,90,.5)); border-color:rgba(140,160,255,.4);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.15), 0 10px 40px rgba(4,6,30,.6), 0 0 30px rgba(90,110,255,.15); backdrop-filter:blur(8px) saturate(1.2); }
+.title h1 { background:linear-gradient(100deg,#ffffff 18%,#9fd0ff 36%,#ffe7b0 50%,#c9a3ff 64%,#ffffff 82%); background-size:200% 100%;
+  -webkit-background-clip:text; background-clip:text; animation:lm-shimmer 8s linear infinite;
+  filter:drop-shadow(0 0 16px rgba(110,140,255,.85)) drop-shadow(0 0 44px rgba(160,120,255,.35)); }
+.music { position:fixed; right:14px; bottom:10px; font-size:12px; color:var(--dim); letter-spacing:.1em; pointer-events:auto; cursor:pointer; user-select:none; }
+.music:hover { color:var(--ink); }
 .wip { color:#8f96c9; font-size:12px; border:1px solid #4a5290; border-radius:999px; padding:1px 8px; margin-left:6px; }
 `);
 
@@ -26,6 +34,15 @@ document.body.insertAdjacentHTML('beforeend', `
   <div class="title"><h1>LUMINA ARCADE</h1><p>光 の 遊 技 場</p></div>
   <div class="card" id="card"><h3>星座を選んでください</h3><p>光っている星座が遊べるゲーム。灰色は制作中です。</p></div>`);
 const card = document.getElementById('card')!;
+// BGM：最初に触れた時に鳴り始める（ブラウザの自動再生の制限）。M か右下で消す
+const musicEl = document.createElement('div');
+musicEl.className = 'music';
+const musicLabel = () => { musicEl.textContent = !synth.ctx ? '♪ 触れると音楽が流れます' : synth.muted ? '♪ 音楽を流す（M）' : '♪ 音楽を止める（M）'; };
+musicLabel();
+document.body.appendChild(musicEl);
+musicEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (!synth.ctx) synth.unlock(); else synth.setMuted(!synth.muted); musicLabel(); });
+addEventListener('pointerdown', () => { if (!synth.ctx) { synth.unlock(); musicLabel(); } });
+addEventListener('keydown', (e) => { if (!synth.ctx) synth.unlock(); else if (e.code === 'KeyM') synth.setMuted(!synth.muted); musicLabel(); });
 
 let W = 0, H = 0, dpr = 1;
 const bg: { x: number; y: number; r: number; p: number; s: number }[] = [];
@@ -79,10 +96,15 @@ cv.addEventListener('pointermove', (e) => {
 });
 cv.addEventListener('click', (e) => {
   const g = hit(e.clientX, e.clientY);
-  if (g && g.status === 'ready') location.href = `./${g.id}.html`;
+  if (g && g.status === 'ready') {
+    synth.unlock();
+    synth.arp([0, 2, 4, 7, 9], 0.05, 0.08);
+    goTo(`./${g.id}.html`);
+  }
   else if (g) { hover = g; showCard(g); }
 });
 
+const meteors: { x: number; y: number; vx: number; vy: number; age: number }[] = [];
 let t0 = performance.now();
 const frame = (now: number) => {
   const t = (now - t0) / 1000;
@@ -100,6 +122,32 @@ const frame = (now: number) => {
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // 流れる星雲（大きなやわらかい光が、ゆっくり漂う）
+  for (const [k, col] of [[0, 'rgba(127,240,255,0.07)'], [1, 'rgba(201,163,255,0.08)'], [2, 'rgba(255,190,140,0.05)']] as const) {
+    const nx = W * (0.5 + 0.35 * Math.sin(t * 0.03 + k * 2.1)), ny = H * (0.45 + 0.25 * Math.cos(t * 0.025 + k * 1.7));
+    const nr = Math.max(W, H) * (0.35 + 0.05 * k);
+    const ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+    ng.addColorStop(0, col);
+    ng.addColorStop(1, 'transparent');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = ng;
+    ctx.fillRect(0, 0, W, H);
+  }
+  // 流れ星：ときどき、斜めに光の尾を引いて落ちる
+  if (Math.random() < 0.006) meteors.push({ x: Math.random() * W, y: Math.random() * H * 0.5, vx: -(220 + Math.random() * 260), vy: 120 + Math.random() * 160, age: 0 });
+  for (let i = meteors.length - 1; i >= 0; i--) {
+    const m = meteors[i];
+    m.age += 1 / 60;
+    if (m.age > 1.2) { meteors.splice(i, 1); continue; }
+    const x = m.x + m.vx * m.age, y = m.y + m.vy * m.age;
+    const tail = ctx.createLinearGradient(x, y, x - m.vx * 0.18, y - m.vy * 0.18);
+    tail.addColorStop(0, 'rgba(255,255,255,0.9)');
+    tail.addColorStop(1, 'transparent');
+    ctx.globalAlpha = Math.sin((m.age / 1.2) * Math.PI);
+    ctx.strokeStyle = tail;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - m.vx * 0.18, y - m.vy * 0.18); ctx.stroke();
   }
   for (const g of games) {
     const ready = g.status === 'ready';
