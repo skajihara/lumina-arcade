@@ -11,7 +11,7 @@ import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
-import { injectBaseStyle, el, backLink } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type OrigamiConfig } from './config';
 import { stages } from './stages';
 import { OrigamiSim, foldCenter, type Fold } from './sim';
@@ -64,6 +64,7 @@ async function main() {
   const toastEl = el('div', { class: 'toast' });
   center.append(chainEl, toastEl);
   const hintEl = el('div');
+  hintEl.className = 'tlift';
   hintEl.style.cssText = 'position:absolute;left:50%;bottom:34px;transform:translateX(-50%);font-size:15px;color:var(--dim);letter-spacing:.06em;text-align:center;text-shadow:0 0 8px #000;width:90%';
   hud.append(tl, tr, center, hintEl);
   document.body.appendChild(hud);
@@ -219,7 +220,7 @@ async function main() {
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys">線の片側を<b>クリック</b>（または紙を線の向こうへ<b>ドラッグ</b>）で折る　星を<b>クリック</b>で点火　<kbd>Z</kbd>／右クリック 1つ戻す<br>
-      <kbd>H</kbd> ヒント　<kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音</div>`;
+      <kbd>H</kbd> ヒント　<kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：タップで折る・点火、下のボタンで戻す／ヒント</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -650,6 +651,13 @@ async function main() {
     tr.innerHTML = `<div class="big" style="color:var(--gold)">${'✦'.repeat(Math.max(0, ign))}<span style="color:#444a7a">${'✧'.repeat(Math.max(0, sim.moves))}</span></div><div>点火 あと ${ign} 回</div><div>折り ${sim.folds.length} / ${sim.maxFolds}</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
 
+  // スマホ・タブレット：キーボードの代わりの画面ボタン
+  const tbar = touchButtons([
+    { label: '戻す', onPress: () => { if (mode === 'play') undoFold(); } },
+    { label: 'ヒント', onPress: () => { if (mode === 'play') showHint(); } },
+    { label: '‖', onPress: () => togglePause() },
+  ], 'bottom', { landscape: true });
+
   const loop = new FixedLoop({
     update: () => {
       if (mode === 'play' && autoplay) botStep(1 / HZ);
@@ -662,6 +670,7 @@ async function main() {
       ga.flash.tint = juice.flashColor;
       particles.multiplier = cfg.particles;
       draw(realDt);
+      tbar.update();
       hook.frames++;
     },
   }, HZ);

@@ -11,7 +11,7 @@ import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield } from '@engine/gfx';
-import { injectBaseStyle, el, backLink } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
 import { SandSim, W, H, SAND, LINE, WALL, COLORS, type SandEvent } from './sim';
@@ -170,7 +170,7 @@ async function main() {
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><b>ドラッグ</b>で線を引く　<b>右ドラッグ</b>で消す　<kbd>Z</kbd> 最後の線を消す<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音</div>`;
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：なぞって線を引く、下の「消しゴム」で消す側に切り替え</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -227,7 +227,7 @@ async function main() {
     synth.unlock();
     if (mode !== 'play' || !sim || sim.phase !== 'play' || autoplay) return;
     const c = toCell(e.clientX, e.clientY);
-    drawing = { erase: e.button === 2, last: c };
+    drawing = { erase: e.button === 2 || eraseMode, last: c };
     if (drawing.erase) sim.erase(c.x, c.y);
     else { strokes.push([]); drawSeg(c, c); }
   });
@@ -241,6 +241,7 @@ async function main() {
   window.addEventListener('pointerup', () => { drawing = null; });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  let eraseMode = false;
   const undoStroke = () => {
     if (!sim || !strokes.length) return;
     const cells = strokes.pop()!;
@@ -416,6 +417,13 @@ async function main() {
     tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:var(--accent)">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>インク ${Math.round(inkK * 100)}%</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
 
+  // スマホ・タブレット：キーボードの代わりの画面ボタン
+  const tbar = touchButtons([
+    { label: '消しゴム', onPress: () => { eraseMode = !eraseMode; }, state: () => ({ on: eraseMode }) },
+    { label: '戻す', onPress: () => { if (mode === 'play') undoStroke(); } },
+    { label: '‖', onPress: () => togglePause() },
+  ], 'bottom', { landscape: true });
+
   const loop = new FixedLoop({
     update: () => {
       if (mode !== 'play' || !sim) return;
@@ -439,6 +447,7 @@ async function main() {
       particles.multiplier = cfg.particles;
       draw(realDt);
       if (resultAt > 0 && t >= resultAt && mode === 'play') { resultAt = -1; showResult(); }
+      tbar.update();
       hook.frames++;
     },
   }, HZ);

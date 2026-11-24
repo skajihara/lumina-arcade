@@ -12,7 +12,7 @@ import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { Rng } from '@engine/rng';
 import { skyTexture, makeStarfield } from '@engine/gfx';
-import { injectBaseStyle, el, backLink } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
 import { stages } from './stages';
 import { randomPlan, runPlan, type Plan } from './bot';
@@ -160,7 +160,7 @@ async function main() {
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>Space</kbd> 時間を止める／戻す　物体を<b>ドラッグ</b>で力を置く（向きと長さ）<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音</div>`;
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下の「時を止める」ボタン、物体をなぞって力を置く</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -511,6 +511,16 @@ async function main() {
       .stroke({ width: 4, color, alpha, cap: 'round', join: 'round' });
   };
 
+  // スマホ・タブレット：キーボードの代わりの画面ボタン
+  const tbar = touchButtons([
+    {
+      label: '時を止める',
+      onPress: () => { synth.unlock(); if (mode === 'play' && sim) pending.push(sim.stopped ? { t: 'resume' } : { t: 'stop' }); },
+      state: () => ({ on: !!sim?.stopped, label: sim?.stopped ? '解き放つ' : '時を止める' }),
+    },
+    { label: '‖', onPress: () => togglePause() },
+  ], 'bottom', { landscape: true });
+
   const loop = new FixedLoop({
     update: () => {
       if (mode !== 'play' || !sim) return;
@@ -535,6 +545,7 @@ async function main() {
       ga.flash.alpha = juice.flash;
       ga.flash.tint = juice.flashColor;
       draw(realDt);
+      tbar.update();
       hook.frames++;
     },
   }, HZ);
