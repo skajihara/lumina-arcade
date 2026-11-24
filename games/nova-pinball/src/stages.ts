@@ -20,6 +20,20 @@ export interface BumperDef {
   r: number;
 }
 
+/**
+ * アイテム（NP-11）：ボールが触れると効く。使うとしばらく消えて、また現れる
+ * - split：分裂。ボールが2つに分かれる（マルチボール）
+ * - hole：小さなブラックホール。3秒のあいだ、強い引力の中心になる
+ * - warp：ワームホール。入ると to の出口から、同じ速さで飛び出す
+ */
+export interface ItemDef {
+  kind: 'split' | 'hole' | 'warp';
+  x: number;
+  y: number;
+  /** warp の出口 */
+  to?: { x: number; y: number };
+}
+
 import type { BoardOpts } from './sim';
 
 export interface StageDef extends BoardOpts {
@@ -30,6 +44,8 @@ export interface StageDef extends BoardOpts {
   /** 星座の線（星のインデックスの組）。両端が同じ連鎖で爆発すると灯る */
   links: [number, number][];
   bumpers?: BumperDef[];
+  /** アイテム（NP-11） */
+  items?: ItemDef[];
   /** エンドレス（星が尽きると次の波が来る。ボールが尽きるまで続くスコアアタック） */
   endless?: { seed: number };
   /** 盤面の色合い（0..1 の色相） */
@@ -127,6 +143,7 @@ export const stages: StageDef[] = [
       { x: 9.6, y: 5.0 }, { x: 9.6, y: 7.2 }, { x: 9.6, y: 9.4 },
     ],
     links: [[0, 1], [1, 2], [3, 4], [4, 5], [0, 3]],
+    items: [{ kind: 'split', x: 6.9, y: 12.8 }],
     hue: 0.7,
   },
   {
@@ -155,6 +172,7 @@ export const stages: StageDef[] = [
     ],
     links: [[0, 2], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 9], [9, 10]],
     bumpers: [{ x: 10.2, y: 11.6, r: 0.6 }, { x: 4.6, y: 5.2, r: 0.5 }, { x: 6.9, y: 15.8, r: 0.42 }],
+    items: [{ kind: 'hole', x: 7.4, y: 12.9 }],
     hue: 0.98,
   },
   {
@@ -169,6 +187,7 @@ export const stages: StageDef[] = [
       { x: 5.3, y: 6.4, r: 0.4, loose: true }, { x: 8.5, y: 6.8, r: 0.4, loose: true },
     ],
     links: [[0, 2], [1, 4], [2, 3], [3, 4], [4, 5], [2, 6]],
+    items: [{ kind: 'warp', x: 11.3, y: 15.6, to: { x: 2.2, y: 3.0 } }],
     hue: 0.6,
   },
   {

@@ -99,7 +99,9 @@ export type SimEvent =
   | { t: 'sling'; side: 'L' | 'R'; x: number; y: number; by?: number }
   | { t: 'roll'; id: number; all: boolean }
   | { t: 'wave'; n: number; from: number }
-  | { t: 'kickback'; side: 'L' | 'R'; x: number; y: number };
+  | { t: 'kickback'; side: 'L' | 'R'; x: number; y: number }
+  /** アイテムを使った（NP-11）。warp は出口 tx,ty も */
+  | { t: 'item'; kind: 'split' | 'hole' | 'warp'; x: number; y: number; tx?: number; ty?: number };
 
 export type Phase = 'play' | 'clear' | 'gameover';
 
@@ -207,7 +209,9 @@ export class NovaSim {
   /** ひねりC：今の重力の向き（描画用） */
   gravityDir = { x: 0, y: 1 };
   /** ひねり3：爆発の引力（重力井戸）。連鎖中は重なって渦を巻く */
-  wells: { x: number; y: number; born: number; until: number }[] = [];
+  wells: { x: number; y: number; born: number; until: number; k?: number }[] = [];
+  /** アイテム（NP-11）：readyAt のティックから使える */
+  items: { kind: 'split' | 'hole' | 'warp'; x: number; y: number; to?: { x: number; y: number }; readyAt: number }[] = [];
 
   constructor(public stage: StageDef, public cfg: NovaConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -297,6 +301,7 @@ export class NovaSim {
     // 色（ひねりA）：省略時は番号順に3つのまとまりへ分ける（線でつながった隣どうしは同じ色になりやすい）
     const n = this.stage.stars.length;
     this.stage.stars.forEach((d, i) => this.addStar({ ...d, color: d.color ?? Math.floor((i * 3) / Math.max(1, n)) }));
+    this.items = (this.stage.items ?? []).map((d) => ({ ...d, readyAt: 0 }));
     (this.stage.bumpers ?? []).forEach((b, i) => {
       const body = this.world.createBody({ type: 'static', position: { x: b.x, y: b.y }, userData: { kind: 'bumper', id: i } as Tag });
       body.createFixture(new Circle(b.r), { restitution: 0.9 });
@@ -474,6 +479,7 @@ export class NovaSim {
     this.updateStars();
     this.processPending();
     this.updateBalls();
+    this.useItems();
     this.checkEnd();
   }
 
@@ -779,7 +785,7 @@ export class NovaSim {
         if (d > range || d < 0.05) continue;
         // 届く範囲の縁で 0、近いほど強い（1m で約2倍）。時間とともに弱まる
         const fade = Math.max(0, (w.until - this.tick) / Math.max(1, w.until - w.born));
-        const k = pull * (1 - d / range) * (1 + 0.8 / (d + 0.4)) * fade;
+        const k = pull * (w.k ?? 1) * (1 - d / range) * (1 + 0.8 / (d + 0.4)) * fade;
         const ux = dx / d, uy = dy / d;
         fx += (ux - uy * swirl) * k;
         fy += (uy + ux * swirl) * k;
@@ -808,6 +814,44 @@ export class NovaSim {
     if (d > R) return;
     const k = 1 - d / R;
     this.kick(body, dx || 0.001, dy || -1, this.cfg.blastForce * (0.35 + 0.65 * k));
+  }
+
+  /** アイテム（NP-11）：ボールが触れたら効かせて、しばらく消す */
+  private useItems(): void {
+    if (!this.items.length) return;
+    for (const it of this.items) {
+      if (this.tick < it.readyAt) continue;
+      for (const b of [...this.balls]) {
+        if (this.inLane(b)) continue;
+        const p = b.body.getPosition();
+        if (Math.hypot(p.x - it.x, p.y - it.y) > 0.75) continue;
+        const v = b.body.getLinearVelocity();
+        if (it.kind === 'split') {
+          // ボールが2つに：今のボールと、少し向きを変えた新しいボール
+          const a = 0.6, c = Math.cos(a), s = Math.sin(a);
+          const nb = this.spawnBall({ x: p.x, y: p.y }, b.owner);
+          nb.launched = true;
+          nb.body.setLinearVelocity({ x: v.x * c - v.y * s, y: v.x * s + v.y * c - 2 });
+          b.body.setLinearVelocity({ x: v.x * c + v.y * s, y: -v.x * s + v.y * c - 2 });
+          it.readyAt = this.tick + HZ * 12;
+          this.events.push({ t: 'item', kind: 'split', x: it.x, y: it.y });
+        } else if (it.kind === 'hole') {
+          // 小さなブラックホール：3秒のあいだ、ふつうの爆発の井戸の 1.6 倍の引力
+          this.wells.push({ x: it.x, y: it.y, born: this.tick, until: this.tick + HZ * 3, k: 1.6 });
+          it.readyAt = this.tick + HZ * 10;
+          this.events.push({ t: 'item', kind: 'hole', x: it.x, y: it.y });
+        } else if (it.kind === 'warp' && it.to) {
+          // ワームホール：出口から、同じ速さで（向きは保つ）飛び出す
+          b.body.setPosition({ x: it.to.x, y: it.to.y });
+          const sp = Math.max(8, Math.hypot(v.x, v.y));
+          const l = Math.hypot(v.x, v.y) || 1;
+          b.body.setLinearVelocity({ x: (v.x / l) * sp, y: (v.y / l) * sp });
+          it.readyAt = this.tick + HZ * 2;
+          this.events.push({ t: 'item', kind: 'warp', x: it.x, y: it.y, tx: it.to.x, ty: it.to.y });
+        }
+        break;
+      }
+    }
   }
 
   private updateBalls(): void {

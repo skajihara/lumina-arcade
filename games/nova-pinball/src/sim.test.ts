@@ -125,6 +125,26 @@ describe('NovaSim', () => {
     expect(drift(2.5, 3)).toBeGreaterThan(drift(2.5, 0) * 1.3);
   });
 
+  it('NP-11 アイテム：分裂でボールが2つ、ワームホールで出口へ、ブラックホールで井戸。使うとしばらく消える', () => {
+    const mk = (items: StageDef['items']) => {
+      const sim = new NovaSim({ id: 't', name: 't', hint: '', stars: [{ x: 2, y: 3 }], links: [], items }, { ...cfg(), twist: 0, starPull: 0 });
+      const b = sim.balls[0].body;
+      b.setPosition({ x: 6.9, y: 10 });
+      b.setLinearVelocity({ x: 0, y: 1 });
+      sim.balls[0].launched = true;
+      for (let i = 0; i < 3; i++) sim.step(0);
+      return sim;
+    };
+    const a = mk([{ kind: 'split', x: 6.9, y: 10 }]);
+    expect(a.balls.length).toBe(2);
+    expect(a.items[0].readyAt).toBeGreaterThan(a.tick);
+    const w = mk([{ kind: 'warp', x: 6.9, y: 10, to: { x: 3, y: 4 } }]);
+    const p = w.balls[0].body.getPosition();
+    expect(Math.hypot(p.x - 3, p.y - 4)).toBeLessThan(0.5);
+    const h = mk([{ kind: 'hole', x: 6.9, y: 10 }]);
+    expect(h.wells.length).toBe(1);
+  });
+
   it('チャージは時間で減る', () => {
     const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6, y: 8, charge: 2 }], links: [] };
     const c = cfg();
