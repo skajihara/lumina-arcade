@@ -4,7 +4,7 @@
  * ステージが解けることの確認（難易度測定）と、自動プレイに使う。
  */
 import { Rng } from '@engine/rng';
-import { StopSim, HZ, type Action, type StageDef } from './sim';
+import { StopSim, HZ, slingPower, type Action, type StageDef } from './sim';
 import type { StopConfig } from './config';
 
 export interface Plan {
@@ -27,7 +27,9 @@ export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng, human = f
     for (let j = 0; j < n; j++) {
       const { i } = rng.pick(movable);
       const a = rng.range(-Math.PI, 0.3); // ほとんど上向き〜横
-      acts.push({ t: 'hit', id: i, dx: Math.cos(a), dy: Math.sin(a) });
+      // 人と同じパチンコ式：引く長さをランダムに（力は slingPower の曲線で決まる）
+      const power = slingPower(rng.range(0.05, 1) * cfg.slingPull, cfg);
+      acts.push({ t: 'hit', id: i, dx: Math.cos(a), dy: Math.sin(a), power });
     }
     steps[tick] = acts;
     const hold = human ? Math.round(HZ * (1 + 0.6 * n)) : 1;

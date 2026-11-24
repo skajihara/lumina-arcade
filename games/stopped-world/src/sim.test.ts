@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashNumbers } from '@engine/rng';
 import { presets, DEFAULT_PRESET } from './config';
-import { StopSim, type StageDef, type Action } from './sim';
+import { StopSim, slingPower, type StageDef, type Action } from './sim';
 
 const cfg = () => ({ ...presets[DEFAULT_PRESET] });
 
@@ -169,5 +169,28 @@ describe('StopSim', () => {
     const v1 = sim.objs[0].body.getLinearVelocity();
     expect(Math.abs(v1.x)).toBeLessThan(0.5);
     expect(-v1.y).toBeGreaterThan(sp0);
+  });
+});
+
+describe('SW-10 強い力', () => {
+  it('少し引くだけでも強く、いっぱいに引くと画面の端まで飛ぶ力（曲線）', () => {
+    const c = cfg();
+    const full = c.forcePerHit * slingPower(c.slingPull, c);
+    const small = c.forcePerHit * slingPower(c.slingPull * 0.2, c);
+    expect(full).toBeGreaterThan(18); // 45° で横 20m 近く飛ぶ速さ
+    expect(small).toBeGreaterThan(full * 0.2 * 1.5); // 比例より強い
+    expect(slingPower(c.slingPull * 3, c)).toBeCloseTo(slingPower(c.slingPull, c), 6);
+  });
+  it('巣はやわらかい：巣の外なら割れる速さで落ちても、巣の中なら割れない', () => {
+    const drop = (x: number) => {
+      const st: StageDef = { ...nestStage, nest: { x: 15, y: 11, w: 3, h: 2.4 }, objects: [{ kind: 'egg', x, y: 11.4, w: 0.45 }] };
+      const sim = new StopSim(st, cfg());
+      sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: 1, power: 2.8 }]); // 真下へ強く
+      sim.step([{ t: 'resume' }]);
+      for (let i = 0; i < 60; i++) sim.step();
+      return sim.phase;
+    };
+    expect(drop(5)).toBe('fail');
+    expect(drop(15)).not.toBe('fail');
   });
 });

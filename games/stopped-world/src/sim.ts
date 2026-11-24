@@ -16,6 +16,15 @@ export const DT = 1 / HZ;
 export const WORLD_W = 20;
 export const WORLD_H = 12;
 
+/**
+ * パチンコ式：引いた長さ（m）→ 力の倍率（forcePerHit の何倍か）。
+ * 曲線（slingCurve < 1）で、少し引くだけでも大きく動き、いっぱいに引くと slingMax 倍。
+ */
+export function slingPower(len: number, cfg: Pick<StopConfig, 'slingPull' | 'slingMax' | 'slingCurve'>): number {
+  const u = Math.max(0, Math.min(1, len / cfg.slingPull));
+  return Math.pow(u, cfg.slingCurve ?? 1) * cfg.slingMax;
+}
+
 export type Kind = 'egg' | 'crate' | 'bomb' | 'rock' | 'ball' | 'plank';
 
 export interface ObjDef {
@@ -296,8 +305,10 @@ export class StopSim {
     for (const h of this.hits) {
       for (const o of [h.a, h.b]) {
         if (!o || !o.alive) continue;
-        if (o.def.kind === 'egg' && h.speed > this.cfg.eggBreak) this.breakObj(o, h.speed);
-        else if (o.def.kind === 'egg' && h.speed > this.cfg.eggBreak * 0.55) {
+        // 巣の中はやわらかい：割れる衝撃が nestSoft 倍
+        const eggLimit = this.cfg.eggBreak * (o.def.kind === 'egg' && this.eggInNest() ? Math.max(1, this.cfg.nestSoft ?? 1) : 1);
+        if (o.def.kind === 'egg' && h.speed > eggLimit) this.breakObj(o, h.speed);
+        else if (o.def.kind === 'egg' && h.speed > eggLimit * 0.55) {
           const p = o.body.getPosition();
           this.events.push({ t: 'crack', id: o.id, x: p.x, y: p.y, speed: h.speed });
         }
