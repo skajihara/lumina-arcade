@@ -42,7 +42,7 @@ export const stages: StageDef[] = [
     sources: [{ x: W / 2, y: 2, color: 1, total: 1400, rate: 4, width: 7 }],
     boxes: [cupBox(18, H - 24, 30, 20, 190), cupBox(W - 48, H - 24, 30, 20, 190)],
     ink: 520,
-    solution: [[{ x: W / 2, y: 30 }, { x: 33, y: 84 }], [{ x: W / 2 + 1, y: 30 }, { x: W - 33, y: 84 }]],
+    solution: [[{ x: W / 2 + 0.5, y: 34 }, { x: 36, y: 80 }], [{ x: W / 2 + 0.5, y: 34 }, { x: W - 36, y: 80 }]],
   }),
   stage({
     id: 'ss-03',

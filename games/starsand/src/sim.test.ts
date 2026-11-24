@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashNumbers } from '@engine/rng';
 import { presets, DEFAULT_PRESET } from './config';
-import { SandSim, W, H, SAND, LINE, EMPTY, type StageDef } from './sim';
+import { SandSim, W, H, LINE, EMPTY, type StageDef } from './sim';
 import { stages, cupBox } from './stages';
 
 const cfg = () => ({ ...presets[DEFAULT_PRESET] });
@@ -26,22 +26,30 @@ describe('SandSim', () => {
   });
 
   it('砂は落ちて、下に何もなければ画面の外へ消える', () => {
-    const sim = run(simple, 400);
+    const sim = run(simple, 700);
     expect(sim.lost).toBeGreaterThan(100);
     expect(sim.cupCount[0]).toBe(0);
   });
 
-  it('砂は積もって山になる（斜めに崩れる）', () => {
+  it('砂は流体のように流れて、床の上で広がる（ギザギザの段で止まらない）', () => {
     const st: StageDef = { ...simple, walls: [{ x: 0, y: H - 2, w: W, h: 2 }], cups: [] };
-    const sim = run(st, 600);
-    // 注ぎ口の真下に山。山の幅は高さより広い
-    let top = H;
-    for (let y = 0; y < H; y++) if (sim.get(40, y) >= SAND) { top = y; break; }
-    const height = H - 2 - top;
-    let width = 0;
-    for (let x = 0; x < W; x++) if (sim.get(x, H - 3) >= SAND) width++;
-    expect(height).toBeGreaterThan(3);
-    expect(width).toBeGreaterThan(height);
+    const sim = run(st, 900);
+    let x0 = W, x1 = 0, top = H;
+    for (let i = 0; i < sim.grains; i++) { x0 = Math.min(x0, sim.gx[i]); x1 = Math.max(x1, sim.gx[i]); top = Math.min(top, sim.gy[i]); }
+    expect(sim.grains).toBe(200);
+    expect(x1 - x0).toBeGreaterThan(40);
+    expect(H - 2 - top).toBeLessThan(10);
+  });
+
+  it('ゆるい坂の線（5°）でも砂は流れ落ちる', () => {
+    const st: StageDef = { ...simple, cups: [], walls: [] };
+    const sim = new SandSim(st, cfg());
+    sim.drawLine(20, 40, 140, 40 + Math.tan((5 * Math.PI) / 180) * 120);
+    for (let i = 0; i < 2500; i++) sim.step();
+    let onLine = 0;
+    for (let i = 0; i < sim.grains; i++) if (sim.gx[i] > 20 && sim.gx[i] < 140 && sim.gy[i] < 52) onLine++;
+    expect(onLine).toBeLessThan(40);
+    expect(sim.lost).toBeGreaterThan(120);
   });
 
   it('線で流れを器へ導くとクリア。インクは引いた分だけ減り、消すと戻る', () => {
@@ -63,7 +71,8 @@ describe('SandSim', () => {
     expect(sim.ink).toBe(0);
     let n = 0;
     for (let x = 0; x < W; x++) if (sim.get(x, 50) === LINE) n++;
-    expect(n).toBeLessThan(20);
+    expect(n).toBeLessThan(12);
+    expect(sim.drawLineIds(0, 60, 50, 60)).toEqual([]);
   });
 
   it('砂が尽きて器が満ちなければ失敗', () => {

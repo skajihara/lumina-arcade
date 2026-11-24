@@ -1,6 +1,7 @@
 /**
  * Starsand — 星砂（描画・入力・画面遷移）。
- * シミュレーションは sim.ts（Pixi を使わない）。砂は小さなキャンバスに1マス1画素で描き、拡大して表示する。
+ * シミュレーションは sim.ts（Pixi を使わない）。砂の粒は2倍の細かさのキャンバスにやわらかい点で描き、なめらかに拡大する（流れる光の液体に見えるように）。
+ * 線はなめらかな曲線（ベクトル）で、光の帯として描く。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
 import { Graphics, Sprite, Texture } from 'pixi.js';
@@ -16,7 +17,7 @@ import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
 import { ruleCards } from '@engine/rules';
 import { sandRules } from './rules';
-import { SandSim, W, H, SAND, LINE, WALL, COLORS, type SandEvent } from './sim';
+import { SandSim, W, H, COLORS, type SandEvent } from './sim';
 
 const CELL = 5;
 const VIEW_W = W * CELL;
@@ -42,20 +43,24 @@ async function main() {
 
   const sky = new Sprite(skyTexture(VIEW_W, VIEW_H, '#0a1026', '#020308', ['#1b4b6f', '#3b2a6e', '#1b5b4f']));
   const field = makeStarfield(VIEW_W, VIEW_H, 180, 51);
-  // 砂の画素
+  // 砂の画素：盤の2倍の細かさ（1マス＝2画素）。なめらかに拡大する
+  const RES = 2;
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = W * RES;
+  canvas.height = H * RES;
   const ctx = canvas.getContext('2d')!;
-  const img = ctx.createImageData(W, H);
+  const img = ctx.createImageData(W * RES, H * RES);
   const tex = Texture.from(canvas);
-  tex.source.scaleMode = 'nearest';
+  tex.source.scaleMode = 'linear';
   const sandSprite = new Sprite(tex);
-  sandSprite.scale.set(CELL);
+  sandSprite.scale.set(CELL / RES);
   const cupG = new Graphics();
+  const wallG = new Graphics();
+  const lineG = new Graphics();
   const fxG = new Graphics();
   const particles = new Particles(3000);
-  ga.world.addChild(sky, field.container, cupG, sandSprite, fxG, particles.container);
+  ga.world.addChild(sky, field.container, cupG, wallG, lineG, sandSprite, fxG, particles.container);
+  let lineVersion = -1;
 
   // HUD
   const hud = el('div', { class: 'hud' });
@@ -84,12 +89,10 @@ async function main() {
   let autoplay = params.has('autoplay');
   let t = 0;
   let resultAt = -1;
-  // 線を引く：一筆ごとにマスを覚えて、Z で消せるように
-  let drawing: { erase: boolean; last: { x: number; y: number } } | null = null;
+  // 線を引く：一筆ごとに線分を覚えて、Z で消せるように。mid：なめらかにするための、前の2点の中点
+  let drawing: { erase: boolean; last: { x: number; y: number }; mid: { x: number; y: number } } | null = null;
   let strokes: number[][] = [];
   let cupGlow: number[] = [];
-  /** 色つきの器の壁は、その色に染める（-1 はふつうの壁の色） */
-  let wallTint = new Int32Array(W * H).fill(-1);
   const blend = (a: number, b: number, k: number) => {
     const x = rgb(a), y = rgb(b);
     return (Math.round(x[0] + (y[0] - x[0]) * k) << 16) | (Math.round(x[1] + (y[1] - x[1]) * k) << 8) | Math.round(x[2] + (y[2] - x[2]) * k);
@@ -105,12 +108,8 @@ async function main() {
     sim = new SandSim(stages[i], cfg, i + 1);
     strokes = [];
     cupGlow = sim.stage.cups.map(() => 0);
-    wallTint = new Int32Array(W * H).fill(-1);
-    for (const c of sim.stage.cups) {
-      if (c.color === undefined) continue;
-      const tint = blend(0x5a5f9a, COLORS[c.color], 0.7);
-      for (let y = c.y; y < Math.min(H, c.y + c.h + 2); y++) for (let x = Math.max(0, c.x - 2); x < Math.min(W, c.x + c.w + 2); x++) wallTint[y * W + x] = tint;
-    }
+    drawWalls();
+    lineVersion = -1;
     resultAt = -1;
     botLine = 0;
     botT = 0;
@@ -214,22 +213,38 @@ async function main() {
   // ---- 線を引く ----
   const toCell = (cx: number, cy: number) => {
     const p = ga.toLogical(cx, cy);
-    return { x: Math.floor(p.x / CELL), y: Math.floor(p.y / CELL) };
+    return { x: p.x / CELL, y: p.y / CELL };
   };
-  /** 線を引いて、引いたマスを今の一筆に記録する */
+  /** 線を引いて、引いた線分を今の一筆に記録する */
+  let toneAt = 0;
   const drawSeg = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     if (!sim) return;
     const before = sim.ink;
-    const cells = sim.drawLineCells(a.x, a.y, b.x, b.y);
-    if (strokes.length) strokes[strokes.length - 1].push(...cells);
-    if (cells.length) synth.tone(900 + (b.y % 20) * 20, 0.05, { type: 'sine', vol: 0.015, wet: 0.3 });
+    const ids = sim.drawLineIds(a.x, a.y, b.x, b.y);
+    if (strokes.length) strokes[strokes.length - 1].push(...ids);
+    if (ids.length && t - toneAt > 0.05) { toneAt = t; synth.tone(900 + (Math.round(b.y) % 20) * 20, 0.05, { type: 'sine', vol: 0.015, wet: 0.3 }); }
     if (before > 0 && sim.ink <= 0) toast(touchText('インクが尽きた（右ドラッグか Z で消すと戻る）', [['右ドラッグか Z', '「消しゴム」か「戻す」']]));
+  };
+  /**
+   * なめらかな線：指の点を直接つながず、前の2点の中点から次の中点へ、前の点を制御点にした2次曲線で結ぶ（細かい線分に分ける）。
+   * ギザギザの角ができない
+   */
+  const drawSmooth = (from: { x: number; y: number }, ctrl: { x: number; y: number }, to: { x: number; y: number }) => {
+    const len = Math.hypot(ctrl.x - from.x, ctrl.y - from.y) + Math.hypot(to.x - ctrl.x, to.y - ctrl.y);
+    const n = Math.max(1, Math.ceil(len / 1.5));
+    let prev = from;
+    for (let i = 1; i <= n; i++) {
+      const u = i / n, a = (1 - u) * (1 - u), b = 2 * (1 - u) * u, c = u * u;
+      const p = { x: a * from.x + b * ctrl.x + c * to.x, y: a * from.y + b * ctrl.y + c * to.y };
+      drawSeg(prev, p);
+      prev = p;
+    }
   };
   ga.app.canvas.addEventListener('pointerdown', (e) => {
     synth.unlock();
     if (mode !== 'play' || !sim || sim.phase !== 'play' || autoplay) return;
     const c = toCell(e.clientX, e.clientY);
-    drawing = { erase: e.button === 2 || eraseMode, last: c };
+    drawing = { erase: e.button === 2 || eraseMode, last: c, mid: c };
     if (drawing.erase) sim.erase(c.x, c.y);
     else {
       strokes.push([]);
@@ -240,8 +255,12 @@ async function main() {
   window.addEventListener('pointermove', (e) => {
     if (!drawing || !sim) return;
     const c = toCell(e.clientX, e.clientY);
-    if (drawing.erase) sim.erase(c.x, c.y);
-    else drawSeg(drawing.last, c);
+    if (drawing.erase) { sim.erase(c.x, c.y); drawing.last = c; return; }
+    // 細かすぎる動きはまとめる（0.8 マス未満は待つ）
+    if (Math.hypot(c.x - drawing.last.x, c.y - drawing.last.y) < 0.8) return;
+    const mid = { x: (drawing.last.x + c.x) / 2, y: (drawing.last.y + c.y) / 2 };
+    drawSmooth(drawing.mid, drawing.last, mid);
+    drawing.mid = mid;
     drawing.last = c;
   });
   // 書き始め・書き終わりのすぐ近く（隙間2マスまで）に線や壁があれば、つないで隙間をなくす（見えない隙間から砂が漏れないように）
@@ -252,7 +271,11 @@ async function main() {
     if (t) drawSeg(t, c);
   };
   window.addEventListener('pointerup', () => {
-    if (drawing && !drawing.erase && sim && mode === 'play') snapEnd(drawing.last);
+    if (drawing && !drawing.erase && sim && mode === 'play') {
+      // 最後の中点から指を離した所まで
+      drawSeg(drawing.mid, drawing.last);
+      snapEnd(drawing.last);
+    }
     drawing = null;
   });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -260,8 +283,8 @@ async function main() {
   let eraseMode = false;
   const undoStroke = () => {
     if (!sim || !strokes.length) return;
-    const cells = strokes.pop()!;
-    sim.eraseCells(cells);
+    const ids = strokes.pop()!;
+    sim.eraseIds(ids);
     synth.noise(0.15, { vol: 0.05, from: 3000, to: 800 });
   };
 
@@ -349,6 +372,19 @@ async function main() {
     }
   };
 
+  const PAL = COLORS.map(rgb);
+  /** 壁：やわらかい光の縁の四角。色つきの器の壁は、その色に染める */
+  const drawWalls = () => {
+    if (!sim) return;
+    const g = wallG;
+    g.clear();
+    for (const r of sim.stage.walls) {
+      const cup = sim.stage.cups.find((c) => c.color !== undefined && r.x < c.x + c.w + 3 && r.x + r.w > c.x - 3 && r.y < c.y + c.h + 3 && r.y + r.h > c.y - 1);
+      const col = cup ? blend(0x5a5f9a, COLORS[cup.color!], 0.7) : 0x5a5f9a;
+      g.roundRect(r.x * CELL, r.y * CELL, r.w * CELL, r.h * CELL, 3).fill({ color: col, alpha: 0.85 }).stroke({ width: 1.5, color: blend(col, 0xffffff, 0.4), alpha: 0.8 });
+    }
+  };
+
   // ---- 描画 ----
   const draw = (dt: number) => {
     t += dt;
@@ -356,28 +392,59 @@ async function main() {
     particles.update(dt);
     if (!sim) return;
     const s = sim;
-    // 砂の画素：色ごとにきらめきを少し揺らす
+    // 砂の粒：2倍の細かさのキャンバスに、中心が明るく縁がやわらかい点で描く（つながって流れる光の液体に見える）
     const d = img.data;
-    const g = s.grid;
+    d.fill(0);
+    const RW = W * RES, RH = H * RES;
     const tick8 = Math.floor(t * 6);
-    const wall = rgb(0x5a5f9a), line = rgb(0xdfe8ff);
-    for (let i = 0; i < g.length; i++) {
-      const v = g[i];
-      const o = i * 4;
-      if (v === 0) { d[o + 3] = 0; continue; }
-      if (v === WALL) {
-        const tw = wallTint[i];
-        if (tw >= 0) { d[o] = (tw >> 16) & 255; d[o + 1] = (tw >> 8) & 255; d[o + 2] = tw & 255; d[o + 3] = 235; continue; }
-        d[o] = wall[0]; d[o + 1] = wall[1]; d[o + 2] = wall[2]; d[o + 3] = 200; continue;
-      }
-      if (v === LINE) { d[o] = line[0]; d[o + 1] = line[1]; d[o + 2] = line[2]; d[o + 3] = 235; continue; }
-      const c = rgb(COLORS[(v - SAND) % COLORS.length]);
+    for (let i = 0; i < s.grains; i++) {
+      const cx = Math.round(s.gx[i] * RES - 0.5), cy = Math.round(s.gy[i] * RES - 0.5);
+      if (cx < -1 || cx > RW || cy < -1 || cy > RH) continue;
+      const c = PAL[s.gc[i] % PAL.length];
       const h = ((i * 2654435761) ^ (tick8 * 40503)) >>> 0;
-      const k = 0.72 + ((h >>> 24) / 255) * 0.42;
-      d[o] = Math.min(255, c[0] * k); d[o + 1] = Math.min(255, c[1] * k); d[o + 2] = Math.min(255, c[2] * k); d[o + 3] = 255;
+      const k = 0.78 + ((h >>> 24) / 255) * 0.36;
+      for (let j = -1; j <= 2; j++) {
+        const y = cy + j;
+        if (y < 0 || y >= RH) continue;
+        for (let q = -1; q <= 2; q++) {
+          const x = cx + q;
+          if (x < 0 || x >= RW) continue;
+          const core = (j === 0 || j === 1) && (q === 0 || q === 1);
+          const w = (core ? 1 : (j === -1 || j === 2) && (q === -1 || q === 2) ? 0.18 : 0.5) * k;
+          const o = (y * RW + x) * 4;
+          // 重なっても白く飛ばないよう、明るい方を残す（色を保つ）
+          d[o] = Math.max(d[o], Math.min(255, c[0] * w));
+          d[o + 1] = Math.max(d[o + 1], Math.min(255, c[1] * w));
+          d[o + 2] = Math.max(d[o + 2], Math.min(255, c[2] * w));
+          d[o + 3] = Math.max(d[o + 3], Math.min(255, 255 * w));
+        }
+      }
     }
     ctx.putImageData(img, 0, 0);
     tex.source.update();
+    // 線：なめらかな光の帯（変わった時だけ描き直す）
+    if (s.segVersion !== lineVersion) {
+      lineVersion = s.segVersion;
+      const lg = lineG;
+      lg.clear();
+      const R = s.lineR * CELL;
+      for (const [w, col, a] of [[R * 2 + 12, 0x6f9fff, 0.1], [R * 2 + 4, 0x8fb4ff, 0.3], [R * 2, 0xa9c4f5, 0.7], [Math.max(1.5, R * 0.45), 0xf2f7ff, 0.75]] as const) {
+        // 続いている線分は1本の道としてつなぐ（つなぎ目が見えない）
+        let open = false, lx = NaN, ly = NaN;
+        for (const sg of s.segs) {
+          if (!sg.alive) { if (open) { lg.stroke({ width: w, color: col, alpha: a, cap: 'round', join: 'round' }); open = false; } continue; }
+          const ax = sg.ax * CELL, ay = sg.ay * CELL;
+          if (!open || Math.hypot(ax - lx, ay - ly) > 0.5) {
+            if (open) lg.stroke({ width: w, color: col, alpha: a, cap: 'round', join: 'round' });
+            lg.moveTo(ax, ay);
+            open = true;
+          }
+          lg.lineTo(sg.bx * CELL + (sg.bx === sg.ax && sg.by === sg.ay ? 0.01 : 0), sg.by * CELL);
+          lx = sg.bx * CELL; ly = sg.by * CELL;
+        }
+        if (open) lg.stroke({ width: w, color: col, alpha: a, cap: 'round', join: 'round' });
+      }
+    }
 
     // 器：星座の形の縁。満ちるほど内側が光る
     const cg = cupG;
