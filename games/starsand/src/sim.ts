@@ -1,12 +1,16 @@
 /**
- * Starsand のシミュレーション（描画なし）。
+ * Starsand のシミュレーション（描画なし）。SS-14 で「粒子の流体」に作り直した。
  *
- * - 盤面は W×H のマス（落ちる砂のセルオートマトン）。空・壁（ステージ）・線（プレイヤーが引く）・砂（色つき）
- * - 砂は1ティックに1マス落ちる。下が埋まっていれば左下か右下へ（どちらを先に試すかは乱数。シード固定で決定的）
- * - 砂は空の注ぎ口から決まった数だけ降ってくる
- * - プレイヤーはインクの量だけ線を引ける（消すとインクが戻る）。線で砂の流れを導く
+ * - 砂は1粒ずつの丸い粒子（直径1マス）。重力で加速し、粒どうしは押し合う（位置ベースの解法：重ならないように位置を直してから速度を出す）
+ *   → 斜面を水のように流れ、器の中では平らにならす
+ * - プレイヤーの線は「なめらかな線分（太さのある棒＝カプセル）」の集まり。マスのギザギザがない
+ *   粒は線を越えられない（前の位置がどちら側だったかで押し戻す向きを決めるので、強く押されてもすり抜けない）
+ * - 壁（ステージ）は四角。画面の左右も壁、下は開いている（落ちた砂は消える）
+ * - 砂は空の注ぎ口から決まった数だけ降ってくる。インクの量だけ線を引ける（消すとインクが戻る）
  * - 星座の器（四角い領域）に、決まった色の砂を決まった数だけ溜めればクリア（色の指定がなければ何色でもよい）
- * - 画面の下へ落ちた砂は消える。注ぎ口が空になり、全部の砂が止まって、器が満ちなければ失敗
+ * - 注ぎ口が空になり、全部の砂が止まって、器が満ちなければ失敗
+ *
+ * 座標の単位はマス（盤面は W×H、y は下向き）。乱数は Rng（シード固定）で、同じ操作なら同じ結果（決定的）。
  */
 import { Rng } from '@engine/rng';
 import type { SandConfig } from './config';
@@ -16,14 +20,26 @@ export const H = 120;
 export const EMPTY = 0;
 export const WALL = 1;
 export const LINE = 2;
-/** 砂の色は SAND + 色番号（0..） */
+/** 砂の色は SAND + 色番号（0..）。get() の戻り値に使う */
 export const SAND = 8;
 /** 砂の色：0 金・1 水色・2 桃・3 紫（水色＋桃）・4 白（金＋水色） */
 export const COLORS = [0xffd27f, 0x7ff0ff, 0xffa3e0, 0xc9a3ff, 0xffffff];
-/** 色の混合：違う色の砂が触れて止まると、ある確率で両方が混ざった色になる */
+/** 色の混合：違う色の砂が触れ合ってゆっくりしていると、ある確率で両方が混ざった色になる */
 const MIX: Record<string, number> = { '0,1': 4, '1,0': 4, '1,2': 3, '2,1': 3 };
 /** 混ざった色の材料（器の中に材料が両方あれば、混ざる前でもその色として数える） */
 export const RECIPE: Record<number, [number, number]> = { 4: [0, 1], 3: [1, 2] };
+
+/** 1ティックの秒数（120Hz） */
+export const DT = 1 / 120;
+/** 粒の半径（マス） */
+export const GR = 0.5;
+/** 線を引く時、長さ1マスあたりに使うインク（前のマスの線で使っていた量に近づけた） */
+export const INK_PER = 2.5;
+/** 位置を直す回数（多いほど固く積もるが重い） */
+const ITER = 2;
+/** 線分を探すための区画の大きさ（マス） */
+const BK = 4;
+const BW = Math.ceil(W / BK), BH = Math.ceil(H / BK);
 
 export interface Source {
   x: number;
@@ -59,10 +75,22 @@ export interface StageDef {
   walls: { x: number; y: number; w: number; h: number }[];
   sources: Source[];
   cups: Cup[];
-  /** 引ける線の量（マス）。ふつうの基準。プリセットで増減 */
+  /** 引ける線の量。ふつうの基準。プリセットで増減（長さ1マス＝INK_PER） */
   ink: number;
   /** 自動プレイ・検証用の解の線（折れ線の列） */
   solution?: { x: number; y: number }[][];
+}
+
+/** プレイヤーの線の1本（線分） */
+export interface Seg {
+  id: number;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  alive: boolean;
+  /** この線分に使ったインク（消すと戻る） */
+  ink: number;
 }
 
 export type SandEvent =
@@ -77,7 +105,6 @@ export type SandEvent =
 export type Phase = 'play' | 'clear' | 'fail';
 
 export class SandSim {
-  grid = new Uint8Array(W * H);
   tick = 0;
   phase: Phase = 'play';
   ink: number;
@@ -88,131 +115,221 @@ export class SandSim {
   filled: boolean[];
   lost = 0;
   events: SandEvent[] = [];
-  /** 砂の総数（画面の上にある分） */
+  /** 画面の上にある砂の数 */
   grains = 0;
-  private rng: Rng;
-  private still = 0;
-  /** 花火の雨が降っている間（このティックまで）と、続けて満ちた数 */
-  private rainUntil = -1;
+  /** 粒：位置・速さ・色 */
+  gx: Float64Array;
+  gy: Float64Array;
+  gvx: Float64Array;
+  gvy: Float64Array;
+  gc: Uint8Array;
+  /** 線分（消したものも alive=false で残す。番号＝配列の添字） */
+  segs: Seg[] = [];
+  /** 線が変わるたびに増える（描画し直しの合図） */
+  segVersion = 0;
+  /** 線の半径（マス） */
+  lineR: number;
   chain = 0;
   bestChain = 0;
+  private rng: Rng;
+  private still = 0;
+  /** 花火の雨が降っている間（このティックまで） */
+  private rainUntil = -1;
   private doneTicks = 0;
+  private px: Float64Array;
+  private py: Float64Array;
+  private ox: Float64Array;
+  private oy: Float64Array;
+  private touch: Uint8Array;
+  private head = new Int32Array(W * H);
+  private next: Int32Array;
+  private buckets: number[][] = Array.from({ length: BW * BH }, () => []);
 
   constructor(public stage: StageDef, public cfg: SandConfig, seed = 1) {
     this.rng = new Rng(seed);
-    for (const r of stage.walls) this.fillRect(r.x, r.y, r.w, r.h, WALL);
     this.inkMax = Math.round(stage.ink * cfg.inkScale);
     this.ink = this.inkMax;
     this.spawned = stage.sources.map(() => 0);
     this.cupCount = stage.cups.map(() => 0);
     this.filled = stage.cups.map(() => false);
+    this.lineR = 0.7 + 0.4 * (cfg.lineWidth ?? 1);
+    const cap = stage.sources.reduce((m, s) => m + Math.round(s.total * cfg.sandScale), 0) + 64;
+    this.gx = new Float64Array(cap);
+    this.gy = new Float64Array(cap);
+    this.gvx = new Float64Array(cap);
+    this.gvy = new Float64Array(cap);
+    this.gc = new Uint8Array(cap);
+    this.px = new Float64Array(cap);
+    this.py = new Float64Array(cap);
+    this.ox = new Float64Array(cap);
+    this.oy = new Float64Array(cap);
+    this.touch = new Uint8Array(cap);
+    this.next = new Int32Array(cap);
+    this.head.fill(-1);
   }
 
-  private fillRect(x: number, y: number, w: number, h: number, v: number): void {
-    for (let j = Math.max(0, y); j < Math.min(H, y + h); j++) for (let i = Math.max(0, x); i < Math.min(W, x + w); i++) this.grid[j * W + i] = v;
+  // ---------------------------------------------------------------- 調べる
+
+  private inWall(x: number, y: number, pad = 0): boolean {
+    for (const r of this.stage.walls) if (x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad) return true;
+    return false;
   }
 
-  get(x: number, y: number): number {
-    if (x < 0 || x >= W || y < 0 || y >= H) return WALL;
-    return this.grid[y * W + x];
-  }
-
-  /** 線を引く（太さ r の円を a→b に並べる）。インクが尽きたらそこまで。引けたマス数を返す */
-  drawLine(ax: number, ay: number, bx: number, by: number, r = this.cfg.lineWidth): number {
-    return this.drawLineCells(ax, ay, bx, by, r).length;
-  }
-
-  /** drawLine と同じだが、引いたマスの番号を返す（一筆ごとに消せるように） */
-  drawLineCells(ax: number, ay: number, bx: number, by: number, r = this.cfg.lineWidth): number[] {
-    const out: number[] = [];
-    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
-    for (let s = 0; s <= steps; s++) {
-      const cx = Math.round(ax + ((bx - ax) * s) / steps), cy = Math.round(ay + ((by - ay) * s) / steps);
-      for (let j = -r; j <= r; j++) {
-        for (let i = -r; i <= r; i++) {
-          if (i * i + j * j > r * r + 0.5) continue;
-          const x = cx + i, y = cy + j;
-          if (x < 0 || x >= W || y < 0 || y >= H) continue;
-          if (this.ink <= 0) return out;
-          // 流れている砂の上に引いた時は、砂を上の空いたマスへ押しのけて線を通す（隙間を残さない）
-          if (this.grid[y * W + x] >= SAND) this.displace(x, y);
-          if (this.grid[y * W + x] !== EMPTY) continue;
-          this.grid[y * W + x] = LINE;
-          this.ink--;
-          out.push(y * W + x);
-        }
-      }
+  /** (x,y) に一番近い、生きている線分までの距離（exclude の線分は除く） */
+  private segDist(x: number, y: number, exclude?: Set<number>): { d: number; qx: number; qy: number; id: number } | null {
+    let best: { d: number; qx: number; qy: number; id: number } | null = null;
+    for (const s of this.segs) {
+      if (!s.alive || exclude?.has(s.id)) continue;
+      const q = closest(s, x, y);
+      const d = Math.hypot(x - q.x, y - q.y);
+      if (!best || d < best.d) best = { d, qx: q.x, qy: q.y, id: s.id };
     }
-    return out;
+    return best;
   }
 
   /**
-   * (x,y) の近く（半径 r）にある線・壁のマスのうち一番近いもの。exclude のマス（今の一筆）は除く。
-   * すでに隣り合っていれば（距離1.5以下）null。線の書き始め・書き終わりを近くの線や壁へつなぐのに使う
+   * マス (x,y) に何があるか（テスト・互換用）：盤の外と壁は WALL、線は LINE、砂の粒の中心があれば SAND+色、なければ EMPTY。
+   * 盤の下（y ≥ H）は開いているが、ここでは WALL を返す（前のマスの版と同じ）
+   */
+  get(x: number, y: number): number {
+    if (x < 0 || x >= W || y < 0 || y >= H) return WALL;
+    if (this.inWall(x + 0.5, y + 0.5)) return WALL;
+    const s = this.segDist(x + 0.5, y + 0.5);
+    if (s && s.d <= this.lineR) return LINE;
+    for (let i = this.head[y * W + x]; i >= 0; i = this.next[i]) return SAND + this.gc[i];
+    return EMPTY;
+  }
+
+  /** 列 x の、線の一番下の y（なければ -1）。テスト用 */
+  lineBottomAt(x: number): number {
+    let yb = -1;
+    for (const s of this.segs) {
+      if (!s.alive) continue;
+      const x0 = Math.min(s.ax, s.bx) - this.lineR, x1 = Math.max(s.ax, s.bx) + this.lineR;
+      if (x < x0 || x > x1) continue;
+      for (let y = 0; y < H; y += 0.25) if (Math.hypot(x - closest(s, x, y).x, y - closest(s, x, y).y) <= this.lineR) yb = Math.max(yb, y);
+    }
+    return yb;
+  }
+
+  // ---------------------------------------------------------------- 線
+
+  /** 線を引く（a→b の線分）。インクが尽きたらそこまで。使ったインクを返す */
+  drawLine(ax: number, ay: number, bx: number, by: number): number {
+    const before = this.ink;
+    this.drawLineIds(ax, ay, bx, by);
+    return before - this.ink;
+  }
+
+  /** drawLine と同じだが、引いた線分の番号を返す（一筆ごとに消せるように） */
+  drawLineIds(ax: number, ay: number, bx: number, by: number): number[] {
+    if (this.ink <= 0) return [];
+    let L = Math.hypot(bx - ax, by - ay);
+    let cost = Math.max(1, L * INK_PER);
+    if (cost > this.ink) {
+      // インクの分だけ短く
+      const k = Math.max(0, (this.ink / INK_PER) / Math.max(1e-6, L));
+      bx = ax + (bx - ax) * k;
+      by = ay + (by - ay) * k;
+      L = Math.hypot(bx - ax, by - ay);
+      cost = this.ink;
+    }
+    const s: Seg = { id: this.segs.length, ax, ay, bx, by, alive: true, ink: cost };
+    this.segs.push(s);
+    this.ink -= cost;
+    this.bucketAdd(s);
+    this.pushOutGrains(s);
+    this.segVersion++;
+    return [s.id];
+  }
+
+  /** 線分の番号で消す（インクが戻る）。戻ったインクを返す */
+  eraseIds(ids: number[]): number {
+    let back = 0;
+    for (const id of ids) {
+      const s = this.segs[id];
+      if (!s || !s.alive) continue;
+      s.alive = false;
+      this.bucketRemove(s);
+      this.ink = Math.min(this.inkMax, this.ink + s.ink);
+      back += s.ink;
+    }
+    if (back > 0) this.segVersion++;
+    return back;
+  }
+
+  /** (cx,cy) から半径 r の中にかかる線分を消す（インクが戻る）。砂や壁は消さない。戻ったインクを返す */
+  erase(cx: number, cy: number, r = 3): number {
+    const ids: number[] = [];
+    for (const s of this.segs) {
+      if (!s.alive) continue;
+      const q = closest(s, cx, cy);
+      if (Math.hypot(cx - q.x, cy - q.y) <= r + this.lineR) ids.push(s.id);
+    }
+    return this.eraseIds(ids);
+  }
+
+  /**
+   * (x,y) の近く（半径 r）にある線・壁のうち一番近い点。exclude の線分（今の一筆）は除く。
+   * すでに触れていれば null。線の書き始め・書き終わりを近くの線や壁へつなぐのに使う
    */
   nearestSolid(x: number, y: number, r: number, exclude?: Set<number>): { x: number; y: number } | null {
     let best: { x: number; y: number } | null = null, bd = Infinity;
-    const R = Math.ceil(r);
-    for (let j = -R; j <= R; j++) {
-      for (let i = -R; i <= R; i++) {
-        const d = Math.hypot(i, j);
-        if (d > r || d >= bd) continue;
-        const xx = x + i, yy = y + j;
-        if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue;
-        const v = this.grid[yy * W + xx];
-        if (v !== LINE && v !== WALL) continue;
-        if (exclude?.has(yy * W + xx)) continue;
-        best = { x: xx, y: yy };
-        bd = d;
-      }
+    const s = this.segDist(x, y, exclude);
+    if (s) { best = { x: s.qx, y: s.qy }; bd = s.d - this.lineR; }
+    for (const w of this.stage.walls) {
+      const qx = Math.max(w.x, Math.min(w.x + w.w, x)), qy = Math.max(w.y, Math.min(w.y + w.h, y));
+      const d = Math.hypot(x - qx, y - qy);
+      if (d < bd) { bd = d; best = { x: qx, y: qy }; }
     }
-    return best && bd > 1.5 ? best : null;
+    if (!best || bd > r) return null;
+    // 今の線の端（太さ lineR）がもう触れている
+    return bd <= this.lineR * 0.5 ? null : best;
   }
 
-  /** (x,y) の砂を、同じ列の上（なければ斜め上）の一番近い空きマスへ移す。どこも空いていなければ消す */
-  private displace(x: number, y: number): void {
-    const v = this.grid[y * W + x];
-    for (let k = 1; k <= 12; k++) {
-      for (const dx of [0, -1, 1]) {
-        const xx = x + dx, yy = y - k;
-        if (xx < 0 || xx >= W || yy < 0) continue;
-        if (this.grid[yy * W + xx] === EMPTY) {
-          this.grid[yy * W + xx] = v;
-          this.grid[y * W + x] = EMPTY;
-          return;
-        }
-      }
-    }
-    this.grid[y * W + x] = EMPTY;
+  private bucketRange(s: Seg): [number, number, number, number] {
+    const pad = this.lineR + GR + 0.5;
+    const x0 = Math.max(0, Math.floor((Math.min(s.ax, s.bx) - pad) / BK)), x1 = Math.min(BW - 1, Math.floor((Math.max(s.ax, s.bx) + pad) / BK));
+    const y0 = Math.max(0, Math.floor((Math.min(s.ay, s.by) - pad) / BK)), y1 = Math.min(BH - 1, Math.floor((Math.max(s.ay, s.by) + pad) / BK));
+    return [x0, x1, y0, y1];
   }
 
-  /** マスの番号で線を消す（インクが戻る） */
-  eraseCells(cells: number[]): number {
-    let n = 0;
-    for (const c of cells) {
-      if (this.grid[c] !== LINE) continue;
-      this.grid[c] = EMPTY;
-      this.ink++;
-      n++;
-    }
-    return n;
+  private bucketAdd(s: Seg): void {
+    const [x0, x1, y0, y1] = this.bucketRange(s);
+    for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) this.buckets[j * BW + i].push(s.id);
   }
 
-  /** 線を消す（インクが戻る）。砂や壁は消さない */
-  erase(cx: number, cy: number, r = 3): number {
-    let n = 0;
-    for (let j = -r; j <= r; j++) {
-      for (let i = -r; i <= r; i++) {
-        if (i * i + j * j > r * r + 0.5) continue;
-        const x = cx + i, y = cy + j;
-        if (this.get(x, y) !== LINE) continue;
-        this.grid[y * W + x] = EMPTY;
-        this.ink++;
-        n++;
-      }
+  private bucketRemove(s: Seg): void {
+    const [x0, x1, y0, y1] = this.bucketRange(s);
+    for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) {
+      const b = this.buckets[j * BW + i];
+      const k = b.indexOf(s.id);
+      if (k >= 0) b.splice(k, 1);
     }
-    return n;
   }
+
+  /** 引いた線の中にいる粒は、線の上側へ押し出す（線に穴をあけない・下へすり抜けさせない） */
+  private pushOutGrains(s: Seg): void {
+    const R = this.lineR + GR + 0.05;
+    let nx = -(s.by - s.ay), ny = s.bx - s.ax;
+    const nl = Math.hypot(nx, ny);
+    if (nl < 1e-6) { nx = 0; ny = -1; } else { nx /= nl; ny /= nl; if (ny > 0) { nx = -nx; ny = -ny; } }
+    const n = this.grains;
+    for (let i = 0; i < n; i++) {
+      const q = closest(s, this.gx[i], this.gy[i]);
+      const d = Math.hypot(this.gx[i] - q.x, this.gy[i] - q.y);
+      if (d >= R) continue;
+      // ほぼ縦の線では、粒がいる側へ。それ以外は上側へ
+      let ux = nx, uy = ny;
+      if (Math.abs(ny) < 0.2) { const side = (this.gx[i] - q.x) * nx + (this.gy[i] - q.y) * ny; if (side < 0) { ux = -nx; uy = -ny; } }
+      this.gx[i] = q.x + ux * R;
+      this.gy[i] = q.y + uy * R;
+      this.gvx[i] = 0;
+      this.gvy[i] = 0;
+    }
+  }
+
+  // ---------------------------------------------------------------- 進める
 
   /** 1ティック進める */
   step(): void {
@@ -220,123 +337,203 @@ export class SandSim {
     this.tick++;
     if (this.phase !== 'play') return;
     this.spawn();
-    this.fall();
+    this.integrate();
     this.countCups();
     this.checkEnd();
   }
 
+  private addGrain(x: number, y: number, color: number, vx = 0, vy = 0): boolean {
+    const i = this.grains;
+    if (i >= this.gx.length) return false;
+    this.gx[i] = x; this.gy[i] = y; this.gvx[i] = vx; this.gvy[i] = vy; this.gc[i] = color;
+    this.grains++;
+    return true;
+  }
+
+  private removeGrain(i: number): void {
+    const last = --this.grains;
+    if (i === last) return;
+    this.gx[i] = this.gx[last]; this.gy[i] = this.gy[last];
+    this.gvx[i] = this.gvx[last]; this.gvy[i] = this.gvy[last];
+    this.gc[i] = this.gc[last];
+    this.px[i] = this.px[last]; this.py[i] = this.py[last];
+  }
+
+  /** 近くに粒があるか（注ぎ口がふさがっていたら降らせない） */
+  private crowded(x: number, y: number): boolean {
+    const cx = Math.floor(x), cy = Math.floor(y);
+    for (let j = cy - 1; j <= cy + 1; j++) {
+      if (j < 0 || j >= H) continue;
+      for (let i = cx - 1; i <= cx + 1; i++) {
+        if (i < 0 || i >= W) continue;
+        for (let k = this.head[j * W + i]; k >= 0; k = this.next[k]) if (Math.hypot(this.gx[k] - x, this.gy[k] - y) < 0.9) return true;
+      }
+    }
+    return false;
+  }
+
   private spawn(): void {
-    this.stage.sources.forEach((s, i) => {
+    const start = this.grains;
+    this.stage.sources.forEach((s, si) => {
       if (this.tick < (s.delay ?? 0)) return;
       const width = s.width ?? 3;
+      const total = Math.round(s.total * this.cfg.sandScale);
       for (let k = 0; k < s.rate; k++) {
-        const x = s.x + this.rng.int(-Math.floor(width / 2), Math.floor(width / 2));
-        if (this.spawned[i] >= Math.round(s.total * this.cfg.sandScale)) break;
-        if (this.get(x, s.y) !== EMPTY) continue;
-        this.grid[s.y * W + x] = SAND + s.color;
-        this.spawned[i]++;
+        if (this.spawned[si] >= total) break;
+        const x = s.x + 0.5 + this.rng.range(-width / 2, width / 2);
+        const y = s.y + 0.5;
+        if (this.crowded(x, y)) continue;
+        let near = false;
+        for (let j = start; j < this.grains; j++) if (Math.hypot(this.gx[j] - x, this.gy[j] - y) < 0.9) { near = true; break; }
+        if (near) continue;
+        if (this.addGrain(x, y, s.color, 0, 25)) this.spawned[si]++;
       }
     });
   }
 
-  /** 砂を落とす。下の行から上へ。行ごとに左右の走査の向きを変えて偏りを消す */
-  private fall(): void {
-    const g = this.grid;
-    let moved = 0, grains = 0;
-    const flip = this.tick & 1;
-    for (let y = H - 1; y >= 0; y--) {
-      const ltr = ((y + flip) & 1) === 0;
-      for (let k = 0; k < W; k++) {
-        const x = ltr ? k : W - 1 - k;
-        const v = g[y * W + x];
-        if (v < SAND) continue;
-        grains++;
-        if (y === H - 1) {
-          // 画面の下へ落ちた
-          g[y * W + x] = EMPTY;
-          this.lost++;
-          moved++;
-          continue;
-        }
-        const below = (y + 1) * W;
-        if (g[below + x] === EMPTY) {
-          g[below + x] = v;
-          g[y * W + x] = EMPTY;
-          moved++;
-          continue;
-        }
-        const first = this.rng.next() < 0.5 ? -1 : 1;
-        let done = false;
-        for (const d of [first, -first]) {
-          const nx = x + d;
-          if (nx < 0 || nx >= W) continue;
-          if (g[below + nx] === EMPTY && g[y * W + nx] === EMPTY) {
-            g[below + nx] = v;
-            g[y * W + x] = EMPTY;
-            moved++;
-            done = true;
-            break;
-          }
-        }
-        // 止まった砂が違う色の砂の上なら、混ざって新しい光になる
-        if (!done) {
-          // 下・左・右の順に、混ざる相手を探す
-          for (const nb of [below + x, x > 0 ? y * W + x - 1 : -1, x < W - 1 ? y * W + x + 1 : -1]) {
-            if (nb < 0) continue;
-            const u = g[nb];
-            if (u < SAND || u === v) continue;
-            const m = MIX[`${v - SAND},${u - SAND}`];
-            if (m === undefined || this.rng.next() >= this.cfg.mixRate) continue;
-            g[y * W + x] = SAND + m;
-            g[nb] = SAND + m;
-            this.events.push({ t: 'mix', x, y, color: m });
-            done = true;
-            break;
-          }
-        }
-        // 斜めにも行けない時：線や壁の上なら、ときどき横へ滑る（ゆるい坂でも流れる）。
-        // 砂の山の上では滑らない（山の形が残る）。段差のある方（2マス先の下が空いている方）へ滑る
-        if (!done && g[below + x] <= LINE && this.rng.next() < this.cfg.slide) {
-          // 何マス先に段差があるか（近い方へ滑る。どちらにもなければ動かない）
-          const drop = (dd: number) => {
-            for (let k = 1; k <= 5; k++) {
-              const xx = x + dd * k;
-              if (xx < 0 || xx >= W || g[y * W + xx] !== EMPTY) return 99;
-              if (g[below + xx] === EMPTY) return k;
+  /** 粒の位置で区画の表を作る（近くの粒を探すため） */
+  private buildHash(xs: Float64Array, ys: Float64Array): void {
+    this.head.fill(-1);
+    for (let i = 0; i < this.grains; i++) {
+      const cx = Math.min(W - 1, Math.max(0, Math.floor(xs[i]))), cy = Math.min(H - 1, Math.max(0, Math.floor(ys[i])));
+      const c = cy * W + cx;
+      this.next[i] = this.head[c];
+      this.head[c] = i;
+    }
+  }
+
+  private integrate(): void {
+    const n = this.grains;
+    const g = this.cfg.gravity ?? 420, vmax = this.cfg.maxSpeed ?? 100;
+    const { px, py, ox, oy, gx, gy, gvx, gvy } = this;
+    for (let i = 0; i < n; i++) {
+      gvy[i] += g * DT;
+      const sp = Math.hypot(gvx[i], gvy[i]);
+      if (sp > vmax) { gvx[i] *= vmax / sp; gvy[i] *= vmax / sp; }
+      ox[i] = gx[i]; oy[i] = gy[i];
+      px[i] = gx[i] + gvx[i] * DT;
+      py[i] = gy[i] + gvy[i] * DT;
+    }
+    this.touch.fill(0);
+    const D = 2 * GR;
+    const mixRate = (this.cfg.mixRate ?? 0.5) * 0.04;
+    for (let it = 0; it < ITER; it++) {
+      this.buildHash(px, py);
+      // 粒どうし：重なった分だけ半分ずつ押し離す
+      for (let i = 0; i < n; i++) {
+        const cx = Math.floor(px[i]), cy = Math.floor(py[i]);
+        for (let j0 = cy - 1; j0 <= cy + 1; j0++) {
+          if (j0 < 0 || j0 >= H) continue;
+          for (let i0 = cx - 1; i0 <= cx + 1; i0++) {
+            if (i0 < 0 || i0 >= W) continue;
+            for (let k = this.head[j0 * W + i0]; k >= 0; k = this.next[k]) {
+              if (k <= i) continue;
+              const dx = px[k] - px[i], dy = py[k] - py[i];
+              const d2 = dx * dx + dy * dy;
+              if (d2 >= D * D) continue;
+              const d = Math.sqrt(d2) || 1e-6;
+              const push = (D - d) * 0.5;
+              const ux = d2 > 0 ? dx / d : 0, uy = d2 > 0 ? dy / d : -1;
+              px[i] -= ux * push; py[i] -= uy * push;
+              px[k] += ux * push; py[k] += uy * push;
+              // 色の混合：違う色どうしがゆっくり触れ合っていると、ときどき混ざる
+              if (it === 0 && this.gc[i] !== this.gc[k]) {
+                const m = MIX[`${this.gc[i]},${this.gc[k]}`];
+                if (m !== undefined && Math.abs(gvy[i]) + Math.abs(gvy[k]) < 30 && this.rng.next() < mixRate) {
+                  this.gc[i] = m;
+                  this.gc[k] = m;
+                  this.events.push({ t: 'mix', x: px[i], y: py[i], color: m });
+                }
+              }
             }
-            return 99;
-          };
-          const a1 = drop(first), a2 = drop(-first);
-          const d = a1 === 99 && a2 === 99 ? 0 : a1 <= a2 ? first : -first;
-          const nx = x + d;
-          if (d !== 0 && nx >= 0 && nx < W && g[y * W + nx] === EMPTY && g[below + nx] !== EMPTY && g[below + nx] <= LINE) {
-            g[y * W + nx] = v;
-            g[y * W + x] = EMPTY;
-            moved++;
           }
         }
       }
+      // 壁と線：前の位置の側へ押し戻す
+      for (let i = 0; i < n; i++) this.collideStatic(i);
     }
-    this.grains = grains;
-    this.still = moved === 0 ? this.still + 1 : 0;
+    // 速さ＝直した位置の差。壁や線に触れている粒は少しだけ摩擦で遅くする
+    const fr = this.cfg.friction ?? 0.04;
+    for (let i = 0; i < n; i++) {
+      let vx = (px[i] - gx[i]) / DT, vy = (py[i] - gy[i]) / DT;
+      if (this.touch[i]) { vx *= 1 - fr; vy *= 1 - fr; }
+      gvx[i] = vx; gvy[i] = vy;
+      gx[i] = px[i]; gy[i] = py[i];
+    }
+    // 画面の下へ落ちた
+    let maxSp = 0;
+    for (let i = this.grains - 1; i >= 0; i--) {
+      if (gy[i] > H + 1) { this.removeGrain(i); this.lost++; continue; }
+      maxSp = Math.max(maxSp, Math.abs(gvx[i]) + Math.abs(gvy[i]));
+    }
+    this.buildHash(gx, gy);
+    this.still = maxSp < 4 ? this.still + 1 : 0;
+  }
+
+  /** 粒 i を壁・線・画面の左右から押し出す */
+  private collideStatic(i: number): void {
+    const { px, py, ox, oy } = this;
+    // 画面の左右
+    if (px[i] < GR) { px[i] = GR; this.touch[i] = 1; }
+    if (px[i] > W - GR) { px[i] = W - GR; this.touch[i] = 1; }
+    // 壁（四角）：半径の分だけ広げた四角の中なら、前の位置が外だった側へ出す（なければ一番浅い側）
+    for (const r of this.stage.walls) {
+      const x0 = r.x - GR, x1 = r.x + r.w + GR, y0 = r.y - GR, y1 = r.y + r.h + GR;
+      const x = px[i], y = py[i];
+      if (x <= x0 || x >= x1 || y <= y0 || y >= y1) continue;
+      const ux = ox[i], uy = oy[i];
+      const pen = [
+        { d: x - x0, ok: ux <= x0, ax: x0, ay: NaN },
+        { d: x1 - x, ok: ux >= x1, ax: x1, ay: NaN },
+        { d: y - y0, ok: uy <= y0, ax: NaN, ay: y0 },
+        { d: y1 - y, ok: uy >= y1, ax: NaN, ay: y1 },
+      ];
+      let best = -1;
+      for (let k = 0; k < 4; k++) if (pen[k].ok && (best < 0 || pen[k].d < pen[best].d)) best = k;
+      if (best < 0) for (let k = 0; k < 4; k++) if (best < 0 || pen[k].d < pen[best].d) best = k;
+      const p = pen[best];
+      if (!Number.isNaN(p.ax)) px[i] = p.ax; else py[i] = p.ay;
+      this.touch[i] = 1;
+    }
+    // 線（カプセル）
+    const R = this.lineR + GR;
+    const bx = Math.floor(px[i] / BK), by = Math.floor(py[i] / BK);
+    if (bx < 0 || bx >= BW || by < 0 || by >= BH) return;
+    for (const id of this.buckets[by * BW + bx]) {
+      const s = this.segs[id];
+      const q = closest(s, px[i], py[i]);
+      let dx = px[i] - q.x, dy = py[i] - q.y;
+      const d = Math.hypot(dx, dy);
+      if (d >= R) continue;
+      // 前の位置がどちら側にいたか（線を越えて押し込まれても、元の側へ戻す）
+      const q0 = closest(s, ox[i], oy[i]);
+      const sx = ox[i] - q0.x, sy = oy[i] - q0.y;
+      if (d < 1e-6) { dx = sx; dy = sy; }
+      else if (dx * sx + dy * sy < 0) { dx = -dx; dy = -dy; }
+      let l = Math.hypot(dx, dy);
+      if (l < 1e-6) { dx = 0; dy = -1; l = 1; }
+      px[i] = q.x + (dx / l) * R;
+      py[i] = q.y + (dy / l) * R;
+      this.touch[i] = 1;
+    }
   }
 
   private countCups(): void {
+    const per = this.stage.cups.map(() => new Array(COLORS.length).fill(0));
+    const all = this.stage.cups.map(() => 0);
+    for (let i = 0; i < this.grains; i++) {
+      const x = this.gx[i], y = this.gy[i];
+      this.stage.cups.forEach((c, ci) => {
+        if (x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) { per[ci][this.gc[i]]++; all[ci]++; }
+      });
+    }
     this.stage.cups.forEach((c, i) => {
-      const per = new Array(COLORS.length).fill(0);
-      let all = 0;
-      for (let y = c.y; y < c.y + c.h; y++) {
-        for (let x = c.x; x < c.x + c.w; x++) {
-          const v = this.get(x, y);
-          if (v >= SAND) { per[v - SAND]++; all++; }
-        }
-      }
-      let n = all;
+      let n = all[i];
       if (c.color !== undefined) {
-        n = per[c.color];
+        n = per[i][c.color];
         // 混ざった色の器：材料の2色がそろっている分も数える（器の中でいずれ混ざる）
         const r = RECIPE[c.color];
-        if (r) n += 2 * Math.min(per[r[0]], per[r[1]]);
+        if (r) n += 2 * Math.min(per[i][r[0]], per[i][r[1]]);
       }
       this.cupCount[i] = n;
       if (!this.filled[i] && n >= c.need) {
@@ -344,7 +541,7 @@ export class SandSim {
         // 花火の雨が降っている間（4秒）に満ちたら連鎖
         this.chain = this.tick < this.rainUntil ? this.chain + 1 : 1;
         this.events.push({ t: 'fill', cup: i, chain: this.chain });
-        this.burstCup(i);
+        this.burstCup(i, per[i]);
       }
     });
   }
@@ -369,11 +566,9 @@ export class SandSim {
   }
 
   /** 満ちた器が弾ける：中の砂を消し、ひねり1なら一部を花火の雨として周りの空へ撒く（そのまま落ちてくる） */
-  private burstCup(i: number): void {
+  private burstCup(i: number, per: number[]): void {
     const c = this.stage.cups[i];
     // 雨の色：色の器はその色、色なしの器は中で一番多い色
-    const per = new Array(COLORS.length).fill(0);
-    for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) { const v = this.get(x, y); if (v >= SAND) per[v - SAND]++; }
     const color = c.color ?? per.indexOf(Math.max(...per));
     const n = this.emptyCup(i);
     this.bestChain = Math.max(this.bestChain, this.chain);
@@ -382,12 +577,11 @@ export class SandSim {
     const cx = c.x + c.w / 2;
     let put = 0;
     for (let k = 0; k < want * 4 && put < want; k++) {
-      const x = Math.round(cx + this.rng.range(-this.cfg.rainSpread, this.cfg.rainSpread));
-      const y = Math.round(c.y - 8 - this.rng.range(0, 40));
+      const x = cx + this.rng.range(-this.cfg.rainSpread, this.cfg.rainSpread);
+      const y = c.y - 8 - this.rng.range(0, 40);
       if (x < 1 || x >= W - 1 || y < 1 || y >= H) continue;
-      if (this.get(x, y) !== EMPTY) continue;
-      this.grid[y * W + x] = SAND + color;
-      put++;
+      if (this.inWall(x, y, GR)) continue;
+      if (this.addGrain(x, y, color, this.rng.range(-20, 20), this.rng.range(-40, 0))) put++;
     }
     if (put > 0) {
       this.rainUntil = this.tick + 120 * 4;
@@ -399,17 +593,26 @@ export class SandSim {
   emptyCup(i: number): number {
     const c = this.stage.cups[i];
     let n = 0;
-    for (let y = c.y; y < c.y + c.h; y++) {
-      for (let x = c.x; x < c.x + c.w; x++) {
-        if (this.get(x, y) >= SAND) { this.grid[y * W + x] = EMPTY; n++; }
-      }
+    for (let k = this.grains - 1; k >= 0; k--) {
+      const x = this.gx[k], y = this.gy[k];
+      if (x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) { this.removeGrain(k); n++; }
     }
+    this.buildHash(this.gx, this.gy);
     return n;
   }
 
   digest(): number[] {
     let h = 0;
-    for (let i = 0; i < this.grid.length; i++) h = (h * 31 + this.grid[i]) | 0;
-    return [this.tick, h, this.lost, ...this.cupCount];
+    for (let i = 0; i < this.grains; i++) h = (h * 31 + Math.round(this.gx[i] * 64) * 7 + Math.round(this.gy[i] * 64) + this.gc[i]) | 0;
+    return [this.tick, h, this.lost, this.grains, ...this.cupCount];
   }
+}
+
+/** 線分 s の上で (x,y) に一番近い点 */
+export function closest(s: { ax: number; ay: number; bx: number; by: number }, x: number, y: number): { x: number; y: number } {
+  const dx = s.bx - s.ax, dy = s.by - s.ay;
+  const l2 = dx * dx + dy * dy;
+  if (l2 < 1e-9) return { x: s.ax, y: s.ay };
+  const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / l2));
+  return { x: s.ax + dx * t, y: s.ay + dy * t };
 }
