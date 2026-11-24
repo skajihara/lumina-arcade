@@ -68,6 +68,14 @@ describe('StopSim', () => {
     expect(Math.hypot(sim.objs[0].force.x, sim.objs[0].force.y)).toBeLessThanOrEqual(cfg().maxForce + 1e-6);
   });
 
+  it('卵が強めにぶつかると「ひび」の知らせ（割れはしない）', () => {
+    const st: StageDef = { ...nestStage, objects: [{ kind: 'egg', x: 4, y: 9.3, w: 0.45 }] };
+    const { sim, ev } = run(st, {}, 240);
+    expect(ev).toContain('crack');
+    expect(ev).not.toContain('break');
+    expect(sim.phase).toBe('play');
+  });
+
   it('強く叩きすぎると卵は割れる', () => {
     // 巣と反対の壁へ（巣は卵を受け止めるので、巣の方へ投げると割れないことがある）
     const script: Record<number, Action[]> = { 60: [{ t: 'stop' }, ...Array.from({ length: 4 }, () => ({ t: 'hit', id: 0, dx: -1, dy: 0 }) as Action)], 61: [{ t: 'resume' }] };

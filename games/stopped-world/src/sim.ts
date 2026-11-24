@@ -64,7 +64,9 @@ export type StopEvent =
   | { t: 'stop' }
   | { t: 'resume'; forces: number }
   | { t: 'hit'; id: number; x: number; y: number }
-  | { t: 'break'; id: number; kind: Kind; x: number; y: number }
+  | { t: 'break'; id: number; kind: Kind; x: number; y: number; speed?: number }
+  /** 卵が、割れはしないが強めにぶつかった（割れる速さの 55% 以上）。見た目のひびと知らせに使う */
+  | { t: 'crack'; id: number; x: number; y: number; speed: number }
   | { t: 'boom'; id: number; x: number; y: number; r: number }
   | { t: 'nest' }
   /** ひねり1：壊した分だけ時間停止ゲージが戻った */
@@ -278,9 +280,9 @@ export class StopSim {
     this.world.destroyBody(o.body);
   }
 
-  private breakObj(o: Obj): void {
+  private breakObj(o: Obj, speed?: number): void {
     const p = o.body.getPosition();
-    this.events.push({ t: 'break', id: o.id, kind: o.def.kind, x: p.x, y: p.y });
+    this.events.push({ t: 'break', id: o.id, kind: o.def.kind, x: p.x, y: p.y, speed });
     const x = p.x, y = p.y;
     this.kill(o);
     if (o.def.kind === 'egg') this.fail('egg');
@@ -294,7 +296,11 @@ export class StopSim {
     for (const h of this.hits) {
       for (const o of [h.a, h.b]) {
         if (!o || !o.alive) continue;
-        if (o.def.kind === 'egg' && h.speed > this.cfg.eggBreak) this.breakObj(o);
+        if (o.def.kind === 'egg' && h.speed > this.cfg.eggBreak) this.breakObj(o, h.speed);
+        else if (o.def.kind === 'egg' && h.speed > this.cfg.eggBreak * 0.55) {
+          const p = o.body.getPosition();
+          this.events.push({ t: 'crack', id: o.id, x: p.x, y: p.y, speed: h.speed });
+        }
         else if (o.def.kind === 'crate' && h.speed > this.cfg.crateBreak) this.breakObj(o);
         else if (o.def.kind === 'bomb' && h.speed > this.cfg.crateBreak * 1.4) this.explode(o);
       }
