@@ -11,6 +11,8 @@ export interface EchoConfig extends NovaConfig {
   resonance: number;
   /** 共鳴した星の爆風の大きさ（倍） */
   resonanceBlast: number;
+  /** 発射してからこの秒数（と発射の通り道の中）は、今のボールと残響がぶつからない */
+  launchGrace: number;
 }
 
 // ループの項目を先に（調整パネルで上に出る）
@@ -20,6 +22,7 @@ export const schema = Object.assign({
   echoCollide: { label: '残響どうしがぶつかる（0/1）', min: 0, max: 1, step: 1, folder: 'ループ', restart: true },
   resonance: { label: '共鳴：同時とみなす秒数（0で無し）', min: 0, max: 1.5, step: 0.05, folder: 'ループ' },
   resonanceBlast: { label: '共鳴の爆風の大きさ（倍）', min: 1, max: 3, step: 0.05, folder: 'ループ' },
+  launchGrace: { label: '発射したての球は残響とぶつからない秒数', min: 0, max: 3, step: 0.1, folder: 'ループ' },
 }, novaSchema) as Schema<EchoConfig>;
 
 const base = (p: NovaConfig): EchoConfig => ({
@@ -41,6 +44,7 @@ const base = (p: NovaConfig): EchoConfig => ({
   echoCollide: 0,
   resonance: 0.4,
   resonanceBlast: 1.6,
+  launchGrace: 1,
 });
 
 export const presets: Record<string, EchoConfig> = {

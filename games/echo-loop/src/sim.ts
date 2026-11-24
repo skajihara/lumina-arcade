@@ -8,7 +8,7 @@
  * - 今のボールが残響にぶつかったり、残響より先に星を壊したりすると、過去が書き換わる
  * - 同じ1ループの中で全部の星を爆発させたらクリア。maxLoops を使い切ったら失敗
  */
-import { NovaSim, HZ, type Ball, type SimEvent } from '../../nova-pinball/src/sim';
+import { NovaSim, HZ, FIELD_RIGHT, type Ball, type SimEvent } from '../../nova-pinball/src/sim';
 import type { StageDef } from '../../nova-pinball/src/stages';
 
 /** Echo Loop のステージ：Nova の盤面に「このステージだけ増やすループ数」を足したもの */
@@ -72,9 +72,13 @@ export class EchoSim {
     }
     sim.flipperOwnerOnly = true;
     const now = this.loop;
+    this.launchedAt.clear();
     sim.ballCollide = (a: Ball, b: Ball) => {
       // レーンの中ではぶつけない（同じ場所に重なって待っているので）
       if (sim.inLane(a) || sim.inLane(b) || !a.launched || !b.launched) return false;
+      // 発射したての球（発射の通り道と上の弧）ではぶつけない。同じ道を続けて上がるので、
+      // ここでぶつかると何もしていないのに過去が書き換わってしまう（EL-11：分かりにくさの原因）
+      if (this.justLaunched(a) || this.justLaunched(b)) return false;
       if (a.owner === now || b.owner === now) return true;
       return this.cfg.echoCollide > 0;
     };
@@ -83,6 +87,16 @@ export class EchoSim {
     this.destroyedPerLoop[this.loop] = 0;
     this.destroyedIds[this.loop] = new Set();
     this.events.push({ t: 'loopStart', loop: this.loop });
+  }
+
+  /** 各ボールを発射したティック（ループ内） */
+  private launchedAt = new Map<number, number>();
+
+  private justLaunched(b: Ball): boolean {
+    const p = b.body.getPosition();
+    if (p.x > FIELD_RIGHT) return true;
+    const at = this.launchedAt.get(b.id);
+    return at === undefined || this.sim.tick - at < this.cfg.launchGrace * HZ;
   }
 
   /** 持ち主 k の、このティックの入力 */
@@ -104,6 +118,7 @@ export class EchoSim {
     for (let k = 0; k <= this.loop; k++) masks.push(k === this.loop ? input : this.history[k]?.[t] ?? 0);
     this.sim.ownerInputs = masks;
     this.sim.step(input);
+    for (const b of this.sim.balls) if (b.launched && !this.launchedAt.has(b.id)) this.launchedAt.set(b.id, this.sim.tick);
     this.totalTicks++;
     for (const e of this.sim.events) {
       if (e.t === 'explode') {
