@@ -3,9 +3,14 @@ on:
   pull_request:
   push:
     branches: [main]
+# 自動開発は短い間隔で何回もプッシュする。古い実行は取り消して、最新のコミットだけを確かめる（失敗通知の重複を防ぐ）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,7 +22,8 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
+      # 手元の npm run check と同じ「smoke」だけ。人に近い操作の確認（flow、約30分）は QA ワークフローで手動実行
+      - run: npx playwright test smoke
         env:
           CI: '1'
       - uses: actions/upload-artifact@v4
