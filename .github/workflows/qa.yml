@@ -1,0 +1,20 @@
+name: QA
+# 人に近い操作で全ステージを開く確認（tests/e2e/flow.spec.ts）。時間がかかる（GitHub の実行環境で約30分）ので、手動で動かす
+on:
+  workflow_dispatch:
+jobs:
+  flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test flow
+        env:
+          CI: '1'
