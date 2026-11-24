@@ -86,7 +86,7 @@ export class NovaBot {
   }
 
   /** このフリッパーの上（弾ける範囲）にあるボール */
-  private ballOver(sim: NovaSim, side: Side): Ball | undefined {
+  ballOver(sim: NovaSim, side: Side): Ball | undefined {
     const pv = pivotOf(side);
     const L = sim.cfg.flipperLength;
     for (const b of sim.balls) {
@@ -248,7 +248,7 @@ export class NovaBot {
   }
 
   /** シャドウ盤面で「今このフリッパーを弾いたら」のボールの軌跡を先読みする */
-  private predict(sim: NovaSim, side: Side, ball: Ball): { x: number; y: number }[] {
+  predict(sim: NovaSim, side: Side, ball: Ball, release = 0, field = false): { x: number; y: number }[] {
     this.stats.predictions++;
     if (!this.shadow) this.shadow = new NovaSim({ ...SHADOW_STAGE, outlanes: sim.stage.outlanes, slings: sim.stage.slings }, { ...sim.cfg });
     const sh = this.shadow;
@@ -268,8 +268,9 @@ export class NovaBot {
     sb.body.setAwake(true);
     const bit = bitOf(side);
     const path: { x: number; y: number }[] = [];
-    for (let i = 0; i < 60; i++) {
-      sh.step(i < 22 ? bit : 0);
+    // release：フリッパーを上げて抱えている時は、一度下ろしてから弾く（その分だけ待つ）
+    for (let i = 0; i < 60 + release; i++) {
+      sh.step(i < release ? 0 : i < release + 22 ? bit : 0);
       const q = sb.body.getPosition();
       const w = sb.body.getLinearVelocity();
       path.push({ x: q.x, y: q.y });
@@ -279,6 +280,22 @@ export class NovaBot {
     const q = sb.body.getPosition();
     const w = sb.body.getLinearVelocity();
     const g = sim.cfg.gravity;
+    if (field) {
+      // 狙いの線（人に見せる）：星の引力・爆発の引力も入れて少しずつ進める
+      let x = q.x, y = q.y, vx = w.x, vy = w.y;
+      const dt = 1 / 120;
+      for (let i = 1; i <= 144; i++) {
+        const f = sim.fieldAt(x, y);
+        vx += f.x * dt;
+        vy += (g + f.y) * dt;
+        x += vx * dt;
+        y += vy * dt;
+        if (x < 0.6 || x > 13.2 || y < 0.6) break;
+        if (i % 2 === 0) path.push({ x, y });
+        if (y > 20) break;
+      }
+      return path;
+    }
     for (let t = 1 / 60; t < 1.2; t += 1 / 60) {
       const x = q.x + w.x * t, y = q.y + w.y * t + 0.5 * g * t * t;
       if (x < 0.6 || x > 13.2 || y < 0.6) break;
@@ -288,7 +305,7 @@ export class NovaBot {
     return path;
   }
 
-  private firstStar(sim: NovaSim, path: { x: number; y: number }[]): number {
+  firstStar(sim: NovaSim, path: { x: number; y: number }[]): number {
     for (const p of path) {
       for (const s of sim.stars) {
         if (!s.alive) continue;

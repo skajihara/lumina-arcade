@@ -13,8 +13,9 @@ import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
 import { novaIntros } from './intro';
 import { novaRules } from './rules';
-import { NovaSim, HZ } from './sim';
+import { NovaSim, HZ, IN_LEFT, IN_RIGHT } from './sim';
 import { NovaView, VIEW_H, VIEW_W, chainTier } from './view';
+import { BOARD_W } from './sim';
 import { NovaBot } from './bot';
 import { ReplayRecorder, ReplayPlayer, type ReplayData } from './replay';
 
@@ -92,17 +93,26 @@ async function main() {
   let autoplay = params.has('autoplay');
   let bot = new NovaBot(1, 0.85);
   let resultTimer = -1;
+  /** 狙いの線（NP-15）：先読み専用のボット（操作はしない）と、その結果 */
+  const aimer = new NovaBot(0, 1);
+  const aimG = new Graphics();
+  let aims: { side: 'L' | 'R'; path: { x: number; y: number }[]; target: number }[] = [];
+  let lastMask = 0;
+  let cradleTold = false;
 
   const closeMenu = () => { menu?.remove(); menu = null; };
 
   const startStage = (i: number) => {
     closeMenu();
     stageIndex = i;
+    aimG.parent?.removeChild(aimG);
     view?.destroy();
     sim = new NovaSim(stages[i], cfg);
     view = new NovaView(sim, juice, cfg, hudApi);
     ga.world.removeChildren();
     ga.world.addChild(view.container);
+    view.container.addChild(aimG);
+    aims = [];
     hudApi.chain(0);
     hudApi.toast(stages[i].hint);
     // このステージで初めて出てくる要素の図解（RULE-01c）
@@ -122,6 +132,7 @@ async function main() {
     if (i < 0) return;
     closeMenu();
     stageIndex = i;
+    aimG.parent?.removeChild(aimG);
     view?.destroy();
     player = new ReplayPlayer(data, stages[i], highlight ? Math.max(0, data.highlight - HZ * 3) : 0);
     sim = player.sim;
@@ -327,6 +338,23 @@ async function main() {
       if (autoplay) m |= bot.input(sim);
       recorder?.record(m);
       sim.step(m);
+      lastMask = m;
+      // 狙いの線：フリッパーの上のボールを「今弾いたら」で先読み（4ティックごと）。上げて抱えている時は、一度下ろしてから弾く想定
+      if (cfg.aimLine > 0 && sim.tick % 4 === 0) {
+        aims = [];
+        for (const side of ['L', 'R'] as const) {
+          const ball = aimer.ballOver(sim, side);
+          if (!ball) continue;
+          const held = (lastMask & (side === 'L' ? IN_LEFT : IN_RIGHT)) !== 0;
+          const path = aimer.predict(sim, side, ball, held ? 8 : 0, true);
+          aims.push({ side, path, target: aimer.firstStar(sim, path) });
+          const v = ball.body.getLinearVelocity();
+          if (held && Math.hypot(v.x, v.y) < 0.3 && !cradleTold && !autoplay) {
+            cradleTold = true;
+            hudApi.toast('ボールを抱えた — 放してすぐ押すと、点線の向きへ打てる');
+          }
+        }
+      } else if (cfg.aimLine <= 0) aims = [];
       recorder?.observe(sim);
       for (const e of sim.events) {
         view.handle(e);
@@ -346,6 +374,7 @@ async function main() {
       ga.flash.alpha = juice.flash;
       ga.flash.tint = juice.flashColor;
       view?.update(realDt);
+      drawAim();
       // 発射の溜め音
       if (mode === 'play' && sim && sim.launchCharge > 0) synth.chargeTone(sim.launchCharge);
       else synth.chargeTone(-1);
@@ -366,6 +395,35 @@ async function main() {
     },
   }, HZ);
   juice.attach(loop);
+
+  /** 狙いの線：飛んでいく道を点で（先ほど淡く）、最初に当たる星に金の輪 */
+  function drawAim(): void {
+    aimG.clear();
+    if (!sim || mode !== 'play' || sim.phase !== 'play') return;
+    const S = VIEW_W / BOARD_W;
+    const T = performance.now() / 1000;
+    for (const a of aims) {
+      const hit = a.target >= 0;
+      const col = hit ? 0xffd98a : 0x9fd0ff;
+      // 当たる星の手前で止める
+      let end = a.path.length;
+      if (hit) {
+        const q = sim.stars[a.target].body.getPosition();
+        const k = a.path.findIndex((p) => Math.hypot(p.x - q.x, p.y - q.y) < sim!.stars[a.target].r + 0.3);
+        if (k >= 0) end = k + 1;
+      }
+      for (let i = 2; i < end; i += 2) {
+        const p = a.path[i];
+        const f = i / Math.max(1, end);
+        aimG.circle(p.x * S, p.y * S, 2.8 - f * 1.2).fill({ color: col, alpha: (hit ? 0.85 : 0.6) * (1 - f * 0.55) });
+      }
+      if (hit) {
+        const st = sim.stars[a.target];
+        const q = st.body.getPosition();
+        aimG.circle(q.x * S, q.y * S, (st.r + 0.25 + 0.06 * Math.sin(T * 10)) * S).stroke({ width: 2, color: 0xffd98a, alpha: 0.85 });
+      }
+    }
+  }
 
   const hook = installDebugHook('nova-pinball', () => ({
     mode,

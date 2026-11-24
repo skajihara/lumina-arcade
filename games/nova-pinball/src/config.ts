@@ -32,6 +32,8 @@ export interface NovaConfig {
   shake: number;
   particles: number;
   bloom: boolean;
+  /** 狙いの線（NP-15）：ボールがフリッパーの上にある時、今弾いたらどこへ飛ぶかを点線で見せる（0 なし／1 あり） */
+  aimLine: number;
   twist: number;
   /** ひねり3（爆発の引力）：引力の続く秒数・強さ（重力の何倍）・届く距離（m）・渦の強さ（引く力に対する横向きの割合） */
   /** 星の引力：生きている星がいつもボールを引く強さ（重力の倍。灯った星・大きい星ほど強い。0 で無し） */
@@ -74,6 +76,7 @@ export const schema: Schema<NovaConfig> = {
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
   particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
   bloom: { label: '発光（ブルーム）', folder: '演出' },
+  aimLine: { label: '狙いの線（0なし／1あり）', min: 0, max: 1, step: 1, folder: 'ルール' },
   twist: { label: 'ひねり（0なし 1同色連鎖 2押せる星 3爆発の引力）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
   starPull: { label: '星の引力（重力の倍、0で無し）', min: 0, max: 4, step: 0.05, folder: 'ルール' },
   starRange: { label: '星の引力が届く距離', min: 1, max: 12, step: 0.5, folder: 'ルール' },
@@ -113,6 +116,7 @@ const normal: NovaConfig = {
   shake: 1,
   particles: 1,
   bloom: true,
+  aimLine: 1,
   twist: 3,
   starPull: 2.5,
   starRange: 6,
