@@ -11,7 +11,7 @@ import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type OrigamiConfig } from './config';
 import { stages } from './stages';
 import { OrigamiSim, foldCenter, type Fold } from './sim';
@@ -141,7 +141,7 @@ async function main() {
     mode = 'play';
     buildStars();
     fitCamera(true);
-    hintEl.textContent = stages[i].hint;
+    hintEl.textContent = touchText(stages[i].hint, [['クリック', 'タップ'], ['つまんで', '指で']]);
   };
 
   /** 今の（または折り終わった後の）紙が全部入るようにカメラを決める */

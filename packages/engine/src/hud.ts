@@ -51,6 +51,10 @@ kbd { border:1px solid #4a5290; border-radius:5px; padding:1px 6px; font-size:12
 .tbar.top .tbtn { height:40px; min-width:40px; border-radius:20px; font-size:14px; opacity:.75; }
 .rotnote { display:none; position:fixed; left:0; right:0; top:22%; text-align:center; z-index:12; font-size:13px; color:var(--dim); letter-spacing:.12em; pointer-events:none; text-shadow:0 0 8px #000; }
 @media (orientation: portrait) { .touch-ui .rotnote { display:block; } }
+@media (max-width:520px) {
+  .hud .tl,.hud .tr { font-size:12px; top:8px; letter-spacing:.04em; } .hud .tl { left:10px } .hud .tr { right:10px }
+  .hud .big { font-size:20px; } .gbar { font-size:8px; }
+}
 .touch-ui .tlift { bottom:84px !important; }
 .back { position:fixed; left:12px; bottom:10px; z-index:15; font-size:12px; color:var(--dim); text-decoration:none; pointer-events:auto; }
 `;
@@ -129,4 +133,12 @@ export function touchButtons(buttons: TouchButton[], pos: 'bottom' | 'top' = 'bo
       });
     },
   };
+}
+
+/** タッチの画面なら、説明文の「クリック」「Space」などをタッチの言い方に置き換える */
+export function touchText(text: string, pairs: [string, string][]): string {
+  if (!document.body.classList.contains('touch-ui')) return text;
+  let t = text;
+  for (const [a, b] of pairs) t = t.split(a).join(b);
+  return t;
 }

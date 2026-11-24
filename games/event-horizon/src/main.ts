@@ -12,7 +12,7 @@ import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type HorizonConfig } from './config';
 import { stages } from './stages';
 import { HorizonSim, HZ, WORLD_W, WORLD_H, IN_PULL, IN_BURST, type HorizonInput, type HorizonEvent } from './sim';
@@ -174,7 +174,7 @@ async function main() {
     drawStatic();
     buildShards(true);
     synth.setKey(i % 5);
-    toast(stages[i].hint);
+    toast(touchText(stages[i].hint, [['クリックしている間', '触れている間'], ['Space（右クリック）', '下の「解放」ボタン']]));
   };
 
   /** 星評価：クリアで★1、かけらを1つも失わずに★2、さらに1回の投げで2つ以上を連鎖して★3 */
@@ -361,7 +361,7 @@ async function main() {
         particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [200, 420], angle: ang, spread: 0.6, life: [0.12, 0.25], size: [0.04, 0.1], color: [0x7ff0ff, 0xffffff], drag: 0 });
         synth.tone(220, 0.5, { type: 'sine', vol: 0.1, slideTo: 110 });
         juice.shake(0.08 * cfg.shake);
-        if (!holdTold) { toast('地平に抱えた — 解放（Space）で吐き出せ'); holdTold = true; }
+        if (!holdTold) { toast(touchText('地平に抱えた — 解放（Space）で吐き出せ', [['（Space）', 'ボタン']])); holdTold = true; }
         break;
       }
       case 'spit': {
