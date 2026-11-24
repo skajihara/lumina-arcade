@@ -33,6 +33,11 @@ export interface NovaConfig {
   particles: number;
   bloom: boolean;
   twist: number;
+  /** ひねり3（爆発の引力）：引力の続く秒数・強さ（重力の何倍）・届く距離（m）・渦の強さ（引く力に対する横向きの割合） */
+  wellSec: number;
+  wellPull: number;
+  wellRange: number;
+  wellSwirl: number;
   volume: number;
 }
 
@@ -65,7 +70,11 @@ export const schema: Schema<NovaConfig> = {
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
   particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
   bloom: { label: '発光（ブルーム）', folder: '演出' },
-  twist: { label: 'ひねり（0なし 1同色連鎖 2押せる星 3重力）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
+  twist: { label: 'ひねり（0なし 1同色連鎖 2押せる星 3爆発の引力）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
+  wellSec: { label: '爆発の引力が続く秒数', min: 0.1, max: 2, step: 0.05, folder: 'ルール' },
+  wellPull: { label: '爆発の引力の強さ（重力の倍）', min: 0, max: 4, step: 0.05, folder: 'ルール' },
+  wellRange: { label: '爆発の引力が届く距離', min: 1, max: 15, step: 0.5, folder: 'ルール' },
+  wellSwirl: { label: '爆発の引力の渦（横向きの割合）', min: 0, max: 1.5, step: 0.05, folder: 'ルール' },
   volume: { label: '音量', min: 0, max: 1, step: 0.01, folder: '演出' },
 };
 
@@ -99,6 +108,10 @@ const normal: NovaConfig = {
   particles: 1,
   bloom: true,
   twist: 3,
+  wellSec: 0.8,
+  wellPull: 1.5,
+  wellRange: 7,
+  wellSwirl: 0.35,
   volume: 0.7,
 };
 
