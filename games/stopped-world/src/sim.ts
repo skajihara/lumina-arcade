@@ -25,6 +25,9 @@ export function slingPower(len: number, cfg: Pick<StopConfig, 'slingPull' | 'sli
   return Math.pow(u, cfg.slingCurve ?? 1) * cfg.slingMax;
 }
 
+/** 割れる衝撃の何割でひびが入るか */
+export const CRACK_RATIO = 0.6;
+
 export type Kind = 'egg' | 'crate' | 'bomb' | 'rock' | 'ball' | 'plank';
 
 export interface ObjDef {
@@ -62,6 +65,10 @@ export interface Obj {
   at: { x: number; y: number };
   /** 爆弾：時間が戻ったら爆発する */
   armed: boolean;
+  /** 卵の傷み（ひびの数） */
+  damage: number;
+  /** ひびを数えない残り時間（同じぶつかりの二重数え防止） */
+  crackCool: number;
 }
 
 export type Action =
@@ -73,9 +80,9 @@ export type StopEvent =
   | { t: 'stop' }
   | { t: 'resume'; forces: number }
   | { t: 'hit'; id: number; x: number; y: number }
-  | { t: 'break'; id: number; kind: Kind; x: number; y: number; speed?: number }
-  /** 卵が、割れはしないが強めにぶつかった（割れる速さの 55% 以上）。見た目のひびと知らせに使う */
-  | { t: 'crack'; id: number; x: number; y: number; speed: number }
+  | { t: 'break'; id: number; kind: Kind; x: number; y: number; speed?: number; byCracks?: boolean }
+  /** 卵が、割れはしないが強めにぶつかった（割れる速さの 6 割以上）。ひびが1つ増える（damage＝今のひびの数） */
+  | { t: 'crack'; id: number; x: number; y: number; speed: number; damage: number }
   | { t: 'boom'; id: number; x: number; y: number; r: number }
   | { t: 'nest' }
   /** ひねり1：壊した分だけ時間停止ゲージが戻った */
@@ -134,7 +141,7 @@ export class StopSim {
     const density = d.kind === 'rock' ? 3 : d.kind === 'egg' ? 0.8 : 1;
     if (round) body.createFixture(new Circle(d.w), { density, friction: 0.4, restitution: d.kind === 'ball' ? 0.6 : 0.2 });
     else body.createFixture(new Box(d.w / 2, (d.h ?? d.w) / 2), { density, friction: 0.6, restitution: 0.1 });
-    this.objs.push({ id, def: d, body, alive: true, force: { x: 0, y: 0 }, at: { x: 0, y: 0 }, armed: false });
+    this.objs.push({ id, def: d, body, alive: true, force: { x: 0, y: 0 }, at: { x: 0, y: 0 }, armed: false, damage: 0, crackCool: 0 });
   }
 
   private onImpact(c: Contact): void {
@@ -289,9 +296,9 @@ export class StopSim {
     this.world.destroyBody(o.body);
   }
 
-  private breakObj(o: Obj, speed?: number): void {
+  private breakObj(o: Obj, speed?: number, byCracks = false): void {
     const p = o.body.getPosition();
-    this.events.push({ t: 'break', id: o.id, kind: o.def.kind, x: p.x, y: p.y, speed });
+    this.events.push({ t: 'break', id: o.id, kind: o.def.kind, x: p.x, y: p.y, speed, byCracks });
     const x = p.x, y = p.y;
     this.kill(o);
     if (o.def.kind === 'egg') this.fail('egg');
@@ -301,6 +308,7 @@ export class StopSim {
   private advance(): void {
     this.world.step(DT, 8, 3);
     this.worldTick++;
+    for (const o of this.objs) if (o.crackCool > 0) o.crackCool -= DT;
     // 衝撃で割れる・壊れる
     for (const h of this.hits) {
       for (const o of [h.a, h.b]) {
@@ -308,9 +316,14 @@ export class StopSim {
         // 巣の中はやわらかい：割れる衝撃が nestSoft 倍
         const eggLimit = this.cfg.eggBreak * (o.def.kind === 'egg' && this.eggInNest() ? Math.max(1, this.cfg.nestSoft ?? 1) : 1);
         if (o.def.kind === 'egg' && h.speed > eggLimit) this.breakObj(o, h.speed);
-        else if (o.def.kind === 'egg' && h.speed > eggLimit * 0.55) {
+        else if (o.def.kind === 'egg' && h.speed > eggLimit * CRACK_RATIO && o.crackCool <= 0) {
+          // 同じぶつかりで何度も数えないよう、少し間をあける
+          o.crackCool = 0.25;
+          o.damage++;
           const p = o.body.getPosition();
-          this.events.push({ t: 'crack', id: o.id, x: p.x, y: p.y, speed: h.speed });
+          const hp = Math.round(this.cfg.eggHp ?? 0);
+          if (hp > 0 && o.damage >= hp) this.breakObj(o, h.speed, true);
+          else this.events.push({ t: 'crack', id: o.id, x: p.x, y: p.y, speed: h.speed, damage: o.damage });
         }
         else if (o.def.kind === 'crate' && h.speed > this.cfg.crateBreak) this.breakObj(o);
         else if (o.def.kind === 'bomb' && h.speed > this.cfg.crateBreak * 1.4) this.explode(o);
@@ -400,6 +413,8 @@ export class StopSim {
       q.force = { ...o.force };
       q.at = { ...o.at };
       q.armed = o.armed;
+      q.damage = o.damage;
+      q.crackCool = o.crackCool;
     }
     return c;
   }
@@ -409,7 +424,7 @@ export class StopSim {
    * 動く物体だけを返す。爆発や破壊も先読みの中で起きる（消えた所で線が終わる）。
    * extra：先読みの前に足す操作（ドラッグ中の、まだ置いていない力）。
    */
-  predict(seconds = 1, every = 4, extra: Action[] = []): { id: number; kind: Kind; pts: { x: number; y: number }[]; ends: 'alive' | 'gone' }[] {
+  predict(seconds = 1, every = 4, extra: Action[] = []): { id: number; kind: Kind; pts: { x: number; y: number }[]; ends: 'alive' | 'gone'; cracks: { x: number; y: number }[] }[] {
     const c = this.clone();
     c.events = [];
     for (const a of extra) c.apply(a);
@@ -426,7 +441,7 @@ export class StopSim {
         paths[o.id].push({ x: p.x, y: p.y });
       }
     }
-    const out: { id: number; kind: Kind; pts: { x: number; y: number }[]; ends: 'alive' | 'gone' }[] = [];
+    const out: { id: number; kind: Kind; pts: { x: number; y: number }[]; ends: 'alive' | 'gone'; cracks: { x: number; y: number }[] }[] = [];
     for (const o of this.objs) {
       const pts = paths[o.id];
       const s0 = start[o.id];
@@ -434,7 +449,9 @@ export class StopSim {
       if (!s0 || (pts.length < 2 && !gone)) continue;
       const moved = pts.some((p) => Math.hypot(p.x - s0.x, p.y - s0.y) > 0.15);
       if (!moved && !gone) continue;
-      out.push({ id: o.id, kind: o.def.kind, pts, ends: gone ? 'gone' : 'alive' });
+      // ひびが入る所（卵）
+      const cracks = c.events.flatMap((e) => (e.t === 'crack' && e.id === o.id ? [{ x: e.x, y: e.y }] : []));
+      out.push({ id: o.id, kind: o.def.kind, pts, ends: gone ? 'gone' : 'alive', cracks });
     }
     return out;
   }

@@ -18,7 +18,7 @@ import { stages } from './stages';
 import { ruleCards } from '@engine/rules';
 import { stoppedRules } from './rules';
 import { randomPlan, runPlan, type Plan } from './bot';
-import { StopSim, HZ, WORLD_W, WORLD_H, slingPower, type Action, type Obj } from './sim';
+import { StopSim, HZ, WORLD_W, WORLD_H, CRACK_RATIO, slingPower, type Action, type Obj } from './sim';
 
 const SCALE = 50;
 const VIEW_W = WORLD_W * SCALE;
@@ -87,11 +87,13 @@ async function main() {
   const trails = new Map<number, { x: number; y: number }[]>();
   /** 引いている強さの段（音を鳴らす区切り） */
   let pullStep = 0;
+  /** マウスの位置（つかめる物を光らせる） */
+  let hover: { x: number; y: number } | null = null;
   let t = 0;
   /** ひねり1：壊した所から時間停止ゲージへ飛んでいく「時の粒」 */
   let refillFx: { x: number; y: number; age: number; amount: number }[] = [];
-  /** 卵のひび（強めにぶつかった回数。見た目だけ）と、ひびの知らせを出した時刻 */
-  let cracks = 0, crackToldAt = -99;
+  /** ひびの知らせを出した時刻 */
+  let crackToldAt = -99;
   let gaugeGlow = 0;
 
   const closeMenu = () => { menu?.remove(); menu = null; };
@@ -112,8 +114,8 @@ async function main() {
     closeMenu();
     stageIndex = i;
     sim = new StopSim(stages[i], cfg);
-    cracks = 0;
     crackToldAt = -99;
+    stageTime = 0;
     pending = [];
     drag = null;
     refillFx = [];
@@ -253,6 +255,7 @@ async function main() {
     drag = { id: o.id, x: w.x, y: w.y, ex: w.x, ey: w.y };
   });
   window.addEventListener('pointermove', (e) => {
+    hover = toWorld(e);
     if (!drag) return;
     const w = toWorld(e);
     drag.ex = w.x;
@@ -373,14 +376,16 @@ async function main() {
         case 'break':
           particles.emit(e.x * SCALE, e.y * SCALE, { count: e.kind === 'egg' ? 60 : 40, speed: [60, 300], life: [0.4, 1.0], size: [0.05, 0.2], color: e.kind === 'egg' ? [0xffffff, 0xffd27f] : [0x9fb8ff, 0xc9a3ff] });
           synth.noise(0.3, { vol: 0.25, from: 3000, to: 300 });
-          if (e.kind === 'egg') toast(e.speed ? `卵が割れた — ぶつかった速さ ${e.speed.toFixed(1)}（${cfg.eggBreak} を超えると割れる）` : '卵が割れた');
+          if (e.kind === 'egg') toast(e.byCracks ? `卵が割れた — ひびが ${Math.round(cfg.eggHp)} つ入った` : e.speed ? `卵が割れた — ぶつかった速さ ${e.speed.toFixed(1)}（${cfg.eggBreak} を超えると1回で割れる）` : '卵が割れた');
           break;
         case 'crack':
-          cracks = Math.min(4, cracks + 1);
           particles.emit(e.x * SCALE, e.y * SCALE, { count: 10, speed: [30, 120], life: [0.2, 0.5], size: [0.04, 0.1], color: [0xffffff, 0xff6b8a] });
           synth.noise(0.08, { vol: 0.08, from: 4000, to: 2000 });
           if (t - crackToldAt > 2.5) {
-            toast(`ひび！ ぶつかった速さ ${e.speed.toFixed(1)} — ${cfg.eggBreak} を超えると割れる`);
+            const hp = Math.round(cfg.eggHp);
+            toast(hp > 0
+              ? `ひび ${e.damage}/${hp}！ ${hp - e.damage === 1 ? 'あと1回ぶつけると割れる' : `あと${hp - e.damage}回で割れる`}（速さ ${e.speed.toFixed(1)}、${cfg.eggBreak} 超えは1回で割れる）`
+              : `ひび！ ぶつかった速さ ${e.speed.toFixed(1)} — ${cfg.eggBreak} を超えると割れる`);
             crackToldAt = t;
           }
           break;
@@ -405,8 +410,183 @@ async function main() {
     }
   };
 
+
+  /** 物体ごとに描き分ける（一目で何か分かるように） */
+  const rot = (x: number, y: number, a: number, pts: number[][]) => {
+    const c = Math.cos(a), s = Math.sin(a);
+    return pts.flatMap(([u, v]) => [x + u * c - v * s, y + u * s + v * c]);
+  };
+  const ROCK = [1, 0.82, 0.95, 0.78, 1.05, 0.86, 0.92];
+  const drawObject = (g: Graphics, o: Obj, x: number, y: number, a: number, stopped: boolean) => {
+    const d = o.def;
+    const R = d.w * SCALE;
+    if (d.kind === 'egg') {
+      const hp = Math.round(cfg.eggHp);
+      const dmg = o.damage;
+      const danger = hp > 0 && dmg >= hp - 1;
+      // 卵の形（上が細い）。体と一緒に回る
+      const shape: number[][] = [];
+      for (let i = 0; i < 28; i++) {
+        const th = (i / 28) * Math.PI * 2;
+        const top = Math.cos(th) > 0;
+        shape.push([Math.sin(th) * 0.92 * (top ? 0.86 + 0.14 * (1 - Math.cos(th)) : 1), -Math.cos(th) * (top ? 1.22 : 0.98)]);
+      }
+      const glow = danger ? 0xff6b8a : 0xffd27f;
+      g.circle(x, y, R * 1.55).fill({ color: glow, alpha: danger ? 0.18 + 0.1 * Math.sin(t * 9) : 0.12 });
+      g.poly(rot(x, y, a, shape.map(([u, v]) => [u * R, v * R]))).fill({ color: 0xe9cf9c }).stroke({ width: 2, color: glow });
+      // 殻の模様：金の帯と小さな星
+      const band = rot(x, y, a, [[-0.86 * R, 0.1 * R], [-0.45 * R, -0.08 * R], [0, 0.12 * R], [0.45 * R, -0.08 * R], [0.86 * R, 0.1 * R]]);
+      g.moveTo(band[0], band[1]);
+      for (let i = 2; i < band.length; i += 2) g.lineTo(band[i], band[i + 1]);
+      g.stroke({ width: 3, color: 0xb8641e, alpha: 0.95 });
+      for (const [u, v] of [[-0.35, -0.55], [0.3, -0.7], [0.1, 0.55]]) {
+        const q = rot(x, y, a, [[u * R, v * R]]);
+        g.star(q[0], q[1], 4, 3.4, 1.3).fill({ color: 0x8a4a9a, alpha: 0.95 });
+      }
+      const hl = rot(x, y, a, [[-0.32 * R, -0.5 * R]]);
+      g.ellipse(hl[0], hl[1], R * 0.13, R * 0.24).fill({ color: 0xfff8e8, alpha: 0.7 });
+      // ひび（傷みの数だけ、だんだん太く赤く）
+      for (let k = 0; k < Math.min(6, dmg); k++) {
+        const ca = a + k * 2.1;
+        const pts = rot(x, y, ca, [[0, -0.98 * R], [0.2 * R, -0.55 * R], [-0.1 * R, -0.28 * R], [0.18 * R, 0.08 * R], [0.02 * R, 0.3 * R]]);
+        g.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+        g.stroke({ width: 1.6 + k * 0.6, color: danger ? 0xd8324f : 0x9a4a2a, alpha: 0.95 });
+      }
+      // 傷みのゲージ：卵の上に殻の粒（無傷は白、ひびは赤い×）
+      if (hp > 0) {
+        const w = 13;
+        for (let i = 0; i < hp; i++) {
+          const px = x + (i - (hp - 1) / 2) * w, py = y - R * 1.9 - 6;
+          if (i < dmg) {
+            g.moveTo(px - 4, py - 4).lineTo(px + 4, py + 4).moveTo(px + 4, py - 4).lineTo(px - 4, py + 4).stroke({ width: 2.2, color: 0xff6b8a, cap: 'round' });
+          } else g.ellipse(px, py, 4, 5).fill({ color: 0xfff6e0, alpha: 0.95 }).stroke({ width: 1, color: 0xffd27f });
+        }
+      }
+      // 速さのゲージ：卵の周りの弧。割れる速さに近づくほど長く・赤く（ひびが入る速さに印）
+      if (!stopped) {
+        const v = o.body.getLinearVelocity();
+        const lim = cfg.eggBreak * (sim?.eggInNest() ? Math.max(1, cfg.nestSoft) : 1);
+        const ratio = Math.hypot(v.x, v.y) / lim;
+        if (ratio > 0.25) {
+          const col = ratio < CRACK_RATIO ? 0x7ff0ff : ratio < 1 ? 0xffd27f : 0xff4d6d;
+          const rr = R * 1.7;
+          g.moveTo(x, y - rr).arc(x, y, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, ratio)).stroke({ width: 3, color: col, alpha: 0.85 });
+          const ca = -Math.PI / 2 + Math.PI * 2 * CRACK_RATIO;
+          g.circle(x + Math.cos(ca) * rr, y + Math.sin(ca) * rr, 2.5).fill({ color: 0xffffff, alpha: 0.7 });
+          if (ratio >= 1) g.circle(x, y, rr + 4).stroke({ width: 1.5, color: 0xff4d6d, alpha: 0.5 + 0.5 * Math.sin(t * 20) });
+        }
+      }
+    } else if (d.kind === 'bomb') {
+      // 爆風の届く範囲（止めている間だけ、点線の輪）
+      if (stopped) {
+        const Rr = cfg.bombRadius * SCALE;
+        for (let i = 0; i < 24; i += 2) g.moveTo(x + Math.cos((i / 24) * Math.PI * 2) * Rr, y + Math.sin((i / 24) * Math.PI * 2) * Rr).arc(x, y, Rr, (i / 24) * Math.PI * 2, ((i + 1) / 24) * Math.PI * 2);
+        g.stroke({ width: 1.5, color: 0xffa3e0, alpha: 0.4 });
+      }
+      g.circle(x, y, R * 1.5).fill({ color: 0xff5a8a, alpha: o.armed ? 0.25 + 0.15 * Math.sin(t * 30) : 0.08 });
+      g.circle(x, y, R).fill({ color: 0x2a2450 }).stroke({ width: 2, color: 0xffa3e0 });
+      g.circle(x - R * 0.3, y - R * 0.35, R * 0.25).fill({ color: 0xffffff, alpha: 0.35 });
+      // 口金と導火線（体と一緒に回る）
+      const cap = rot(x, y, a, [[-0.28 * R, -0.85 * R], [0.28 * R, -0.85 * R], [0.28 * R, -1.15 * R], [-0.28 * R, -1.15 * R]]);
+      g.poly(cap).fill({ color: 0x8a7ab8 });
+      const fuse = rot(x, y, a, [[0, -1.15 * R], [0.25 * R, -1.5 * R], [0.55 * R, -1.55 * R], [0.75 * R, -1.85 * R]]);
+      g.moveTo(fuse[0], fuse[1]).bezierCurveTo(fuse[2], fuse[3], fuse[4], fuse[5], fuse[6], fuse[7]).stroke({ width: 2, color: 0xd9c7a0 });
+      const spark = 0.6 + 0.4 * Math.sin(t * (o.armed ? 30 : 8));
+      g.star(fuse[6], fuse[7], 5, 4 + (o.armed ? 5 : 1) * spark, 1.5).fill({ color: 0xffd27f, alpha: 0.6 + 0.4 * spark });
+    } else if (d.kind === 'ball') {
+      g.circle(x, y, R * 1.6).fill({ color: 0x7ff0ff, alpha: 0.12 });
+      g.circle(x, y, R).fill({ color: 0x3fb8d8, alpha: 0.9 }).stroke({ width: 2, color: 0xbff8ff });
+      g.circle(x, y, R * 0.55).fill({ color: 0xbff8ff, alpha: 0.8 });
+      const ring = rot(x, y, a, [[R * 0.75, 0]]);
+      g.circle(ring[0], ring[1], 3).fill({ color: 0xffffff });
+    } else if (d.kind === 'rock') {
+      const pts = ROCK.map((k, i) => { const th = (i / ROCK.length) * Math.PI * 2; return [Math.cos(th) * R * k, Math.sin(th) * R * k]; });
+      g.poly(rot(x, y, a, pts)).fill({ color: 0x4a4f6e }).stroke({ width: 2, color: 0x8a90b8 });
+      const facet = rot(x, y, a, [[-0.5 * R, -0.3 * R], [0.1 * R, -0.6 * R], [0.2 * R, -0.1 * R]]);
+      g.poly(facet).fill({ color: 0x6a7098, alpha: 0.8 });
+      for (const [u, v] of [[0.35, 0.3], [-0.3, 0.35]]) { const q = rot(x, y, a, [[u * R, v * R]]); g.circle(q[0], q[1], 2).fill({ color: 0x2a2e48 }); }
+    } else {
+      const hw = (d.w / 2) * SCALE, hh = ((d.h ?? d.w) / 2) * SCALE;
+      const box = rot(x, y, a, [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]);
+      if (d.kind === 'crate') {
+        // 木の箱：枠・板目・筋交い
+        g.poly(box).fill({ color: 0x6a4088 }).stroke({ width: 2, color: 0xb894e0 });
+        const i = 0.17;
+        const inner = rot(x, y, a, [[-hw * (1 - i * 2), -hh * (1 - i * 2)], [hw * (1 - i * 2), -hh * (1 - i * 2)], [hw * (1 - i * 2), hh * (1 - i * 2)], [-hw * (1 - i * 2), hh * (1 - i * 2)]]);
+        g.poly(inner).fill({ color: 0x4a2a66 }).stroke({ width: 1.5, color: 0x8a64b0, alpha: 0.8 });
+        const br = rot(x, y, a, [[-hw * 0.66, hh * 0.66], [hw * 0.66, -hh * 0.66]]);
+        g.moveTo(br[0], br[1]).lineTo(br[2], br[3]).stroke({ width: hw * 0.28, color: 0x7e56a6, cap: 'round' });
+        for (const v of [-0.33, 0.33]) { const l = rot(x, y, a, [[-hw * 0.66, hh * v], [hw * 0.66, hh * v]]); g.moveTo(l[0], l[1]).lineTo(l[2], l[3]).stroke({ width: 1, color: 0x3a2050, alpha: 0.6 }); }
+        // 釘
+        for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const q = rot(x, y, a, [[u * hw * 0.82, v * hh * 0.82]]); g.circle(q[0], q[1], 2).fill({ color: 0xffe7a8 }); }
+      } else {
+        // 板：細長い板と木目
+        g.poly(box).fill({ color: 0x3a4a8a }).stroke({ width: 2, color: 0x9fb8ff });
+        for (const v of [-0.3, 0.3]) { const l = rot(x, y, a, [[-hw * 0.92, hh * v], [hw * 0.92, hh * v]]); g.moveTo(l[0], l[1]).lineTo(l[2], l[3]).stroke({ width: 1, color: 0x9fb8ff, alpha: 0.35 }); }
+      }
+    }
+  };
+
+  /** 物体の名前と性質の吹き出し：ステージの最初の数秒と、止めている間（種類ごとに1つ） */
+  const LABEL: Record<string, () => string> = {
+    egg: () => `卵 — 巣へ運ぶ。${Math.round(cfg.eggHp) > 0 ? `強くぶつけるとひび、${Math.round(cfg.eggHp)}つで割れる` : '強くぶつけると割れる'}`,
+    crate: () => '箱 — 強くぶつけるか、爆風で壊れる',
+    bomb: () => '爆弾 — 止めて叩くと、解放の瞬間に爆発（点線が届く範囲）',
+    ball: () => '光の玉 — よく弾む。ほかの物にぶつけて使う',
+    rock: () => '岩 — 重い。押しのけるには強い力',
+    plank: () => '板 — 上に物を乗せて運べる',
+  };
+  const labelBox = el('div', { class: 'sw-labels' });
+  labelBox.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:3';
+  document.body.appendChild(labelBox);
+  const labelEls = new Map<string, HTMLElement>();
+  let stageTime = 0;
+  const updateLabels = (stopped: boolean) => {
+    if (!sim) return;
+    const intro = Math.max(0, 1 - Math.max(0, stageTime - 4.5) / 0.6);
+    const show = mode === 'play' && !drag && (intro > 0 || stopped);
+    const alpha = stopped ? Math.max(intro, 0.85) : intro;
+    const seen = new Set<string>();
+    const placed: { e: HTMLElement; x: number; y: number; w: number }[] = [];
+    for (const o of sim.objs) {
+      if (!o.alive || o.def.fixed || seen.has(o.def.kind)) continue;
+      seen.add(o.def.kind);
+      let e = labelEls.get(o.def.kind);
+      if (!e) {
+        e = el('div', { class: 'sw-label' });
+        e.style.cssText = 'position:fixed;transform:translate(-50%,-100%);padding:4px 10px;border-radius:10px;font-size:12px;white-space:nowrap;color:#fff6e0;background:rgba(20,16,48,.78);border:1px solid rgba(255,210,127,.45);box-shadow:0 0 12px rgba(255,210,127,.25);transition:opacity .2s';
+        labelBox.appendChild(e);
+        labelEls.set(o.def.kind, e);
+      }
+      e.textContent = LABEL[o.def.kind]?.() ?? '';
+      const p = o.body.getPosition();
+      const r = (o.def.h ?? o.def.w) * (o.def.kind === 'egg' ? 2.4 : 1.2) + 0.35;
+      const sc = { x: ga.root.x + p.x * SCALE * ga.scale, y: ga.root.y + (p.y - r) * SCALE * ga.scale };
+      const w = e.offsetWidth || 200;
+      placed.push({ e, x: Math.max(w / 2 + 6, Math.min(window.innerWidth - w / 2 - 6, sc.x)), y: sc.y, w });
+      e.style.opacity = show ? String(alpha) : '0';
+    }
+    // 重ならないように：左から順に、前の吹き出しと重なれば上へずらす
+    placed.sort((p1, p2) => p2.y - p1.y);
+    const done: { x: number; y: number; w: number }[] = [];
+    for (const q of placed) {
+      let y = q.y;
+      for (let k = 0; k < 8; k++) {
+        const hit = done.find((d) => Math.abs(d.x - q.x) < (d.w + q.w) / 2 + 6 && Math.abs(d.y - y) < 28);
+        if (!hit) break;
+        y = hit.y - 30;
+      }
+      done.push({ x: q.x, y, w: q.w });
+      q.e.style.left = `${q.x}px`;
+      q.e.style.top = `${y}px`;
+    }
+    for (const [k, e] of labelEls) if (!seen.has(k)) e.style.opacity = '0';
+  };
+
   const draw = (dt: number) => {
     t += dt;
+    if (mode === 'play') stageTime += dt;
     field.update(t);
     if (!sim) return;
     const stopped = sim.stopped;
@@ -464,43 +644,16 @@ async function main() {
       // 引いている物は、引くほど震える（力が溜まっていく手触り）
       const jit = drag && drag.id === o.id ? pullK * pullK * 3.5 : 0;
       const x = p.x * SCALE + (jit ? fxRandom(-jit, jit) : 0), y = p.y * SCALE + (jit ? fxRandom(-jit, jit) : 0);
-      const d = o.def;
-      if (d.kind === 'egg') {
-        g.ellipse(x, y, d.w * SCALE * 1.25, d.w * SCALE * 1.35).fill({ color: 0xffd27f, alpha: 0.15 });
-        g.ellipse(x, y, d.w * SCALE * 0.95, d.w * SCALE * 1.1).fill({ color: 0xfff6e0 }).stroke({ width: 2, color: 0xffd27f });
-        // ひび（強めにぶつかった回数だけ。卵と一緒に回る）
-        for (let k = 0; k < cracks; k++) {
-          const ca = a + k * 1.7, r = d.w * SCALE;
-          const c = Math.cos(ca), s = Math.sin(ca);
-          const pts = [[0, -0.95], [0.18, -0.55], [-0.08, -0.3], [0.15, 0.05]].map(([u, v]) => [x + (u * c - v * s) * r, y + (u * s + v * c) * r]);
-          g.moveTo(pts[0][0], pts[0][1]);
-          for (const q of pts.slice(1)) g.lineTo(q[0], q[1]);
-          g.stroke({ width: 1.5, color: 0xb05a3a, alpha: 0.9 });
-        }
-        // 速さのゲージ：卵の周りの弧。割れる速さに近づくほど長く・赤く
-        if (!sim.stopped) {
-          const v = o.body.getLinearVelocity();
-          const ratio = Math.hypot(v.x, v.y) / cfg.eggBreak;
-          if (ratio > 0.25) {
-            const col = ratio < 0.55 ? 0x7ff0ff : ratio < 0.85 ? 0xffd27f : 0xff4d6d;
-            const rr = d.w * SCALE * 1.6;
-            g.moveTo(x, y - rr).arc(x, y, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, ratio)).stroke({ width: 3, color: col, alpha: 0.85 });
-            if (ratio >= 1) g.circle(x, y, rr + 4).stroke({ width: 1.5, color: 0xff4d6d, alpha: 0.5 + 0.5 * Math.sin(t * 20) });
-          }
-        }
-      } else if (d.kind === 'bomb') {
-        g.circle(x, y, d.w * SCALE).fill({ color: 0x2a2450 }).stroke({ width: 2, color: 0xffa3e0 });
-        const spark = 0.6 + 0.4 * Math.sin(t * (o.armed ? 30 : 8));
-        g.circle(x + Math.cos(a - 0.8) * d.w * SCALE, y + Math.sin(a - 0.8) * d.w * SCALE, 4 + (o.armed ? 4 : 0)).fill({ color: 0xffd27f, alpha: spark });
-      } else if (d.kind === 'ball' || d.kind === 'rock') {
-        g.circle(x, y, d.w * SCALE).fill({ color: d.kind === 'rock' ? 0x4a4f6e : 0x7ff0ff, alpha: 0.9 }).stroke({ width: 2, color: 0xbfd0ff });
-      } else {
-        const hw = (d.w / 2) * SCALE, hh = ((d.h ?? d.w) / 2) * SCALE;
-        const c = Math.cos(a), s = Math.sin(a);
-        const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].flatMap(([u, v]) => [x + u * c - v * s, y + u * s + v * c]);
-        const col = d.kind === 'crate' ? 0x6a5acd : 0x3a4a8a;
-        g.poly(pts).fill({ color: col, alpha: 0.85 }).stroke({ width: 2, color: 0xc9a3ff });
-        if (d.kind === 'crate') g.circle(x, y, Math.min(hw, hh) * 0.35).fill({ color: 0xffffff, alpha: 0.6 });
+      drawObject(g, o, x, y, a, stopped);
+    }
+    updateLabels(stopped);
+    // つかめる物：マウスの下の物に輪（つかめる範囲の目安）
+    if (!drag && hover && mode === 'play') {
+      const h = pick(hover.x, hover.y);
+      if (h) {
+        const hp = h.body.getPosition();
+        const hr = Math.max(h.def.w, h.def.h ?? h.def.w) * SCALE * (h.def.kind === 'crate' || h.def.kind === 'plank' ? 0.75 : 1.5) + 8;
+        g.circle(hp.x * SCALE, hp.y * SCALE, hr + 2 * Math.sin(t * 6)).stroke({ width: 2, color: 0xffffff, alpha: 0.5 });
       }
     }
     // 溜めた力の矢印（色のまま）
@@ -592,6 +745,12 @@ async function main() {
         const f = i / n;
         const wave = 0.5 + 0.5 * Math.cos((f * 4 - phase) * Math.PI * 2);
         g.circle(q.x * SCALE, q.y * SCALE, 2.2 + wave * 1.2).fill({ color: col, alpha: (1 - f * 0.75) * (0.35 + 0.45 * wave) });
+      }
+      // ひびが入る所：小さな赤いひびの印
+      for (const c of p.cracks) {
+        const cx = c.x * SCALE, cy = c.y * SCALE;
+        g.moveTo(cx - 6, cy - 7).lineTo(cx - 1, cy - 1).lineTo(cx - 4, cy + 2).lineTo(cx + 5, cy + 7).stroke({ width: 2.5, color: 0xff6b8a, alpha: 0.9, cap: 'round' });
+        g.circle(cx, cy, 10).stroke({ width: 1.5, color: 0xff6b8a, alpha: 0.5 });
       }
       const e = p.pts[n - 1];
       const ex = e.x * SCALE, ey = e.y * SCALE;

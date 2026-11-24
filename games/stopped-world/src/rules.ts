@@ -83,7 +83,7 @@ export const stoppedRules: RuleFrame[] = [
     },
   },
   {
-    caption: '卵を巣へ運ぶ／箱を全部壊せばクリア（卵は強くぶつけると割れる）',
+    caption: '卵を巣へ運ぶ／箱を全部壊せばクリア（卵はぶつけるとひび、3つで割れる。巣の中はやわらかい）',
     draw: (g, t) => {
       const p = phase(t, 2.6);
       const k = seg(p, 0, 0.7);
