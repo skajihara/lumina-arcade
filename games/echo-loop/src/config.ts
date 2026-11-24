@@ -37,16 +37,16 @@ const base = (p: NovaConfig): EchoConfig => ({
   // 星座の線は連鎖を運ばない（群れごとに別のループで落とす遊びを保つ）
   fuseSpeed: 0,
   loopSec: 10,
-  maxLoops: 6,
+  maxLoops: 4,
   echoCollide: 0,
   resonance: 0.4,
   resonanceBlast: 1.6,
 });
 
 export const presets: Record<string, EchoConfig> = {
-  やさしい: { ...base(novaPresets['やさしい']), maxLoops: 8, loopSec: 11 },
+  やさしい: { ...base(novaPresets['やさしい']), maxLoops: 7, loopSec: 11 },
   ふつう: base(novaPresets['ふつう']),
-  むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 6, loopSec: 9.5, blastRadius: 2.6 },
+  むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 5, loopSec: 9.5, blastRadius: 2.6 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';

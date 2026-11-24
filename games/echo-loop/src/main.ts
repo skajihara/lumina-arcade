@@ -139,7 +139,8 @@ async function main() {
   /** 星評価：少ないループでクリアするほど高い */
   const rating = (loopsUsed: number) => {
     const max = es?.maxLoops ?? Math.round(cfg.maxLoops);
-    return loopsUsed <= max - 3 ? 3 : loopsUsed <= max - 2 ? 2 : 1;
+    // ★3：半分以内（切り上げ）、★2：最後のループより前（EL-08 でループ数を絞ったので、残りではなく割合で）
+    return loopsUsed <= Math.ceil(max / 2) ? 3 : loopsUsed <= max - 1 ? 2 : 1;
   };
 
   const showResult = () => {
@@ -162,7 +163,7 @@ async function main() {
       <h2>${st.name}</h2>
       ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
       <p>${cleared ? `${used} ループ目で、${used} 人の自分が同じ ${cfg.loopSec} 秒に全部の星を燃やした` : `1ループで壊せた最多 <b style="color:var(--ink)">${es.best} / ${total}</b>`}</p>
-      <p style="font-size:13px">★：少ないループでクリアするほど高い（★3：${es.maxLoops - 3}ループ以内　★2：${es.maxLoops - 2}ループ以内）</p>
+      <p style="font-size:13px">★：少ないループでクリアするほど高い（★3：${Math.ceil(es.maxLoops / 2)}ループ以内　★2：${es.maxLoops - 1}ループ以内）</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
     if (cleared && stageIndex < stages.length - 1) {
