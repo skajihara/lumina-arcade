@@ -83,6 +83,8 @@ async function main() {
   let es: EchoSim | null = null;
   let view: NovaView | null = null;
   const overlay = new Graphics();
+  /** 背景の時計（EL-10：Nova とはっきり違う「時間」の見た目）。盤面の後ろに大きな文字盤と針、時間の波紋 */
+  const clockG = new Graphics();
   let stageIndex = 0;
   let mode: 'menu' | 'play' | 'pause' | 'result' = 'menu';
   let menu: HTMLElement | null = null;
@@ -104,6 +106,7 @@ async function main() {
     // 重ね絵はカメラ（ズーム）と一緒に動くよう view の中に入れる。view を壊す前に外す
     if (view) {
       view.container.removeChild(overlay);
+      view.container.removeChild(clockG);
       view.destroy();
     }
     view = new NovaView(es.sim, juice, cfg, hudApi);
@@ -112,6 +115,8 @@ async function main() {
     // 残響の当たり音は、古いほど小さく遠く
     view.soundScale = (owner) => (owner === cur ? 1 : Math.max(0.25, 0.6 - (cur - owner) * 0.08));
     view.container.addChild(overlay);
+    // 時計は夜空のすぐ上（盤面の線より後ろ）
+    view.container.addChildAt(clockG, Math.min(2, view.container.children.length));
     ga.world.removeChildren();
     ga.world.addChild(view.container);
   };
@@ -370,8 +375,53 @@ async function main() {
   }, HZ);
   juice.attach(loop);
 
+  /**
+   * 背景の時計：盤面いっぱいの文字盤（60の目盛り、12の太い目盛り）、ループの進みで1周する長い針、
+   * ループの番号で進む短い針、中心から広がる時間の波紋。巻き戻る時は針が逆向きに速く回る
+   */
+  const drawClock = () => {
+    const g = clockG;
+    g.clear();
+    if (!es) return;
+    const cx = VIEW_W / 2, cy = VIEW_H * 0.44, R = VIEW_W * 0.47;
+    const k = Math.min(1, es.sim.tick / es.loopTicks);
+    const T = performance.now() / 1000;
+    // 時間の波紋（ゆっくり広がる）
+    for (let i = 0; i < 4; i++) {
+      const f = (T * 0.12 + i / 4) % 1;
+      g.circle(cx, cy, R * (0.15 + 0.95 * f)).stroke({ width: 1.2, color: 0x7ff0ff, alpha: 0.12 * (1 - f) });
+    }
+    g.circle(cx, cy, R).stroke({ width: 2, color: 0x7ff0ff, alpha: 0.16 });
+    g.circle(cx, cy, R * 0.93).stroke({ width: 1, color: 0xc9a3ff, alpha: 0.12 });
+    for (let i = 0; i < 60; i++) {
+      const a = -Math.PI / 2 + (i / 60) * Math.PI * 2;
+      const big = i % 5 === 0;
+      const passed = i / 60 <= k;
+      const r0 = R * (big ? 0.86 : 0.9), r1 = R * 0.96;
+      g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0).lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1)
+        .stroke({ width: big ? 2.5 : 1, color: passed ? 0x9fe8ff : 0x6a6fb0, alpha: passed ? 0.45 : 0.2 });
+    }
+    // 長い針：今のループの進み（巻き戻りの瞬間は逆へ速く回る）
+    const back = rewindFx > 0 ? rewindFx * Math.PI * 2 : 0;
+    const a1 = -Math.PI / 2 + k * Math.PI * 2 - back;
+    g.moveTo(cx, cy).lineTo(cx + Math.cos(a1) * R * 0.84, cy + Math.sin(a1) * R * 0.84).stroke({ width: 2, color: 0x9fe8ff, alpha: 0.35, cap: 'round' });
+    // 短い針：何ループ目か
+    const a2 = -Math.PI / 2 + ((es.loop + k) / Math.max(1, es.maxLoops)) * Math.PI * 2;
+    g.moveTo(cx, cy).lineTo(cx + Math.cos(a2) * R * 0.5, cy + Math.sin(a2) * R * 0.5).stroke({ width: 5, color: 0xc9a3ff, alpha: 0.3, cap: 'round' });
+    // 過ぎたループの印：文字盤の縁に、残響の色の小さな月
+    for (let l = 0; l < es.maxLoops; l++) {
+      const a = -Math.PI / 2 + (l / es.maxLoops) * Math.PI * 2;
+      const x = cx + Math.cos(a) * R * 0.78, y = cy + Math.sin(a) * R * 0.78;
+      if (l < es.loop) g.circle(x, y, 5).fill({ color: echoColor(es.loop - l), alpha: 0.55 });
+      else if (l === es.loop) g.circle(x, y, 6 + Math.sin(T * 4)).stroke({ width: 2, color: 0xffffff, alpha: 0.6 });
+      else g.circle(x, y, 3).stroke({ width: 1, color: 0x8f96c9, alpha: 0.35 });
+    }
+    g.circle(cx, cy, 6).fill({ color: 0x9fe8ff, alpha: 0.4 });
+  };
+
   /** 残響の軌跡とループの時計 */
   const drawOverlay = (dt: number) => {
+    drawClock();
     const g = overlay;
     g.clear();
     if (!es) return;
