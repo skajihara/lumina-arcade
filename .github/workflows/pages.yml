@@ -1,5 +1,7 @@
 name: Pages
 # main に入った play/（ビルド済みの遊べるHTML）をそのまま GitHub Pages に公開する
+# アップロードと公開を別のジョブに分ける（同じジョブで続けると、アップロード直後に
+# 公開側が成果物を見つけられず「No artifacts named github-pages」で失敗することがあった）
 on:
   push:
     branches: [main]
@@ -11,18 +13,22 @@ permissions:
   id-token: write
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: play
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
