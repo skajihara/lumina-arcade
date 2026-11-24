@@ -37,6 +37,8 @@ export interface HorizonConfig {
   chainWindow: number;
   /** 制限時間（秒） */
   timeLimit: number;
+  /** 必要なかけらを減らす数（必要数が4以上の面だけ。やさしい用） */
+  needEase: number;
   /** ひねり：0 なし／1 吐き出し（吸い込んだかけらを抱え、解放で吐き出す）／2 穴の重力（かけらを入れた穴が近くのかけらを引く）／3 両方 */
   twist: number;
   /** ひねり1：吸い込んだかけらを抱えていられる時間（秒）。過ぎると蒸発して失われる */
@@ -69,6 +71,7 @@ export const schema: Schema<HorizonConfig> = {
   dilateMin: { label: '地平のそばの時間の速さ', min: 0.1, max: 1, step: 0.05, folder: '時間の遅れ' },
   chainWindow: { label: '連鎖が続く時間（秒）', min: 0.2, max: 5, step: 0.1, folder: 'ルール' },
   timeLimit: { label: '制限時間（秒）', min: 20, max: 300, step: 5, folder: 'ルール', restart: true },
+  needEase: { label: '必要なかけらを減らす（4個以上の面）', min: 0, max: 2, step: 1, folder: 'ルール', restart: true },
   twist: { label: 'ひねり（0なし 1吐き出し 2穴の重力 3両方）', min: 0, max: 3, step: 1, folder: 'ルール', restart: true },
   holdSec: { label: '吸い込んだかけらを抱えられる秒数', min: 0.5, max: 10, step: 0.5, folder: 'ルール' },
   goalPullR: { label: '穴の重力が届く距離', min: 0, max: 5, step: 0.1, folder: 'ルール' },
@@ -98,6 +101,7 @@ const normal: HorizonConfig = {
   dilateMin: 0.35,
   chainWindow: 1.6,
   timeLimit: 90,
+  needEase: 0,
   twist: 1,
   holdSec: 4,
   goalPullR: 2.2,
@@ -110,7 +114,7 @@ const normal: HorizonConfig = {
 };
 
 export const presets: Record<string, HorizonConfig> = {
-  やさしい: { ...normal, horizon: 0.32, dilateMin: 0.25, dilateRange: 1.3, timeLimit: 150, gravity: 5, goalGuard: 1.8 },
+  やさしい: { ...normal, horizon: 0.32, dilateMin: 0.25, dilateRange: 1.3, timeLimit: 150, gravity: 5, goalGuard: 1.8, needEase: 1 },
   ふつう: normal,
   むずかしい: { ...normal, horizon: 0.6, dilateMin: 0.5, dilateRange: 0.8, timeLimit: 80, gravity: 7, burstCooldown: 1.1, goalGuard: 3, holdSec: 2.5 },
 };
