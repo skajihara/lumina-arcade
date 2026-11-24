@@ -111,3 +111,35 @@ test.describe('Event Horizon のタッチ', () => {
     await expect.poll(async () => (await state()).pulling).toBe(false);
   });
 });
+
+test('stopped-world: 卵を引っぱって放すと、逆向きに飛ぶ（パチンコ式）', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(pathToFileURL(resolve(playDir, 'stopped-world.html')).href + '?stage=0');
+  await waitReady(page);
+  await page.waitForTimeout(1200);
+  type H = { sim(): { objs: { def: { kind: string }; body: { getPosition(): { x: number; y: number } } }[] }; toScreen(x: number, y: number): { x: number; y: number }; state(): { stopped?: boolean } };
+  const egg = await page.evaluate(() => {
+    const h = (window as unknown as { __lumina: H }).__lumina;
+    const o = h.sim().objs.find((q) => q.def.kind === 'egg')!;
+    const p = o.body.getPosition();
+    return { w: { x: p.x, y: p.y }, s: h.toScreen(p.x, p.y), s2: h.toScreen(p.x - 2, p.y + 1) };
+  });
+  await page.mouse.move(egg.s.x, egg.s.y);
+  await page.mouse.down();
+  await page.mouse.move((egg.s.x + egg.s2.x) / 2, (egg.s.y + egg.s2.y) / 2, { steps: 4 });
+  await page.mouse.move(egg.s2.x, egg.s2.y, { steps: 4 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: resolve(shots, 'stopped-world-sling.png') });
+  await page.mouse.up();
+  const stopped = await page.evaluate(() => (window as unknown as { __lumina: H }).__lumina.state().stopped);
+  expect(stopped).toBe(true); // つかんだ時に時間が止まる
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(500);
+  const x1 = await page.evaluate(() => {
+    const o = (window as unknown as { __lumina: H }).__lumina.sim().objs.find((q) => q.def.kind === 'egg')!;
+    return o.body.getPosition().x;
+  });
+  expect(x1).toBeGreaterThan(egg.w.x + 0.5); // 左下へ引いた → 右上へ飛ぶ
+  expect(errors).toEqual([]);
+});

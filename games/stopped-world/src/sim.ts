@@ -58,7 +58,7 @@ export interface Obj {
 export type Action =
   | { t: 'stop' }
   | { t: 'resume' }
-  | { t: 'hit'; id: number; dx: number; dy: number; px?: number; py?: number };
+  | { t: 'hit'; id: number; dx: number; dy: number; px?: number; py?: number; power?: number };
 
 export type StopEvent =
   | { t: 'stop' }
@@ -180,7 +180,8 @@ export class StopSim {
       if (this.forcesThisStop >= Math.round(this.cfg.maxForces)) return;
       this.forcesThisStop++;
       const len = Math.hypot(a.dx, a.dy) || 1;
-      const k = this.cfg.forcePerHit;
+      // power：パチンコ式で引いた強さ（なければ 1＝一定の力）
+      const k = this.cfg.forcePerHit * Math.max(0, a.power ?? 1);
       o.force.x += (a.dx / len) * k;
       o.force.y += (a.dy / len) * k;
       const m = Math.hypot(o.force.x, o.force.y);

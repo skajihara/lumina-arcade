@@ -51,6 +51,15 @@ describe('StopSim', () => {
     expect(sim.objs[0].body.getLinearVelocity().x).toBeGreaterThan(3);
   });
 
+  it('パチンコ式：引いた強さ（power）に比例した力が溜まる', () => {
+    const sim = new StopSim(nestStage, cfg());
+    sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 1, dy: 0, power: 0.5 }]);
+    expect(sim.objs[0].force.x).toBeCloseTo(cfg().forcePerHit * 0.5, 5);
+    const sim2 = new StopSim(nestStage, cfg());
+    sim2.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: -2, dy: 0, power: 1.5 }]);
+    expect(sim2.objs[0].force.x).toBeCloseTo(-cfg().forcePerHit * 1.5, 5);
+  });
+
   it('1回の停止で置ける力の数には上限がある', () => {
     const sim = new StopSim(nestStage, cfg());
     const hits: Action[] = Array.from({ length: 10 }, () => ({ t: 'hit', id: 0, dx: 1, dy: 0 }) as Action);

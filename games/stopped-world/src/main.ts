@@ -111,7 +111,7 @@ async function main() {
     resultTimer = -1;
     mode = 'play';
     drawGround();
-    toast(touchText(stages[i].hint, [['もう一度 Space で解放', '「解き放つ」で解放'], ['Space で時間を止め', '「時を止める」で時間を止め'], ['卵をドラッグして', '卵から指をすべらせて']]));
+    toast(touchText(stages[i].hint, [['もう一度 Space で解放', '「解き放つ」で解放'], ['Space で時間を止め', '「時を止める」で時間を止め'], ['卵を引っぱって放す', '卵を指で引っぱって放す']]));
   };
 
   const showResult = () => {
@@ -161,8 +161,8 @@ async function main() {
       ${Math.round(cfg.twist) % 2 === 1 ? '箱が壊れる・爆弾が弾けるたびに、<b style="color:#7ff0ff">止められる時間が少し戻る</b>。連鎖させるほど、もう一度止められる。' : ''}</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
-      <div class="keys"><kbd>Space</kbd> 時間を止める／戻す　物体を<b>ドラッグ</b>で力を置く（向きと長さ）<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下の「時を止める」ボタン、物体をなぞって力を置く</div>`;
+      <div class="keys"><kbd>Space</kbd> 時間を止める／戻す　物体を<b>つかんで引っぱり、放す</b>と逆向きに力（引くほど強い）<br>
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下の「時を止める」ボタン、物体を指で引っぱって放す</div>`;
     menu.querySelector('.rulebox')!.replaceWith(ruleCards(stoppedRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
@@ -248,12 +248,7 @@ async function main() {
   });
   window.addEventListener('pointerup', () => {
     if (!drag || !sim) return;
-    const dx = drag.ex - drag.x, dy = drag.ey - drag.y;
-    if (Math.hypot(dx, dy) > 0.25) {
-      const o = sim.objs[drag.id];
-      const p = o.alive ? o.body.getPosition() : { x: drag.x, y: drag.y };
-      pending.push({ t: 'hit', id: drag.id, dx, dy, px: drag.x - p.x, py: drag.y - p.y });
-    }
+    pending.push(...dragAction(sim));
     drag = null;
   });
 
@@ -428,7 +423,8 @@ async function main() {
     }
     if (drag) {
       const o = sim.objs[drag.id];
-      if (o.alive) arrow(ag, drag.x * SCALE, drag.y * SCALE, drag.ex * SCALE, drag.ey * SCALE, 0xffffff, 0.8);
+      if (o.alive && Math.round(cfg.control) === 1) arrow(ag, drag.x * SCALE, drag.y * SCALE, drag.ex * SCALE, drag.ey * SCALE, 0xffffff, 0.8);
+      else if (o.alive) drawSling(ag, o);
     }
     if (stopped && cfg.predictSec > 0) drawPrediction(ag, sim);
     // 時の粒：壊した所で時計の輪が開き、粒がゲージ（右上）へ吸い込まれる
@@ -468,14 +464,21 @@ async function main() {
   // 置いた力やドラッグ中の矢印が変わった時だけ計算し直す
   let predKey = '';
   let pred: ReturnType<StopSim['predict']> = [];
+  /**
+   * ドラッグ中（放した時）の力。パチンコ式：引いた向きの逆へ、引いた長さに比例（slingPull で最大 slingMax 倍）。
+   * ドラッグ式：ドラッグの向きに一定の力
+   */
   const dragAction = (s: StopSim): Action[] => {
     if (!drag) return [];
     const dx = drag.ex - drag.x, dy = drag.ey - drag.y;
-    if (Math.hypot(dx, dy) <= 0.25) return [];
+    const len = Math.hypot(dx, dy);
+    if (len <= 0.25) return [];
     const o = s.objs[drag.id];
     if (!o.alive) return [];
     const p = o.body.getPosition();
-    return [{ t: 'hit', id: drag.id, dx, dy, px: drag.x - p.x, py: drag.y - p.y }];
+    if (Math.round(cfg.control) === 1) return [{ t: 'hit', id: drag.id, dx, dy, px: drag.x - p.x, py: drag.y - p.y }];
+    const power = (Math.min(len, cfg.slingPull) / cfg.slingPull) * cfg.slingMax;
+    return [{ t: 'hit', id: drag.id, dx: -dx, dy: -dy, px: 0, py: 0, power }];
   };
   const drawPrediction = (g: Graphics, s: StopSim) => {
     const extra = dragAction(s);
@@ -504,6 +507,33 @@ async function main() {
         g.moveTo(ex - 7, ey - 7).lineTo(ex + 7, ey + 7).moveTo(ex + 7, ey - 7).lineTo(ex - 7, ey + 7).stroke({ width: 3, color: c2, alpha: 0.9, cap: 'round' });
       } else if (n > 1) g.circle(ex, ey, 5).stroke({ width: 2, color: col, alpha: 0.55 });
     }
+  };
+
+  /** パチンコ式で引いている間：物体から指へのゴム、引ける限界の輪、放した時に飛ぶ向きの金の矢印 */
+  const drawSling = (g: Graphics, o: StopSim['objs'][number]) => {
+    if (!drag) return;
+    const p = o.body.getPosition();
+    const ox = p.x * SCALE, oy = p.y * SCALE;
+    let dx = drag.ex - drag.x, dy = drag.ey - drag.y;
+    const len = Math.hypot(dx, dy);
+    const lim = cfg.slingPull;
+    if (len > lim) { dx *= lim / len; dy *= lim / len; }
+    const k = Math.min(1, len / lim);
+    // 限界の輪（いっぱいに引くと金色に光る）
+    g.circle(ox, oy, lim * SCALE).stroke({ width: 1.5, color: k >= 1 ? 0xffd27f : 0x9fb8ff, alpha: k >= 1 ? 0.55 : 0.22 });
+    // ゴム：物体の両側から指先へ
+    const hx = ox + dx * SCALE, hy = oy + dy * SCALE;
+    const nx = -dy / (Math.hypot(dx, dy) || 1), ny = dx / (Math.hypot(dx, dy) || 1);
+    const w = 0.35 * SCALE;
+    g.moveTo(ox + nx * w, oy + ny * w).lineTo(hx, hy).lineTo(ox - nx * w, oy - ny * w).stroke({ width: 2, color: 0xffffff, alpha: 0.35 + 0.4 * k });
+    g.circle(hx, hy, 6).fill({ color: 0xffffff, alpha: 0.85 });
+    if (len <= 0.25) return;
+    // 飛ぶ向き（逆向き）。長さは溜まる力に比例（置いた力の矢印と同じ縮尺）
+    const f = cfg.forcePerHit * k * cfg.slingMax * 0.14 * SCALE;
+    const ux = -dx / (Math.hypot(dx, dy) || 1), uy = -dy / (Math.hypot(dx, dy) || 1);
+    // 物体の光に隠れないよう、縁から出す
+    const r0 = 0.45 * SCALE;
+    arrow(g, ox + ux * r0, oy + uy * r0, ox + ux * (r0 + f), oy + uy * (r0 + f), 0xffd27f, 0.95);
   };
 
   const arrow = (g: Graphics, x0: number, y0: number, x1: number, y1: number, color: number, alpha: number) => {
@@ -561,6 +591,8 @@ async function main() {
   hook.start = (i: number) => startStage(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
   hook.sim = () => sim;
+  /** 世界の座標 → 画面の座標（e2e で物体をつかむため） */
+  hook.toScreen = (x: number, y: number) => ({ x: ga.root.x + x * SCALE * ga.scale, y: ga.root.y + y * SCALE * ga.scale });
 
   loop.start();
   if (params.has('stage')) startStage(Math.min(stages.length - 1, Number(params.get('stage')) || 0));

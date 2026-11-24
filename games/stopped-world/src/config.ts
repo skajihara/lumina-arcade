@@ -12,6 +12,11 @@ export interface StopConfig {
   forcePerHit: number;
   /** 1つの物体に溜められる力の上限（速度の変化） */
   maxForce: number;
+  /** 操作：0 引っぱって放す（パチンコ式）／1 ドラッグの向きに一定の力 */
+  control: number;
+  /** パチンコ式：いっぱいに引いた時の距離（m）と、その時の力（1回で溜まる力の何倍か） */
+  slingPull: number;
+  slingMax: number;
   /** 卵が割れる衝撃の強さ（速度の差） */
   eggBreak: number;
   /** 箱が壊れる衝撃の強さ */
@@ -40,6 +45,9 @@ export const schema: Schema<StopConfig> = {
   maxForces: { label: '1回の停止で置ける力の数', min: 1, max: 12, step: 1, folder: '時間停止' },
   forcePerHit: { label: '1回で溜まる力', min: 1, max: 20, step: 0.5, folder: '時間停止' },
   maxForce: { label: '1つの物体の力の上限', min: 2, max: 60, step: 1, folder: '時間停止' },
+  control: { label: '操作（0 引っぱって放す／1 ドラッグの向き）', min: 0, max: 1, step: 1, folder: '時間停止' },
+  slingPull: { label: 'いっぱいに引く距離', min: 1, max: 8, step: 0.1, folder: '時間停止' },
+  slingMax: { label: 'いっぱいに引いた時の力（倍）', min: 0.5, max: 4, step: 0.1, folder: '時間停止' },
   eggBreak: { label: '卵が割れる衝撃', min: 2, max: 40, step: 0.5, folder: '物体' },
   crateBreak: { label: '箱が壊れる衝撃', min: 2, max: 40, step: 0.5, folder: '物体' },
   bombRadius: { label: '爆弾の半径', min: 1, max: 8, step: 0.1, folder: '物体' },
@@ -61,6 +69,9 @@ const normal: StopConfig = {
   maxForces: 4,
   forcePerHit: 6,
   maxForce: 24,
+  control: 0,
+  slingPull: 3,
+  slingMax: 1.5,
   eggBreak: 11,
   crateBreak: 9,
   bombRadius: 3.2,

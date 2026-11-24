@@ -8,7 +8,7 @@ export const stages: StageDef[] = [
   {
     id: 'sw-roll',
     name: '最初のひと押し',
-    hint: 'Space で時間を止め、卵をドラッグして矢印を置く。もう一度 Space で解放',
+    hint: 'Space で時間を止め、卵を引っぱって放す（逆向きに力が溜まる）。もう一度 Space で解放',
     goal: 'nest',
     nest: { x: 15.5, y: 11.2, w: 3.2, h: 1.8 },
     objects: [{ kind: 'egg', x: 4, y: 11.5, w: 0.45 }],
