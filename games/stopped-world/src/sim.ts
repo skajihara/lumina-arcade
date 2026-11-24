@@ -25,6 +25,11 @@ export function slingPower(len: number, cfg: Pick<StopConfig, 'slingPull' | 'sli
   return Math.pow(u, cfg.slingCurve ?? 1) * cfg.slingMax;
 }
 
+/** 箱を壊せる相手：光の玉・岩・爆弾（箱どうし・壁・床・板・卵では壊れない） */
+function breaksCrate(other: Obj | null): boolean {
+  return !!other && (other.def.kind === 'ball' || other.def.kind === 'rock' || other.def.kind === 'bomb');
+}
+
 /** 割れる衝撃の何割でひびが入るか */
 export const CRACK_RATIO = 0.6;
 
@@ -325,7 +330,8 @@ export class StopSim {
           if (hp > 0 && o.damage >= hp) this.breakObj(o, h.speed, true);
           else this.events.push({ t: 'crack', id: o.id, x: p.x, y: p.y, speed: h.speed, damage: o.damage });
         }
-        else if (o.def.kind === 'crate' && h.speed > this.cfg.crateBreak) this.breakObj(o);
+        // 箱を壊せるのは「ぶつける道具」（光の玉・岩・爆弾）だけ。箱どうし・壁・床・板・卵では壊れない（ユーザーの指摘：箱どうしで壊れるのは目的に合わない）
+        else if (o.def.kind === 'crate' && h.speed > this.cfg.crateBreak && breaksCrate(o === h.a ? h.b : h.a)) this.breakObj(o);
         else if (o.def.kind === 'bomb' && h.speed > this.cfg.crateBreak * 1.4) this.explode(o);
       }
     }

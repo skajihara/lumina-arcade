@@ -78,9 +78,10 @@ export const stages: StageDef[] = [
   {
     id: 'sw-tower',
     name: '星の塔',
-    hint: '積み上げた箱。爆弾を塔の根元へ運んでから点火',
+    hint: '積み上げた箱。爆風は塔の上まで届かない — 根元は爆弾で、上は光の玉をぶつけて',
     goal: 'destroy',
     objects: [
+      { kind: 'ball', x: 3, y: 11.4, w: 0.6 },
       { kind: 'crate', x: 14, y: 11.4, w: 1.2 },
       { kind: 'crate', x: 14, y: 10.2, w: 1.2 },
       { kind: 'crate', x: 14, y: 9.0, w: 1.2 },
