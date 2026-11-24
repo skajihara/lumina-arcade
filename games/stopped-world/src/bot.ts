@@ -19,7 +19,7 @@ export interface Plan {
 export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng, human = false): Plan {
   const steps: Record<number, Action[]> = {};
   const movable = stage.objects.map((o, i) => ({ o, i })).filter(({ o }) => !o.fixed);
-  const stops = Math.min(rng.int(1, human ? 4 : 3), stage.stops ?? 99);
+  const stops = Math.min(rng.int(1, human ? 4 : 3), stage.stops ? stage.stops + Math.round(cfg.bonusStops ?? 0) : 99);
   let tick = 30;
   for (let k = 0; k < stops; k++) {
     const acts: Action[] = [{ t: 'stop' }];

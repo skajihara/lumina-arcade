@@ -215,3 +215,25 @@ describe('SW-11 卵の傷み', () => {
     expect(sim.phase).toBe('fail');
   });
 });
+
+describe('SW-13 止められる回数', () => {
+  it('回数を使い切ると、もう止められない（やさしいは +1 回）', () => {
+    const st: StageDef = { ...nestStage, stops: 1 };
+    const sim = new StopSim(st, cfg());
+    sim.step([{ t: 'stop' }]);
+    sim.step([{ t: 'resume' }]);
+    expect(sim.stopsLeft).toBe(0);
+    sim.step([{ t: 'stop' }]);
+    expect(sim.stopped).toBe(false);
+    const easy = new StopSim(st, { ...cfg(), bonusStops: 1 });
+    easy.step([{ t: 'stop' }]);
+    easy.step([{ t: 'resume' }]);
+    easy.step([{ t: 'stop' }]);
+    expect(easy.stopped).toBe(true);
+  });
+  it('1回の停止で置ける力の数はステージの指定に従う', () => {
+    const sim = new StopSim({ ...nestStage, forces: 2 }, cfg());
+    sim.step([{ t: 'stop' }, ...Array.from({ length: 4 }, () => ({ t: 'hit', id: 0, dx: 1, dy: 0 }) as Action)]);
+    expect(sim.forcesThisStop).toBe(2);
+  });
+});

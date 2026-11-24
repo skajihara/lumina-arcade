@@ -78,9 +78,29 @@ const crack: RuleFrame = {
   },
 };
 
+const stops: RuleFrame = {
+  caption: 'この面は止められる回数が決まっている（右上の◆）。1回の解放で、全部を同時に動かす計画を',
+  draw: (g, t) => {
+    const p = phase(t, 4);
+    const used = p < 0.3 ? 0 : p < 0.65 ? 1 : 2;
+    for (let i = 0; i < 2; i++) {
+      const x = 52 + i * 32, on = i >= used;
+      g.save(); g.translate(x, 34); g.rotate(Math.PI / 4);
+      g.globalAlpha = on ? 0.95 : 0.35; g.fillStyle = on ? GOLD : 'transparent'; g.strokeStyle = GOLD; g.lineWidth = 2;
+      if (on) g.fillRect(-8, -8, 16, 16); g.strokeRect(-8, -8, 16, 16); g.restore();
+      if (on) glow(g, x, 34, 6, GOLD, 0.4);
+    }
+    if (p > 0.3 && p < 0.45) label(g, '止める', 52, 62, ICE, 11, seg(p, 0.3, 0.36));
+    if (p > 0.65 && p < 0.8) label(g, '止める', 84, 62, ICE, 11, seg(p, 0.65, 0.71));
+    if (p > 0.82) label(g, 'もう止められない', 68, 66, PINK, 11, seg(p, 0.82, 0.88));
+    line(g, 6, 80, 130, 80, '#9fb8ff', 0.6, 1.5);
+  },
+};
+
 export const stoppedIntros: Record<string, { title: string; frame: RuleFrame }> = {
   'sw-boom': { title: '止まった爆発', frame: bomb },
   'sw-fuse': { title: '壊すと時間が戻る', frame: refill },
   'sw-billiard': { title: '光の玉', frame: ball },
+  'sw-catch': { title: '止められる回数', frame: stops },
   'sw-shelf': { title: '卵のひびと、やわらかい巣', frame: crack },
 };
