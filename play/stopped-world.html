@@ -1880,6 +1880,11 @@ kbd { border:1px solid #4a5290; border-radius:5px; padding:1px 6px; font-size:12
 .tbar { position:fixed; left:50%; transform:translateX(-50%); z-index:15; display:flex; gap:10px; pointer-events:none; }
 .tbar.bottom { bottom:max(14px, env(safe-area-inset-bottom)); }
 .tbar.top { top:max(46px, env(safe-area-inset-top)); }
+/* 横持ちのスマホ：下は遊ぶ場所なので、右の余白に縦に並べる */
+@media (orientation: landscape) and (max-height: 520px) {
+  .tbar.bottom { left:auto; right:max(8px, env(safe-area-inset-right)); bottom:auto; top:50%; transform:translateY(-50%); flex-direction:column; align-items:flex-end; }
+  .tbar.bottom .tbtn { height:46px; min-width:46px; padding:0 10px; font-size:13px; }
+}
 .tbtn { pointer-events:auto; touch-action:manipulation; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none;
   min-width:54px; height:54px; padding:0 14px; border-radius:27px; border:1px solid rgba(120,140,255,.55);
   background:rgba(20,26,70,.55); color:var(--ink); font-family:inherit; font-size:15px; letter-spacing:.06em;

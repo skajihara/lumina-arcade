@@ -95,6 +95,8 @@ async function main() {
   // 入力：マウスの位置（論理座標）・引く・解放
   const pointer = { x: VIEW_W / 2, y: VIEW_H / 3 };
   let pullDown = false;
+  /** タッチ：指を置いた所へまず引かずに動き、着いてから引き寄せ始める（道中のかけらを巻き込まない） */
+  let touchArm = false;
   let burstQueued = false;
   const keys = new Set<string>();
   // かけらの見た目
@@ -174,7 +176,7 @@ async function main() {
     drawStatic();
     buildShards(true);
     synth.setKey(i % 5);
-    toast(touchText(stages[i].hint, [['クリックしている間', '触れている間'], ['Space（右クリック）', '下の「解放」ボタン']]));
+    toast(touchText(stages[i].hint, [['クリックしている間だけ引き寄せる', '指を置いた所へ動き、着いたら離すまで引き寄せる'], ['Space（右クリック）', '下の「解放」ボタン']]));
   };
 
   /** 星評価：クリアで★1、かけらを1つも失わずに★2、さらに1回の投げで2つ以上を連鎖して★3 */
@@ -238,7 +240,7 @@ async function main() {
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys">マウスで動かす　<b>クリックしている間</b> 引き寄せる　<kbd>Space</kbd>／右クリック 解放<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：触れている間 引き寄せる、下の「解放」ボタン（2本指でも）</div>`;
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：指の所へ動いて、着いたら離すまで引き寄せる、下の「解放」ボタン（2本指でも）</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -301,9 +303,11 @@ async function main() {
     synth.unlock();
     setPointer(e.clientX, e.clientY);
     if (e.button === 2) burstQueued = true;
+    else if (e.pointerType === 'touch') { touchArm = true; pullDown = false; }
     else pullDown = true;
   });
-  window.addEventListener('pointerup', (e) => { if (e.button !== 2) pullDown = false; });
+  window.addEventListener('pointerup', (e) => { if (e.button !== 2) { pullDown = false; touchArm = false; } });
+  window.addEventListener('pointercancel', () => { pullDown = false; touchArm = false; });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   // タッチ：2本目の指で解放
   ga.app.canvas.addEventListener('touchstart', (e) => { if (e.touches.length >= 2) burstQueued = true; }, { passive: true });
@@ -419,6 +423,10 @@ async function main() {
     if (kx || ky) {
       pointer.x = Math.min(VIEW_W, Math.max(0, pointer.x + kx * 7));
       pointer.y = Math.min(VIEW_H, Math.max(0, pointer.y + ky * 7));
+    }
+    if (touchArm && Math.hypot(pointer.x / SCALE - s.bh.x, pointer.y / SCALE - s.bh.y) * SCALE < 30) {
+      touchArm = false;
+      pullDown = true;
     }
     let bits = 0;
     if (pullDown || keys.has('ShiftLeft') || keys.has('KeyZ')) bits |= IN_PULL;
@@ -628,7 +636,7 @@ async function main() {
 
   const hook = installDebugHook('event-horizon', () => ({
     mode, stage: stageIndex, phase: sim?.phase, captured: sim?.captured, need: sim?.need, score: sim?.score,
-    timeScale: sim?.timeScale, free: sim?.free().length, bestChain: sim?.bestChain, input: lastInput,
+    timeScale: sim?.timeScale, free: sim?.free().length, pulling: sim?.pulling, bh: sim ? { ...sim.bh } : undefined, bestChain: sim?.bestChain, input: lastInput,
   }));
   hook.start = (i: number) => startStage(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
