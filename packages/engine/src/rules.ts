@@ -20,6 +20,20 @@ const CSS = `
 .rule .cap { font-size:12px; line-height:1.45; color:var(--ink); text-align:center; margin-top:5px; letter-spacing:.02em; }
 .rule .cap b { color:var(--gold); font-weight:600; margin-right:3px; }
 @media (max-width:520px) { .rule { width:42vw; } .rule canvas { width:42vw; height:calc(42vw * .7); } }
+@keyframes ic-in { from { opacity:0; transform:translate(-50%, -18px) scale(.96) } to { opacity:1; transform:translate(-50%, 0) } }
+.intro-card { position:fixed; left:50%; top:max(58px, 7vh); transform:translateX(-50%); z-index:14; display:flex; align-items:center; gap:12px;
+  padding:10px 16px 10px 10px; border-radius:16px; max-width:min(520px, calc(100vw - 24px)); box-sizing:border-box; cursor:pointer;
+  background:linear-gradient(160deg, rgba(70,80,190,.5), rgba(14,18,56,.82) 60%, rgba(40,26,96,.75)); border:1px solid rgba(255,217,138,.55);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 0 26px rgba(255,217,138,.25), 0 12px 30px rgba(2,3,20,.6); backdrop-filter:blur(8px);
+  animation:ic-in .6s cubic-bezier(.2,.8,.2,1) both; transition:opacity .45s, transform .45s; }
+.intro-card.out { opacity:0; transform:translate(-50%, -12px); }
+.intro-card canvas { width:112px; height:79px; flex:none; border-radius:10px; border:1px solid rgba(110,125,220,.45);
+  background:radial-gradient(ellipse at 50% 40%, rgba(40,48,120,.55), rgba(6,8,26,.9)); }
+.intro-card .ic-text { font-size:14px; line-height:1.55; color:var(--ink); letter-spacing:.03em; }
+.intro-card .ic-text .ic-title { display:block; font-weight:700; color:var(--gold); font-size:15px; letter-spacing:.12em; margin-bottom:2px; }
+.intro-card .ic-new { position:absolute; top:-9px; left:12px; font-size:10px; font-weight:800; letter-spacing:.2em; color:#1a1030;
+  background:linear-gradient(90deg,#ffe7b0,#ffd98a); padding:1px 8px; border-radius:999px; box-shadow:0 0 12px rgba(255,217,138,.6); }
+.touch-ui .intro-card { top:max(50px, 6vh); }
 `;
 let styled = false;
 
@@ -67,6 +81,34 @@ export function ruleCards(frames: RuleFrame[]): HTMLDivElement {
   });
   if (!raf) raf = requestAnimationFrame(tick);
   return box;
+}
+
+/**
+ * ステージの最初に、新しく出てくる要素を1枚の図解で知らせる（RULE-01c）。
+ * 画面の上の方に「NEW」の小さなカードが浮かび、数秒で消える（クリックしても消える）。操作のじゃまにならないよう、カード以外は触れる
+ */
+let introEl: HTMLDivElement | null = null;
+let introTimer = 0;
+export function introCard(frame: RuleFrame | null, title = '新しい要素', sec = 6): void {
+  if (!styled) {
+    const st = document.createElement('style');
+    st.textContent = CSS;
+    document.head.appendChild(st);
+    styled = true;
+  }
+  introEl?.remove();
+  introEl = null;
+  clearTimeout(introTimer);
+  if (!frame) return;
+  const box = el('div', { class: 'intro-card' });
+  const cv = el('canvas');
+  box.append(el('div', { class: 'ic-new' }, 'NEW'), cv, el('div', { class: 'ic-text' }, `<span class="ic-title">${title}</span>${frame.caption}`));
+  box.addEventListener('pointerdown', (e) => { e.stopPropagation(); box.classList.add('out'); setTimeout(() => box.remove(), 400); });
+  document.body.appendChild(box);
+  live.add({ cv, f: frame });
+  if (!raf) raf = requestAnimationFrame(tick);
+  introEl = box;
+  introTimer = window.setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 500); }, sec * 1000);
 }
 
 // ---- 描くための小さな道具 ----

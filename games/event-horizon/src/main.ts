@@ -15,7 +15,7 @@ import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type HorizonConfig } from './config';
 import { stages } from './stages';
-import { ruleCards } from '@engine/rules';
+import { ruleCards, introCard } from '@engine/rules';
 import { horizonRules } from './rules';
 import { HorizonSim, HZ, WORLD_W, WORLD_H, IN_PULL, IN_BURST, type HorizonInput, type HorizonEvent } from './sim';
 import { HorizonBot } from './bot';
@@ -174,6 +174,8 @@ async function main() {
     whiteHole = 0;
     goalFlash.length = 0;
     sim.stage.goals.forEach(() => goalFlash.push(0));
+    // このステージで初めて出てくる要素の図解（RULE-01c）：3面は解放（ホワイトホール）
+    { const r = horizonRules(Math.round(cfg.twist) % 2 === 1); introCard(stages[i].id === 'eh-white' ? r[2] : stages[i].id === 'eh-abyss' && Math.round(cfg.twist) % 2 === 1 ? r[3] : null, stages[i].id === 'eh-white' ? 'ホワイトホール' : '落としても、まだ間に合う'); }
     mode = 'play';
     drawStatic();
     buildShards(true);

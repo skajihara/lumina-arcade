@@ -3,7 +3,7 @@ import { type RuleFrame, phase, seg, lerp, ease, glow, ring, line, arrow, label 
 
 const GOLD = '#ffd98a', ICE = '#7ff0ff', GREY = '#8890b0';
 
-function box(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string, a = 1): void {
+export function box(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string, a = 1): void {
   g.save();
   g.globalAlpha = a;
   g.strokeStyle = color;
@@ -11,7 +11,7 @@ function box(g: CanvasRenderingContext2D, x: number, y: number, s: number, color
   g.strokeRect(x - s / 2, y - s / 2, s, s);
   g.restore();
 }
-function egg(g: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+export function egg(g: CanvasRenderingContext2D, x: number, y: number, color: string): void {
   g.save();
   g.fillStyle = color;
   g.beginPath();
@@ -19,7 +19,7 @@ function egg(g: CanvasRenderingContext2D, x: number, y: number, color: string): 
   g.fill();
   g.restore();
 }
-function nest(g: CanvasRenderingContext2D, x: number, y: number): void {
+export function nest(g: CanvasRenderingContext2D, x: number, y: number): void {
   g.save();
   g.strokeStyle = GOLD;
   g.lineWidth = 2;

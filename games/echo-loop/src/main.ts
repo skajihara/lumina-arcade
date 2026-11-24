@@ -14,7 +14,7 @@ import { lerpColor } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
-import { ruleCards } from '@engine/rules';
+import { ruleCards, introCard } from '@engine/rules';
 import { echoRules } from './rules';
 import { EchoSim, echoBias } from './sim';
 import { HZ, type SimEvent } from '../../nova-pinball/src/sim';
@@ -127,6 +127,8 @@ async function main() {
     attachView();
     hudApi.chain(0);
     hudApi.toast(stages[i].hint);
+    // このステージで初めて出てくる要素の図解（RULE-01c）：1面は残響、4面は共鳴
+    { const r = echoRules(cfg.loopSec); const id = stages[i].id; introCard(id === 'echo-bridge' ? r[1] : id === 'echo-twin' && cfg.resonance > 0 && r[3] ? r[3] : null, id === 'echo-bridge' ? '残響' : '共鳴'); }
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);

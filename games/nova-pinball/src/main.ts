@@ -10,7 +10,8 @@ import { Save } from '@engine/storage';
 import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type NovaConfig } from './config';
 import { stages } from './stages';
-import { ruleCards } from '@engine/rules';
+import { ruleCards, introCard } from '@engine/rules';
+import { novaIntros } from './intro';
 import { novaRules } from './rules';
 import { NovaSim, HZ } from './sim';
 import { NovaView, VIEW_H, VIEW_W, chainTier } from './view';
@@ -104,6 +105,8 @@ async function main() {
     ga.world.addChild(view.container);
     hudApi.chain(0);
     hudApi.toast(stages[i].hint);
+    // このステージで初めて出てくる要素の図解（RULE-01c）
+    { const it = novaIntros[stages[i].id]; introCard(it?.frame ?? null, it?.title); }
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);
