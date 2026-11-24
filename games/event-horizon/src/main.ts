@@ -15,6 +15,8 @@ import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type HorizonConfig } from './config';
 import { stages } from './stages';
+import { ruleCards } from '@engine/rules';
+import { horizonRules } from './rules';
 import { HorizonSim, HZ, WORLD_W, WORLD_H, IN_PULL, IN_BURST, type HorizonInput, type HorizonEvent } from './sim';
 import { HorizonBot } from './bot';
 
@@ -234,13 +236,13 @@ async function main() {
     menu.innerHTML = `
       <h1>EVENT HORIZON</h1>
       <h2>事 象 の 地 平 ク レ ー ン</h2>
-      <p>爪の代わりに、小さなブラックホール。<br>引き寄せたかけらは輪に乗って周回する。<br>
-      速く動かしすぎると、地平の内へ落ちる${Math.round(cfg.twist) % 2 === 1 ? ` — 落ちたかけらは ${cfg.holdSec} 秒だけ抱えていられる。<b style="color:#7ff0ff">解放で吐き出せ</b>（遅れると蒸発）` : 'て消える'}。<br>地平のそばでは時間が遅れる。<br>
-      星座の穴には近づけない — 輪ごと運んで<b style="color:var(--ink)">解放</b>で投げ入れろ。</p>
+      <div class="rulebox"></div>
+      <p style="font-size:13px">地平のそばでは時間が遅れる。星座の穴には近づけない — 輪ごと運んで投げ入れろ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys">マウスで動かす　<b>クリックしている間</b> 引き寄せる　<kbd>Space</kbd>／右クリック 解放<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：指の所へ動いて、着いたら離すまで引き寄せる、下の「解放」ボタン（2本指でも）</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(horizonRules(Math.round(cfg.twist) % 2 === 1)));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -273,6 +275,7 @@ async function main() {
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
       row.append(c, r, m);
+      menu.appendChild(ruleCards(horizonRules(Math.round(cfg.twist) % 2 === 1)));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
