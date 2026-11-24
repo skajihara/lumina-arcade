@@ -1,5 +1,6 @@
 /**
  * Echo Loop のステージ。盤面の書き方は Nova Pinball と同じ StageDef。
+ * 色は水色〜青緑（時間の色）で、Nova の青紫と見分けられるように（EL-10）。
  * 「1ループでは届かない広がり」：星をいくつかの群れに分けて置く。群れの中は爆風が届く（灯せば連鎖する）が、
  * 群れどうしは離れているので、別々のボール（＝別々のループの自分）が受け持つ必要がある。
  */
@@ -48,7 +49,7 @@ export const stages: EchoStage[] = [
     hint: '10秒で全部は無理。今のループで片方の岸を燃やし、次のループの自分にもう片方を任せろ',
     stars: pts([...line(2.4, 6.0, 2.4, 9.6, 3), ...line(11.4, 6.0, 11.4, 9.6, 3), ...line(5.0, 7.8, 8.8, 7.8, 3)], 0.5),
     links: [...links(0, 3), ...links(3, 3), ...links(6, 3), [1, 6], [8, 4]],
-    hue: 0.55,
+    hue: 0.47,
   },
   {
     id: 'echo-clock', ...base, outlanes: true,
@@ -57,7 +58,7 @@ export const stages: EchoStage[] = [
     stars: pts(ring(6.9, 8.4, 4.4, 12), 0.42),
     links: links(0, 12, true),
     bumpers: [{ x: 6.9, y: 8.4, r: 0.8 }],
-    hue: 0.7,
+    hue: 0.5,
   },
   {
     id: 'echo-mirror', ...base, outlanes: true,
@@ -66,7 +67,7 @@ export const stages: EchoStage[] = [
     stars: pts([...line(2.6, 4.0, 4.6, 12.0, 5), ...line(11.2, 4.0, 9.2, 12.0, 5), ...ring(6.9, 5.0, 0.9, 3)], 0.42),
     links: [...links(0, 5), ...links(5, 5), ...links(10, 3, true)],
     bumpers: [{ x: 6.9, y: 10.6, r: 0.6 }],
-    hue: 0.66,
+    hue: 0.52,
   },
   {
     id: 'echo-twin', ...base,
@@ -75,7 +76,7 @@ export const stages: EchoStage[] = [
     hint: '二つの灯は離れている。残響の軌跡を見て、まだ燃えない方を狙え',
     stars: pts([...ring(3.9, 7.0, 1.0, 3), ...ring(9.9, 7.0, 1.0, 3)], 0.55),
     links: [...links(0, 3, true), ...links(3, 3, true)],
-    hue: 0.72,
+    hue: 0.49,
   },
   {
     id: 'echo-drift', ...base, outlanes: true,
@@ -84,7 +85,7 @@ export const stages: EchoStage[] = [
     hint: '漂う星は残響の道を変える。同じループでも毎回ちがう過去になる',
     stars: pts([...ring(3.8, 6.4, 1.1, 4), ...ring(10.0, 6.4, 1.1, 4), ...line(5.2, 11.6, 8.6, 11.6, 3)], 0.5, [9]),
     links: [...links(0, 4, true), ...links(4, 4, true), ...links(8, 3)],
-    hue: 0.92,
+    hue: 0.53,
   },
   {
     id: 'echo-rain', ...base,
@@ -93,7 +94,7 @@ export const stages: EchoStage[] = [
     hint: '縦に並んだ三本の雨。上から順に灯せば下まで届く',
     stars: pts([...line(3.2, 3.6, 3.2, 11.6, 4), ...line(6.9, 2.6, 6.9, 10.6, 4), ...line(10.6, 3.6, 10.6, 11.6, 4)], 0.45),
     links: [...links(0, 4), ...links(4, 4), ...links(8, 4)],
-    hue: 0.6,
+    hue: 0.48,
   },
   {
     id: 'echo-crossing', ...base, outlanes: true,
@@ -103,7 +104,7 @@ export const stages: EchoStage[] = [
     stars: pts([...ring(4.0, 5.2, 0.9, 3), ...ring(9.8, 5.2, 0.9, 3), ...ring(4.0, 11.4, 0.9, 3), ...ring(9.8, 11.4, 0.9, 3)], 0.52),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3, true), ...links(9, 3, true)],
     bumpers: [{ x: 6.9, y: 8.3, r: 0.5 }],
-    hue: 0.8,
+    hue: 0.51,
   },
   {
     id: 'echo-scatter', ...base, outlanes: true,
@@ -115,7 +116,7 @@ export const stages: EchoStage[] = [
       ...ring(3.4, 12.0, 0.8, 3), ...ring(10.4, 12.0, 0.8, 3),
     ], 0.52).concat([{ x: 6.9, y: 8.2, r: 0.85 }]),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3, true), ...links(9, 3, true), [12, 1], [12, 4], [12, 7], [12, 10]],
-    hue: 0.58,
+    hue: 0.5,
   },
   {
     id: 'echo-triad', ...base,
@@ -124,7 +125,7 @@ export const stages: EchoStage[] = [
     hint: '三つの群れ。三人の自分で一つずつ',
     stars: pts([...ring(3.4, 10.4, 0.95, 3), ...ring(6.9, 5.6, 0.95, 3), ...ring(10.4, 10.4, 0.95, 3)], 0.5),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3, true)],
-    hue: 0.62,
+    hue: 0.52,
   },
   {
     id: 'echo-finale', ...base, outlanes: true, noKickbackStart: true,
@@ -137,6 +138,6 @@ export const stages: EchoStage[] = [
     ], 0.4),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3), ...links(9, 3, true), ...links(12, 3, true), ...links(15, 3)],
     bumpers: [{ x: 6.9, y: 10.1, r: 0.55 }],
-    hue: 0.76,
+    hue: 0.54,
   },
 ];
