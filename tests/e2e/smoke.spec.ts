@@ -84,3 +84,30 @@ test.describe('スマホの画面ボタン', () => {
     });
   }
 });
+
+test.describe('Event Horizon のタッチ', () => {
+  test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+  test('指を置くと、着くまでは引かずに動き、着いたら離すまで引き寄せる', async ({ page }) => {
+    await page.goto(pathToFileURL(resolve(playDir, 'event-horizon.html')).href + '?stage=0');
+    await waitReady(page);
+    await page.waitForTimeout(500);
+    type S = { pulling?: boolean; bh?: { x: number; y: number } };
+    const state = () => page.evaluate(() => (window as unknown as { __lumina: { state(): S } }).__lumina.state());
+    const fire = (type: string, x: number, y: number) => page.evaluate(([type, x, y]) => {
+      const c = document.querySelector('canvas#game')!;
+      const ev = new PointerEvent(type as string, { pointerType: 'touch', clientX: x as number, clientY: y as number, bubbles: true, button: 0, isPrimary: true });
+      (type === 'pointerdown' ? c : window).dispatchEvent(ev);
+    }, [type, x, y] as const);
+    const s0 = await state();
+    await fire('pointerdown', 740, 330);
+    await page.waitForTimeout(60);
+    const s1 = await state();
+    expect(s1.pulling).toBe(false); // 遠いので、まだ引かない
+    await expect.poll(async () => (await state()).pulling, { timeout: 5000 }).toBe(true);
+    const s2 = await state();
+    await page.screenshot({ path: resolve(shots, 'event-horizon-phone-landscape.png') });
+    expect(Math.hypot(s2.bh!.x - s0.bh!.x, s2.bh!.y - s0.bh!.y)).toBeGreaterThan(0.5);
+    await fire('pointerup', 740, 330);
+    await expect.poll(async () => (await state()).pulling).toBe(false);
+  });
+});
