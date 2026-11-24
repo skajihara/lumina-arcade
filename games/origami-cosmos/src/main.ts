@@ -14,6 +14,8 @@ import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type OrigamiConfig } from './config';
 import { stages } from './stages';
+import { ruleCards } from '@engine/rules';
+import { origamiRules } from './rules';
 import { OrigamiSim, foldCenter, type Fold } from './sim';
 import { solve, type Move } from './solver';
 
@@ -214,13 +216,12 @@ async function main() {
     menu.innerHTML = `
       <h1>ORIGAMI COSMOS</h1>
       <h2>折 紙 宇 宙</h2>
-      <p>夜空は一枚の紙。折り線で折ると、遠い星どうしが重なり合う。<br>
-      重ねたまま点火すれば、爆風は折り目を越えて燃え広がる。<br>
-      点火すると紙は開く — 燃えた星は消えたまま。<br>少ない点火で、全部の星を燃やせ。</p>
+      <div class="rulebox"></div>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys">線の片側を<b>クリック</b>（または紙を線の向こうへ<b>ドラッグ</b>）で折る　星を<b>クリック</b>で点火　<kbd>Z</kbd>／右クリック 1つ戻す<br>
       <kbd>H</kbd> ヒント　<kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：タップで折る・点火、下のボタンで戻す／ヒント</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(origamiRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -252,6 +253,7 @@ async function main() {
       const m = el('button', { class: 'btn' }, '問題を選ぶ');
       m.onclick = showTitle;
       row.append(c, r, m);
+      menu.appendChild(ruleCards(origamiRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();

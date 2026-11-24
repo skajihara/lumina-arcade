@@ -14,6 +14,8 @@ import { skyTexture, makeStarfield } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
+import { ruleCards } from '@engine/rules';
+import { sandRules } from './rules';
 import { SandSim, W, H, SAND, LINE, WALL, COLORS, type SandEvent } from './sim';
 
 const CELL = 5;
@@ -164,13 +166,12 @@ async function main() {
     menu.innerHTML = `
       <h1>STARSAND</h1>
       <h2>星 砂</h2>
-      <p>夜空から、光る砂が降ってくる。<br>
-      指でなぞった線が砂の道になる。星座の器へ導いて満たせ。<br>
-      違う色の砂が触れ合うと、混ざって新しい光になる。満ちた器は花火になって弾ける。</p>
+      <div class="rulebox"></div>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><b>ドラッグ</b>で線を引く　<b>右ドラッグ</b>で消す　<kbd>Z</kbd> 最後の線を消す<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：なぞって線を引く、下の「消しゴム」で消す側に切り替え</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(sandRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -202,6 +203,7 @@ async function main() {
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
       row.append(c, r, m);
+      menu.appendChild(ruleCards(sandRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
