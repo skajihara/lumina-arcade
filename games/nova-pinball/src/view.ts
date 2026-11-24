@@ -240,6 +240,27 @@ export class NovaView {
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [80, 300], life: [0.3, 0.7], size: [0.05, 0.14], color: 0x7ff0ff });
         this.hud.toast('キックバック！');
         break;
+      case 'item': {
+        // アイテム（NP-11）
+        const x = e.x * SCALE, y = e.y * SCALE;
+        if (e.kind === 'split') {
+          synth.arp([0, 4, 7, 11, 14], 0.04, 0.1);
+          this.particles.emit(x, y, { count: 50, speed: [80, 360], life: [0.4, 1], size: [0.05, 0.16], color: [0xffe1a8, 0xffffff] });
+          this.hud.toast('分裂！ ボールが2つに');
+        } else if (e.kind === 'hole') {
+          synth.tone(70, 1.4, { type: 'sine', vol: 0.3, slideTo: 35, wet: 0.5 });
+          synth.noise(1.2, { vol: 0.15, from: 300, to: 2400, q: 4 });
+          this.juice.shake(0.2 * this.cfg.shake);
+          this.particles.emit(x, y, { count: 60, speed: [200, 420], life: [0.4, 0.9], size: [0.05, 0.14], color: [0xc9a3ff, 0x7ff0ff], drag: 3 });
+          this.hud.toast('ブラックホール — 3秒、すべてを引き寄せる');
+        } else {
+          synth.tone(1200, 0.35, { type: 'sine', vol: 0.12, slideTo: 300 });
+          synth.tone(300, 0.35, { type: 'sine', vol: 0.12, slideTo: 1200 });
+          this.particles.emit(x, y, { count: 30, speed: [60, 240], life: [0.3, 0.7], size: [0.05, 0.14], color: 0x7ff0ff });
+          if (e.tx !== undefined && e.ty !== undefined) this.particles.emit(e.tx * SCALE, e.ty * SCALE, { count: 40, speed: [80, 320], life: [0.3, 0.8], size: [0.05, 0.16], color: [0x7ff0ff, 0xffffff] });
+        }
+        break;
+      }
       case 'wave':
         this.buildStars();
         this.linksDirty = true;
@@ -650,6 +671,32 @@ export class NovaView {
           const a0 = age * 5 + (k * Math.PI * 2) / 3, rr = R * 0.32;
           g.moveTo(cx + Math.cos(a0) * rr, cy + Math.sin(a0) * rr).arc(cx, cy, rr, a0, a0 + 0.9).stroke({ width: 2.5, color: 0xe6d6ff, alpha: fade * 0.6 });
         }
+      }
+    }
+    // アイテム（NP-11）：分裂＝金の二つの粒が回る、ブラックホール＝黒い円盤と回る降着円盤、ワームホール＝渦と出口への点線
+    for (const it of sim.items) {
+      const ready = sim.tick >= it.readyAt;
+      const x = it.x * SCALE, y = it.y * SCALE, R = 0.55 * SCALE;
+      const a = ready ? 1 : 0.25;
+      if (it.kind === 'split') {
+        g.circle(x, y, R + 4 * Math.sin(this.t * 4)).fill({ color: 0xffe1a8, alpha: 0.12 * a }).stroke({ width: 1.5, color: 0xffe1a8, alpha: 0.7 * a });
+        for (const k of [0, Math.PI]) g.circle(x + Math.cos(this.t * 3 + k) * R * 0.5, y + Math.sin(this.t * 3 + k) * R * 0.5, 4).fill({ color: 0xffffff, alpha: a });
+      } else if (it.kind === 'hole') {
+        g.circle(x, y, R * 1.3).fill({ color: 0xc9a3ff, alpha: 0.1 * a });
+        for (let k = 0; k < 3; k++) {
+          const a0 = -this.t * 2.5 + (k * Math.PI * 2) / 3;
+          g.moveTo(x + Math.cos(a0) * R, y + Math.sin(a0) * R * 0.5).arc(x, y, R, a0, a0 + 1.4).stroke({ width: 2, color: 0xe6d6ff, alpha: 0.6 * a });
+        }
+        g.circle(x, y, R * 0.55).fill({ color: 0x000000, alpha: 0.95 }).stroke({ width: 1.5, color: 0xc9a3ff, alpha: a });
+      } else if (it.kind === 'warp' && it.to) {
+        const tx = it.to.x * SCALE, ty = it.to.y * SCALE;
+        for (let k = 0; k < 3; k++) {
+          const rr = R * (1 - ((this.t * 0.8 + k / 3) % 1));
+          g.circle(x, y, rr).stroke({ width: 1.5, color: 0x7ff0ff, alpha: 0.7 * a * (rr / R) });
+        }
+        g.circle(tx, ty, R * 0.7).stroke({ width: 1.5, color: 0x7ff0ff, alpha: 0.5 * a });
+        const n = 14;
+        for (let k = 1; k < n; k++) g.circle(x + ((tx - x) * k) / n, y + ((ty - y) * k) / n, 1.8).fill({ color: 0x7ff0ff, alpha: 0.4 * a });
       }
     }
     // キックバックの灯り（アウトレーンの上向き矢印）

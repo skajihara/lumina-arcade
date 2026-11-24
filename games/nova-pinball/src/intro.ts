@@ -88,11 +88,55 @@ const endless: RuleFrame = {
   },
 };
 
+const split: RuleFrame = {
+  caption: '金の粒（分裂）に触れると、ボールが2つに分かれる。しばらくすると、また現れる',
+  draw: (g, t) => {
+    const p = phase(t, 2.6);
+    ring(g, 68, 50, 9, GOLD, p < 0.4 ? 1 : 0.3, 1.5);
+    if (p < 0.4) glow(g, lerp(20, 68, seg(p, 0, 0.4)), lerp(86, 50, seg(p, 0, 0.4)), 3.5, '#ffffff');
+    else {
+      const k = ease(seg(p, 0.4, 1));
+      glow(g, 68 - k * 40, 50 - k * 34, 3.5, '#ffffff');
+      glow(g, 68 + k * 40, 50 - k * 34, 3.5, '#ffffff');
+      if (p < 0.6) glow(g, 68, 50, 12 * (1 - seg(p, 0.4, 0.6)), GOLD);
+    }
+  },
+};
+
+const hole: RuleFrame = {
+  caption: 'ブラックホールに触れると、3秒のあいだ、まわりのボールを強く引き寄せる',
+  draw: (g, t) => {
+    const p = phase(t, 3);
+    const on = p > 0.3;
+    glow(g, 68, 48, on ? 16 : 8, '#c9a3ff', on ? 0.6 : 0.3);
+    g.save(); g.fillStyle = '#000'; g.beginPath(); g.arc(68, 48, 6, 0, Math.PI * 2); g.fill(); g.restore();
+    if (on) for (let i = 0; i < 3; i++) { const r = 30 - ((t * 30 + i * 10) % 30); ring(g, 68, 48, r + 6, '#e6d6ff', 0.4 * (r / 30), 1); }
+    const k = seg(p, 0.3, 1);
+    const a = -Math.PI * 0.2 + k * Math.PI * 2.2, r = lerp(40, 9, ease(k));
+    glow(g, on ? 68 + Math.cos(a) * r : 20, on ? 48 + Math.sin(a) * r * 0.8 : 80, 3.2, '#ffffff');
+  },
+};
+
+const warp: RuleFrame = {
+  caption: 'ワームホールに入ると、点線の先の出口から同じ速さで飛び出す',
+  draw: (g, t) => {
+    const p = phase(t, 2.6);
+    for (let i = 0; i < 3; i++) { const r = 10 * (1 - ((t * 0.8 + i / 3) % 1)); ring(g, 100, 70, r, CYAN, 0.7 * (r / 10), 1.5); }
+    ring(g, 28, 22, 7, CYAN, 0.6, 1.5);
+    line(g, 100, 70, 28, 22, CYAN, 0.35, 1, [2, 4]);
+    if (p < 0.45) glow(g, lerp(60, 100, seg(p, 0, 0.45)), lerp(90, 70, seg(p, 0, 0.45)), 3.2, '#ffffff');
+    else { const k = seg(p, 0.45, 1); glow(g, 28 + k * 30, 22 + k * 20, 3.2, '#ffffff'); if (p < 0.6) glow(g, 28, 22, 10, CYAN, 1 - seg(p, 0.45, 0.6)); }
+  },
+};
+
 export const novaIntros: Record<string, { title: string; frame: RuleFrame }> = {
   arc: { title: '星の引力', frame: gravity },
   corona: { title: 'ロールオーバー', frame: rollover },
   spiral: { title: '線を走る火', frame: novaRules[2] },
   drift: { title: '漂う星', frame: loose },
+  gemini: { title: '分裂', frame: split },
+  scorpius: { title: 'ブラックホール', frame: hole },
+  orion: { title: 'ワームホール', frame: warp },
   cygnus: { title: 'アウトレーンとキックバック', frame: kickback },
   dipper: { title: 'キックバックが消えている', frame: kickback },
   endless: { title: 'エンドレス', frame: endless },
