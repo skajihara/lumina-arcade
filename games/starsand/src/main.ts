@@ -303,6 +303,7 @@ async function main() {
     if (restart && mode === 'play' && key !== '*') toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('starsand');
   ga.setBloom(cfg.bloom);
 
   /** 自動プレイ：解の線を1本ずつ、少し間を置いて引く（検証と同じ線になるよう、1本はまとめて引く） */

@@ -403,6 +403,7 @@ async function main() {
     if (restart && mode === 'play' && key !== '*') toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('origami');
   ga.setBloom(cfg.bloom);
 
   // ---- 自動プレイ：ソルバーの手順を、間を置いて再生 ----

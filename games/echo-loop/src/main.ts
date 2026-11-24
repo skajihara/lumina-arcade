@@ -247,6 +247,7 @@ async function main() {
     if (restart && mode === 'play' && key !== '*') hudApi.toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('echo');
   ga.setBloom(cfg.bloom);
 
   /** 全員そろって燃やしきった瞬間：残響ひとりひとりから光が弾け、和音が人数分だけ積み上がる */

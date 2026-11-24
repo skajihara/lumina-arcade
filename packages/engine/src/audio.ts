@@ -2,6 +2,8 @@
  * 素材なしの音。WebAudio でその場で合成する。
  * 連鎖の音は五音音階（ペンタトニック）で上がっていくので、連鎖が伸びるほど旋律になる。
  */
+import { Music, STYLES } from './music';
+
 const PENTA = [0, 2, 4, 7, 9];
 
 export function pentatonicFreq(step: number, root = 261.63): number {
@@ -57,6 +59,9 @@ export class Synth {
   private ambientRoot = 65.41;
   private charging: { o: OscillatorNode; g: GainNode } | null = null;
   readonly harmony = new Harmony();
+  /** BGM（UI-01）。最初の操作（unlock）で鳴り始める */
+  music: Music | null = null;
+  private musicStyle = 'sky';
   volume = 0.7;
   muted = false;
 
@@ -93,6 +98,26 @@ export class Synth {
     this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const nd = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+    this.music = new Music(ctx, this.master, this.reverbSend, this.harmony);
+    this.music.setStyle(STYLES[this.musicStyle] ?? STYLES.sky);
+    this.music.start();
+  }
+
+  /** BGM のスタイル（作品ごと：nova / echo / stopped / horizon / origami / starsand / sky） */
+  setMusicStyle(name: string): void {
+    this.musicStyle = name;
+    this.music?.setStyle(STYLES[name] ?? STYLES.sky);
+  }
+
+  /** BGM の盛り上がり 0..1（アルペジオの密度と明るさ） */
+  setMusicIntensity(x: number): void {
+    if (this.music) this.music.intensity = Math.max(0, Math.min(1, x));
+  }
+
+  /** BGM をこもらせる（時間を止めている間など） */
+  muffleMusic(on: boolean): void {
+    this.music?.muffle(on);
   }
 
   setVolume(v: number): void {
@@ -257,6 +282,8 @@ export class Synth {
   /** ゆっくり揺れる環境音（ドローン） */
   startAmbient(rootHz = 65.41): void {
     const ctx = this.ctx;
+    // BGM があれば、環境音の代わりに BGM（止まっていたら鳴らし直す）
+    if (this.music) { if (!this.music.playing) this.music.start(); return; }
     if (!ctx || this.ambient) return;
     const g = ctx.createGain();
     g.gain.value = 0;

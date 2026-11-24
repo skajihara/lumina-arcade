@@ -116,6 +116,7 @@ async function main() {
     sim = new StopSim(stages[i], cfg);
     crackToldAt = -99;
     stageTime = 0;
+    synth.muffleMusic(false);
     pending = [];
     drag = null;
     refillFx = [];
@@ -273,6 +274,7 @@ async function main() {
     if (restart && mode === 'play' && key !== '*') toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('stopped');
   ga.setBloom(cfg.bloom);
 
   /**
@@ -336,10 +338,12 @@ async function main() {
     for (const e of sim.events) {
       switch (e.t) {
         case 'stop':
+          synth.muffleMusic(true);
           synth.tone(880, 0.5, { type: 'sine', vol: 0.12, slideTo: 220 });
           synth.chargeTone(-1);
           break;
         case 'resume': {
+          synth.muffleMusic(false);
           // 激しく弾く：溜めていた力の合計（storedForce、1回いっぱい ≒ 21）で、光・揺れ・音・止まりの長さが変わる
           const I = Math.min(3, storedForce / 21);
           juice.doFlash(0.45 + 0.25 * Math.min(1, I), 0xfff3d6);

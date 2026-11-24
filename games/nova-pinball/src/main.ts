@@ -298,11 +298,13 @@ async function main() {
     if (restart && mode === 'play' && key !== '*') hudApi.toast('↻ の項目は R でやり直すと反映されます');
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('nova');
   ga.setBloom(cfg.bloom);
 
   // スマホ・タブレット：キーボードの代わりの画面ボタン
   const tbar = touchButtons([{ label: '‖', onPress: () => togglePause() }], 'bottom');
 
+  let musicHeat = 0;
   const loop = new FixedLoop({
     update: () => {
       const mask = input.sample();
@@ -344,6 +346,12 @@ async function main() {
       // 発射の溜め音
       if (mode === 'play' && sim && sim.launchCharge > 0) synth.chargeTone(sim.launchCharge);
       else synth.chargeTone(-1);
+      // BGM の盛り上がり：連鎖が続くほど、アルペジオが密に明るく。残りの星が少ないほど少し上がる
+      if (sim && mode === 'play') {
+        const left = sim.starsAlive() / Math.max(1, sim.stars.length);
+        musicHeat = Math.max(musicHeat * Math.pow(0.6, realDt), Math.min(1, sim.chainCount * 0.12));
+        synth.setMusicIntensity(0.3 + 0.25 * (1 - left) + 0.45 * musicHeat);
+      }
       if (sim) {
         const st = stages[stageIndex];
         tl.innerHTML = `<div>${st.endless ? `エンドレス　WAVE ${sim.wave}` : `${stageIndex + 1}. ${st.name}`}</div><div class="big">${sim.score.toLocaleString()}</div>`;
