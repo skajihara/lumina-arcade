@@ -17,6 +17,10 @@ export interface StopConfig {
   /** パチンコ式：いっぱいに引いた時の距離（m）と、その時の力（1回で溜まる力の何倍か） */
   slingPull: number;
   slingMax: number;
+  /** パチンコ式：引く長さに対する強さの曲線（1 で比例、小さいほど少し引くだけで強い） */
+  slingCurve: number;
+  /** 巣のやわらかさ：巣の中では、割れる衝撃がこの倍になる */
+  nestSoft: number;
   /** 卵が割れる衝撃の強さ（速度の差） */
   eggBreak: number;
   /** 箱が壊れる衝撃の強さ */
@@ -47,7 +51,9 @@ export const schema: Schema<StopConfig> = {
   maxForce: { label: '1つの物体の力の上限', min: 2, max: 60, step: 1, folder: '時間停止' },
   control: { label: '操作（0 引っぱって放す／1 ドラッグの向き）', min: 0, max: 1, step: 1, folder: '時間停止' },
   slingPull: { label: 'いっぱいに引く距離', min: 1, max: 8, step: 0.1, folder: '時間停止' },
-  slingMax: { label: 'いっぱいに引いた時の力（倍）', min: 0.5, max: 4, step: 0.1, folder: '時間停止' },
+  slingMax: { label: 'いっぱいに引いた時の力（倍）', min: 0.5, max: 8, step: 0.1, folder: '時間停止' },
+  slingCurve: { label: '引く長さと強さの曲線（1比例・小さいほど少しで強い）', min: 0.3, max: 1.5, step: 0.05, folder: '時間停止' },
+  nestSoft: { label: '巣のやわらかさ（割れる衝撃の倍）', min: 1, max: 5, step: 0.1, folder: '物体' },
   eggBreak: { label: '卵が割れる衝撃', min: 2, max: 40, step: 0.5, folder: '物体' },
   crateBreak: { label: '箱が壊れる衝撃', min: 2, max: 40, step: 0.5, folder: '物体' },
   bombRadius: { label: '爆弾の半径', min: 1, max: 8, step: 0.1, folder: '物体' },
@@ -68,12 +74,14 @@ const normal: StopConfig = {
   stopGauge: 8,
   maxForces: 4,
   forcePerHit: 6,
-  maxForce: 24,
+  maxForce: 40,
   control: 0,
-  slingPull: 3,
-  slingMax: 1.5,
-  eggBreak: 11,
-  crateBreak: 9,
+  slingPull: 2.5,
+  slingMax: 3.5,
+  slingCurve: 0.55,
+  nestSoft: 2.5,
+  eggBreak: 14,
+  crateBreak: 12,
   bombRadius: 3.2,
   bombForce: 22,
   nestGrip: 3,
@@ -88,9 +96,9 @@ const normal: StopConfig = {
 };
 
 export const presets: Record<string, StopConfig> = {
-  やさしい: { ...normal, stopGauge: 14, maxForces: 6, eggBreak: 15, predictSec: 1.6 },
+  やさしい: { ...normal, stopGauge: 14, maxForces: 6, eggBreak: 18, predictSec: 1.6 },
   ふつう: normal,
-  むずかしい: { ...normal, stopGauge: 5, maxForces: 3, eggBreak: 9, predictSec: 0.5 },
+  むずかしい: { ...normal, stopGauge: 5, maxForces: 3, eggBreak: 11, predictSec: 0.5 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';

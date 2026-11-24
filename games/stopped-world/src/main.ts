@@ -10,7 +10,7 @@ import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
-import { Rng } from '@engine/rng';
+import { Rng, fxRandom } from '@engine/rng';
 import { skyTexture, makeStarfield } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
@@ -18,7 +18,7 @@ import { stages } from './stages';
 import { ruleCards } from '@engine/rules';
 import { stoppedRules } from './rules';
 import { randomPlan, runPlan, type Plan } from './bot';
-import { StopSim, HZ, WORLD_W, WORLD_H, type Action, type Obj } from './sim';
+import { StopSim, HZ, WORLD_W, WORLD_H, slingPower, type Action, type Obj } from './sim';
 
 const SCALE = 50;
 const VIEW_W = WORLD_W * SCALE;
@@ -79,6 +79,14 @@ async function main() {
   let pending: Action[] = [];
   let drag: { id: number; x: number; y: number; ex: number; ey: number } | null = null;
   let flashColor = 0;
+  /** 止めている間に溜めた力の合計（解放の演出の強さ） */
+  let storedForce = 0;
+  /** 解放の衝撃波の輪 */
+  const shock: { x: number; y: number; age: number; r: number }[] = [];
+  /** 速く飛ぶ物の軌跡 */
+  const trails = new Map<number, { x: number; y: number }[]>();
+  /** 引いている強さの段（音を鳴らす区切り） */
+  let pullStep = 0;
   let t = 0;
   /** ひねり1：壊した所から時間停止ゲージへ飛んでいく「時の粒」 */
   let refillFx: { x: number; y: number; age: number; amount: number }[] = [];
@@ -328,13 +336,30 @@ async function main() {
           synth.tone(880, 0.5, { type: 'sine', vol: 0.12, slideTo: 220 });
           synth.chargeTone(-1);
           break;
-        case 'resume':
-          juice.doFlash(0.45, 0xfff3d6);
-          juice.shake((0.1 + e.forces * 0.06) * cfg.shake);
-          synth.whoosh(0.8 + e.forces * 0.2);
+        case 'resume': {
+          // 激しく弾く：溜めていた力の合計（storedForce、1回いっぱい ≒ 21）で、光・揺れ・音・止まりの長さが変わる
+          const I = Math.min(3, storedForce / 21);
+          juice.doFlash(0.45 + 0.25 * Math.min(1, I), 0xfff3d6);
+          juice.shake((0.1 + e.forces * 0.06 + 0.35 * I) * cfg.shake);
+          if (I > 0.5) juice.hitstop(0.03 + 0.03 * Math.min(1, I));
+          synth.whoosh(0.8 + e.forces * 0.2 + I * 0.6);
+          if (I > 0.7) synth.boom(0.5 + 0.3 * Math.min(1, I), 1);
           synth.arp([0, 2, 4, 6].slice(0, 1 + Math.min(3, e.forces)), 0.04, 0.09);
           flashColor = 1;
+          // 飛び出す物から、進む向きと逆へ光の粒が吹き出す（衝撃波）
+          for (const o of sim.objs) {
+            if (!o.alive || o.def.fixed) continue;
+            const v = o.body.getLinearVelocity();
+            const sp = Math.hypot(v.x, v.y);
+            if (sp < 4) continue;
+            const p = o.body.getPosition();
+            const ang = Math.atan2(-v.y, -v.x);
+            particles.emit(p.x * SCALE, p.y * SCALE, { count: Math.round(12 + sp * 2), speed: [60, 120 + sp * 18], life: [0.25, 0.7], size: [0.05, 0.16], color: [0xffd27f, 0xffffff], angle: ang, spread: 1.2, drag: 2 });
+            shock.push({ x: p.x * SCALE, y: p.y * SCALE, age: 0, r: 30 + sp * 4 });
+          }
+          storedForce = 0;
           break;
+        }
         case 'hit':
           synth.hbell(3 + (sim.forcesThisStop % 5), 0.09);
           particles.emit(e.x * SCALE, e.y * SCALE, { count: 10, speed: [40, 140], life: [0.3, 0.6], size: [0.05, 0.12], color: 0xffd27f });
@@ -398,11 +423,47 @@ async function main() {
     // 物体
     const g = objG;
     g.clear();
+    // 溜めた力の合計（解放の瞬間の演出に使う）
+    if (stopped) storedForce = sim.objs.reduce((acc, o) => acc + (o.alive ? Math.hypot(o.force.x, o.force.y) + (o.armed ? 10 : 0) : 0), 0);
+    // 引いている強さ：引くほど高い音（4段）
+    const pullK = drag && Math.round(cfg.control) === 0 ? Math.min(1, Math.hypot(drag.ex - drag.x, drag.ey - drag.y) / cfg.slingPull) : 0;
+    const step = Math.floor(pullK * 4.999);
+    if (drag && step !== pullStep) {
+      if (step > pullStep) synth.tone(330 * Math.pow(1.26, step), 0.12, { type: 'triangle', vol: 0.05 + step * 0.015 });
+      pullStep = step;
+    }
+    if (!drag) pullStep = 0;
+    // 解放の衝撃波
+    for (let i = shock.length - 1; i >= 0; i--) {
+      const s0 = shock[i];
+      s0.age += dt;
+      const k = s0.age / 0.45;
+      if (k >= 1) { shock.splice(i, 1); continue; }
+      g.circle(s0.x, s0.y, 10 + s0.r * Math.sqrt(k)).stroke({ width: 6 * (1 - k), color: 0xfff3d6, alpha: 0.8 * (1 - k) });
+    }
+    // 速く飛ぶ物の光の尾
+    for (const o of sim.objs) {
+      if (!o.alive || o.def.fixed) { trails.delete(o.id); continue; }
+      const p = o.body.getPosition(), v = o.body.getLinearVelocity();
+      const tr = trails.get(o.id) ?? [];
+      if (!stopped) {
+        if (Math.hypot(v.x, v.y) > 6) tr.push({ x: p.x * SCALE, y: p.y * SCALE });
+        else tr.shift();
+        if (tr.length > 14) tr.shift();
+      }
+      trails.set(o.id, tr);
+      for (let j = 1; j < tr.length; j++) {
+        const f = j / tr.length;
+        g.moveTo(tr[j - 1].x, tr[j - 1].y).lineTo(tr[j].x, tr[j].y).stroke({ width: 2 + 8 * f, color: o.def.kind === 'egg' ? 0xffd27f : 0xbfe8ff, alpha: 0.35 * f, cap: 'round' });
+      }
+    }
     for (const o of sim.objs) {
       if (!o.alive) continue;
       const p = o.body.getPosition();
       const a = o.body.getAngle();
-      const x = p.x * SCALE, y = p.y * SCALE;
+      // 引いている物は、引くほど震える（力が溜まっていく手触り）
+      const jit = drag && drag.id === o.id ? pullK * pullK * 3.5 : 0;
+      const x = p.x * SCALE + (jit ? fxRandom(-jit, jit) : 0), y = p.y * SCALE + (jit ? fxRandom(-jit, jit) : 0);
       const d = o.def;
       if (d.kind === 'egg') {
         g.ellipse(x, y, d.w * SCALE * 1.25, d.w * SCALE * 1.35).fill({ color: 0xffd27f, alpha: 0.15 });
@@ -510,7 +571,7 @@ async function main() {
     if (!o.alive) return [];
     const p = o.body.getPosition();
     if (Math.round(cfg.control) === 1) return [{ t: 'hit', id: drag.id, dx, dy, px: drag.x - p.x, py: drag.y - p.y }];
-    const power = (Math.min(len, cfg.slingPull) / cfg.slingPull) * cfg.slingMax;
+    const power = slingPower(len, cfg);
     return [{ t: 'hit', id: drag.id, dx: -dx, dy: -dy, px: 0, py: 0, power }];
   };
   const drawPrediction = (g: Graphics, s: StopSim) => {
@@ -565,7 +626,7 @@ async function main() {
     g.circle(hx, hy, 6).fill({ color: 0xffffff, alpha: 0.85 });
     if (len <= 0.25) return;
     // 飛ぶ向き（逆向き）。長さは溜まる力に比例（置いた力の矢印と同じ縮尺）
-    const f = cfg.forcePerHit * k * cfg.slingMax * 0.14 * SCALE;
+    const f = cfg.forcePerHit * slingPower(len, cfg) * 0.14 * SCALE;
     const ux = -dx / (Math.hypot(dx, dy) || 1), uy = -dy / (Math.hypot(dx, dy) || 1);
     // 物体の光に隠れないよう、縁から出す
     const r0 = 0.45 * SCALE;
