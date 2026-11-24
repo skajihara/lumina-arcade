@@ -134,6 +134,8 @@ export class SandSim {
           const x = cx + i, y = cy + j;
           if (x < 0 || x >= W || y < 0 || y >= H) continue;
           if (this.ink <= 0) return out;
+          // 流れている砂の上に引いた時は、砂を上の空いたマスへ押しのけて線を通す（隙間を残さない）
+          if (this.grid[y * W + x] >= SAND) this.displace(x, y);
           if (this.grid[y * W + x] !== EMPTY) continue;
           this.grid[y * W + x] = LINE;
           this.ink--;
@@ -142,6 +144,46 @@ export class SandSim {
       }
     }
     return out;
+  }
+
+  /**
+   * (x,y) の近く（半径 r）にある線・壁のマスのうち一番近いもの。exclude のマス（今の一筆）は除く。
+   * すでに隣り合っていれば（距離1.5以下）null。線の書き始め・書き終わりを近くの線や壁へつなぐのに使う
+   */
+  nearestSolid(x: number, y: number, r: number, exclude?: Set<number>): { x: number; y: number } | null {
+    let best: { x: number; y: number } | null = null, bd = Infinity;
+    const R = Math.ceil(r);
+    for (let j = -R; j <= R; j++) {
+      for (let i = -R; i <= R; i++) {
+        const d = Math.hypot(i, j);
+        if (d > r || d >= bd) continue;
+        const xx = x + i, yy = y + j;
+        if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue;
+        const v = this.grid[yy * W + xx];
+        if (v !== LINE && v !== WALL) continue;
+        if (exclude?.has(yy * W + xx)) continue;
+        best = { x: xx, y: yy };
+        bd = d;
+      }
+    }
+    return best && bd > 1.5 ? best : null;
+  }
+
+  /** (x,y) の砂を、同じ列の上（なければ斜め上）の一番近い空きマスへ移す。どこも空いていなければ消す */
+  private displace(x: number, y: number): void {
+    const v = this.grid[y * W + x];
+    for (let k = 1; k <= 12; k++) {
+      for (const dx of [0, -1, 1]) {
+        const xx = x + dx, yy = y - k;
+        if (xx < 0 || xx >= W || yy < 0) continue;
+        if (this.grid[yy * W + xx] === EMPTY) {
+          this.grid[yy * W + xx] = v;
+          this.grid[y * W + x] = EMPTY;
+          return;
+        }
+      }
+    }
+    this.grid[y * W + x] = EMPTY;
   }
 
   /** マスの番号で線を消す（インクが戻る） */

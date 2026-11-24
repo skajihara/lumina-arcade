@@ -229,7 +229,11 @@ async function main() {
     const c = toCell(e.clientX, e.clientY);
     drawing = { erase: e.button === 2 || eraseMode, last: c };
     if (drawing.erase) sim.erase(c.x, c.y);
-    else { strokes.push([]); drawSeg(c, c); }
+    else {
+      strokes.push([]);
+      drawSeg(c, c);
+      snapEnd(c);
+    }
   });
   window.addEventListener('pointermove', (e) => {
     if (!drawing || !sim) return;
@@ -238,7 +242,17 @@ async function main() {
     else drawSeg(drawing.last, c);
     drawing.last = c;
   });
-  window.addEventListener('pointerup', () => { drawing = null; });
+  // 書き始め・書き終わりのすぐ近く（隙間2マスまで）に線や壁があれば、つないで隙間をなくす（見えない隙間から砂が漏れないように）
+  const snapEnd = (c: { x: number; y: number }) => {
+    if (!sim || !strokes.length) return;
+    const own = new Set(strokes[strokes.length - 1]);
+    const t = sim.nearestSolid(c.x, c.y, 3, own);
+    if (t) drawSeg(t, c);
+  };
+  window.addEventListener('pointerup', () => {
+    if (drawing && !drawing.erase && sim && mode === 'play') snapEnd(drawing.last);
+    drawing = null;
+  });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   let eraseMode = false;
