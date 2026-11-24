@@ -10,6 +10,8 @@ import { Save } from '@engine/storage';
 import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type NovaConfig } from './config';
 import { stages } from './stages';
+import { ruleCards } from '@engine/rules';
+import { novaRules } from './rules';
 import { NovaSim, HZ } from './sim';
 import { NovaView, VIEW_H, VIEW_W, chainTier } from './view';
 import { NovaBot } from './bot';
@@ -226,12 +228,12 @@ async function main() {
     menu.innerHTML = `
       <h1>NOVA PINBALL</h1>
       <h2>星 爆 ピ ン ボ ー ル</h2>
-      <p>星に当てるたびにチャージが溜まり、満タンで爆発。爆発は周りの星をチャージする。<br>
-      一度当てた星は灯ったまま。火は星座の線を伝って灯った星へ走る。全部灯してから、一気に点火せよ。</p>
+      <div class="rulebox"></div>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：画面の左下／右下でフリッパー、上半分で発射</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(novaRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -270,6 +272,7 @@ async function main() {
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
       row.append(c, r, m);
+      menu.appendChild(ruleCards(novaRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
