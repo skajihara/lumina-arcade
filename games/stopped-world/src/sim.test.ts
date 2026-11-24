@@ -7,15 +7,15 @@ const cfg = () => ({ ...presets[DEFAULT_PRESET] });
 
 const nestStage: StageDef = {
   id: 't-nest', name: 't', hint: '', goal: 'nest',
-  nest: { x: 15, y: 11.3, w: 3, h: 1.6 },
-  objects: [{ kind: 'egg', x: 4, y: 11.5, w: 0.45 }],
+  nest: { x: 15, y: 17.3, w: 3, h: 1.6 },
+  objects: [{ kind: 'egg', x: 4, y: 17.5, w: 0.45 }],
 };
 const crateStage: StageDef = {
   id: 't-crate', name: 't', hint: '', goal: 'destroy',
   objects: [
-    { kind: 'bomb', x: 8, y: 11.5, w: 0.45 },
-    { kind: 'crate', x: 9.4, y: 11.4, w: 1.2 },
-    { kind: 'crate', x: 6.6, y: 11.4, w: 1.2 },
+    { kind: 'bomb', x: 8, y: 17.5, w: 0.45 },
+    { kind: 'crate', x: 9.4, y: 17.4, w: 1.2 },
+    { kind: 'crate', x: 6.6, y: 17.4, w: 1.2 },
   ],
 };
 
@@ -69,7 +69,7 @@ describe('StopSim', () => {
   });
 
   it('卵が強めにぶつかると「ひび」の知らせ（割れはしない）', () => {
-    const st: StageDef = { ...nestStage, objects: [{ kind: 'egg', x: 4, y: 9.3, w: 0.45 }] };
+    const st: StageDef = { ...nestStage, objects: [{ kind: 'egg', x: 4, y: 15.3, w: 0.45 }] };
     const { sim, ev } = run(st, {}, 240);
     expect(ev).toContain('crack');
     expect(ev).not.toContain('break');
@@ -183,7 +183,7 @@ describe('SW-10 強い力', () => {
   });
   it('巣はやわらかい：巣の外なら割れる速さで落ちても、巣の中なら割れない', () => {
     const drop = (x: number) => {
-      const st: StageDef = { ...nestStage, nest: { x: 15, y: 11, w: 3, h: 2.4 }, objects: [{ kind: 'egg', x, y: 11.4, w: 0.45 }] };
+      const st: StageDef = { ...nestStage, nest: { x: 15, y: 17, w: 3, h: 2.4 }, objects: [{ kind: 'egg', x, y: 17.4, w: 0.45 }] };
       const sim = new StopSim(st, cfg());
       sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: 1, power: 2.8 }]); // 真下へ強く
       sim.step([{ t: 'resume' }]);
@@ -197,14 +197,14 @@ describe('SW-10 強い力', () => {
 
 describe('SW-11 卵の傷み', () => {
   it('割れる速さ未満でも、強めに3回ぶつけると割れる（ひび1→2→割れる）', () => {
-    const st: StageDef = { ...nestStage, nest: { x: 18, y: 11, w: 1, h: 1 }, objects: [{ kind: 'egg', x: 5, y: 11.4, w: 0.45 }] };
+    const st: StageDef = { ...nestStage, nest: { x: 18, y: 17, w: 1, h: 1 }, objects: [{ kind: 'egg', x: 5, y: 17.4, w: 0.45 }] };
     const sim = new StopSim(st, cfg());
     const c = cfg();
     const v = c.eggBreak * 0.6; // 少し落ちて、ひびが入るが1回では割れない速さ（割れる速さの7割ほど）
     const dmg: number[] = [];
     for (let k = 0; k < 3 && sim.phase === 'play'; k++) {
       // 床の少し上から、床へ向けて叩きつける
-      sim.objs[0].body.setTransform({ x: 5, y: 10.9 }, 0);
+      sim.objs[0].body.setTransform({ x: 5, y: 16.9 }, 0);
       sim.objs[0].body.setLinearVelocity({ x: 0, y: 0 });
       sim.step([{ t: 'stop' }, { t: 'hit', id: 0, dx: 0, dy: 1, power: v / c.forcePerHit }]);
       sim.step([{ t: 'resume' }]);

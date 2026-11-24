@@ -13,8 +13,8 @@ import type { StopConfig } from './config';
 
 export const HZ = 120;
 export const DT = 1 / HZ;
-export const WORLD_W = 20;
-export const WORLD_H = 12;
+export const WORLD_W = 30;
+export const WORLD_H = 18;
 
 /**
  * パチンコ式：引いた長さ（m）→ 力の倍率（forcePerHit の何倍か）。
@@ -57,6 +57,10 @@ export interface StageDef {
   objects: ObjDef[];
   /** 地面以外の固定の足場（折れ線） */
   ground?: { x: number; y: number }[][];
+  /** 時間を止められる回数（なければ無制限＝ゲージだけ） */
+  stops?: number;
+  /** 1回の停止で置ける力の数（なければ設定の maxForces） */
+  forces?: number;
 }
 
 export interface Obj {
@@ -108,6 +112,8 @@ export class StopSim {
   stopped = false;
   gauge: number;
   forcesThisStop = 0;
+  /** 時間を止めた回数 */
+  stopsUsed = 0;
   objs: Obj[] = [];
   events: StopEvent[] = [];
   /** 卵が巣の中で静かにしている時間 */
@@ -162,6 +168,22 @@ export class StopSim {
     this.hits.push({ a, b, speed });
   }
 
+  /** 1回の停止で置ける力の数（ステージの指定と設定の小さい方） */
+  get maxForces(): number {
+    const c = Math.round(this.cfg.maxForces);
+    return this.stage.forces ? Math.min(c, this.stage.forces) : c;
+  }
+
+  /** あと何回止められるか（無制限なら Infinity） */
+  get stopsLeft(): number {
+    return this.stage.stops ? this.stage.stops - this.stopsUsed : Infinity;
+  }
+
+  /** もう止められない（ゲージが尽きた、または回数を使い切った） */
+  get outOfStops(): boolean {
+    return this.gauge <= 0 || this.stopsLeft <= 0;
+  }
+
   get time(): number {
     return this.tick / HZ;
   }
@@ -190,8 +212,9 @@ export class StopSim {
 
   private apply(a: Action): void {
     if (a.t === 'stop') {
-      if (this.stopped || this.gauge <= 0) return;
+      if (this.stopped || this.gauge <= 0 || this.stopsLeft <= 0) return;
       this.stopped = true;
+      this.stopsUsed++;
       this.forcesThisStop = 0;
       this.events.push({ t: 'stop' });
     } else if (a.t === 'resume') {
@@ -200,7 +223,7 @@ export class StopSim {
       const o = this.objs[a.id];
       if (!o || !o.alive || o.def.fixed) return;
       if (!this.stopped) return; // 叩けるのは止めている間だけ
-      if (this.forcesThisStop >= Math.round(this.cfg.maxForces)) return;
+      if (this.forcesThisStop >= this.maxForces) return;
       this.forcesThisStop++;
       const len = Math.hypot(a.dx, a.dy) || 1;
       // power：パチンコ式で引いた強さ（なければ 1＝一定の力）
@@ -385,7 +408,7 @@ export class StopSim {
       } else this.nestTime = 0;
     } else if (this.objs.every((o) => o.def.kind !== 'crate' || !o.alive)) this.win();
     // ゲージが尽きて、全部止まって1.5秒たったら失敗
-    if (this.phase === 'play' && this.gauge <= 0 && this.settled()) {
+    if (this.phase === 'play' && !this.stopped && this.outOfStops && this.settled()) {
       this.stillTime += DT;
       if (this.stillTime > 1.5) this.fail('stuck');
     } else this.stillTime = 0;
@@ -406,6 +429,7 @@ export class StopSim {
     c.gauge = this.gauge;
     c.stopped = this.stopped;
     c.forcesThisStop = this.forcesThisStop;
+    c.stopsUsed = this.stopsUsed;
     for (const o of this.objs) {
       const q = c.objs[o.id];
       if (!o.alive) {

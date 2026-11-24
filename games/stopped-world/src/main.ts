@@ -21,7 +21,7 @@ import { stoppedRules } from './rules';
 import { randomPlan, runPlan, type Plan } from './bot';
 import { StopSim, HZ, WORLD_W, WORLD_H, CRACK_RATIO, slingPower, type Action, type Obj } from './sim';
 
-const SCALE = 50;
+const SCALE = 100 / 3;
 const VIEW_W = WORLD_W * SCALE;
 const VIEW_H = WORLD_H * SCALE;
 const params = new URLSearchParams(location.search);
@@ -236,7 +236,7 @@ async function main() {
   // ドラッグで力を置く（走っている時に物体を掴むと、自動で時間が止まる）
   const pick = (x: number, y: number): Obj | undefined => {
     if (!sim) return undefined;
-    let best: Obj | undefined, bd = 1.2;
+    let best: Obj | undefined, bd = 60 / SCALE; // つかめる範囲は画面で 60px（物体を小さくしても押しやすさは同じ）
     for (const o of sim.objs) {
       if (!o.alive || o.def.fixed) continue;
       const p = o.body.getPosition();
@@ -255,6 +255,10 @@ async function main() {
     const w = toWorld(e);
     const o = pick(w.x, w.y);
     if (!o) return;
+    if (!sim.stopped && sim.outOfStops) {
+      toast(sim.stopsLeft <= 0 ? 'もう時間を止められない（回数を使い切った）' : 'もう時間を止められない');
+      return;
+    }
     if (!sim.stopped) pending.push({ t: 'stop' });
     drag = { id: o.id, x: w.x, y: w.y, ex: w.x, ey: w.y };
   });
@@ -326,7 +330,7 @@ async function main() {
   const botActions = (s: StopSim): Action[] => {
     if (botSearch?.timeline) return botSearch.timeline[s.tick] ?? [];
     if (s.stopped) return s.forcesThisStop > 0 ? [{ t: 'resume' }] : [];
-    if (s.tick % 300 !== 90 || s.gauge < 0.5) return [];
+    if (s.tick % 300 !== 90 || s.gauge < 0.5 || s.stopsLeft <= 0) return [];
     const live = s.objs.filter((o) => o.alive && !o.def.fixed);
     if (!live.length) return [];
     const o = s.stage.goal === 'nest' ? live.find((x) => x.def.kind === 'egg') ?? live[0] : live[botRng.int(0, live.length - 1)];
@@ -711,7 +715,7 @@ async function main() {
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
     const barCol = gaugeGlow > 0 ? `rgb(${Math.round(127 + 128 * gaugeGlow)},240,255)` : stopped ? '#fff' : 'var(--accent)';
-    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}${stopped && pred.some((q) => q.kind === 'egg' && q.ends === 'gone') ? '<div style="color:#ff6b8a">✕ このままだと卵が割れる</div>' : ''}`;
+    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${sim.maxForces}</div>${sim.stage.stops ? `<div style="color:${sim.stopsLeft > 0 ? 'var(--gold)' : '#ff6b8a'}">止められる回数 ${'◆'.repeat(Math.max(0, sim.stopsLeft))}${'◇'.repeat(Math.min(sim.stage.stops, sim.stopsUsed))} あと${Math.max(0, sim.stopsLeft)}回</div>` : ''}${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}${stopped && pred.some((q) => q.kind === 'egg' && q.ends === 'gone') ? '<div style="color:#ff6b8a">✕ このままだと卵が割れる</div>' : ''}`;
   };
 
   // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
