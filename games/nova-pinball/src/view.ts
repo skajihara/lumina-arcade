@@ -626,17 +626,24 @@ export class NovaView {
         g.poly(pts).fill({ color: lit ? 0xfff3d6 : 0x48508a, alpha: lit ? 1 : 0.7 });
       });
     }
-    // ひねりC：重力が爆発の方へ向いている間、ボールのまわりに引かれる向きの印
-    if (sim.gravityTwistUntil >= 0) {
-      const left = (sim.gravityTwistUntil - sim.tick) / (0.45 * 120);
-      const d = sim.gravityDir;
-      for (const b of sim.balls) {
-        const p = b.body.getPosition();
-        for (let k = 1; k <= 3; k++) {
-          const cx = (p.x + d.x * (0.5 + k * 0.45)) * SCALE, cy = (p.y + d.y * (0.5 + k * 0.45)) * SCALE;
-          const nx = -d.y * 6, ny = d.x * 6;
-          g.moveTo(cx - d.x * 6 + nx, cy - d.y * 6 + ny).lineTo(cx, cy).lineTo(cx - d.x * 6 - nx, cy - d.y * 6 - ny)
-            .stroke({ width: 2, color: 0xc9a3ff, alpha: Math.max(0, left) * (0.9 - k * 0.2), cap: 'round', join: 'round' });
+    // ひねり3：爆発の引力。届く範囲の縁から中心へ縮んでいく波紋（引かれる向き）と、回る弧（渦）
+    // 井戸が重なった時（連鎖中）にうるさくならないよう、数に応じて淡く
+    const wellDim = 1 / Math.sqrt(Math.max(1, sim.wells.length));
+    for (const w of sim.wells) {
+      const life = Math.max(1, w.until - w.born);
+      const fade = Math.max(0, (w.until - sim.tick) / life) * wellDim;
+      const age = (sim.tick - w.born) / 120;
+      const R = (sim.cfg.wellRange ?? 7) * SCALE;
+      const cx = w.x * SCALE, cy = w.y * SCALE;
+      for (let k = 0; k < 3; k++) {
+        const f = 1 - ((age * 1.6 + k / 3) % 1);
+        g.circle(cx, cy, R * (0.12 + 0.88 * f)).stroke({ width: 2, color: 0xc9a3ff, alpha: fade * 0.35 * (1 - f * 0.6) });
+      }
+      const sw = sim.cfg.wellSwirl ?? 0;
+      if (sw > 0) {
+        for (let k = 0; k < 3; k++) {
+          const a0 = age * 5 + (k * Math.PI * 2) / 3, rr = R * 0.32;
+          g.moveTo(cx + Math.cos(a0) * rr, cy + Math.sin(a0) * rr).arc(cx, cy, rr, a0, a0 + 0.9).stroke({ width: 2.5, color: 0xe6d6ff, alpha: fade * 0.6 });
         }
       }
     }

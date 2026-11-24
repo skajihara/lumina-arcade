@@ -206,6 +206,8 @@ export class NovaSim {
   gravityTwistUntil = -1;
   /** ひねりC：今の重力の向き（描画用） */
   gravityDir = { x: 0, y: 1 };
+  /** ひねり3：爆発の引力（重力井戸）。連鎖中は重なって渦を巻く */
+  wells: { x: number; y: number; born: number; until: number }[] = [];
 
   constructor(public stage: StageDef, public cfg: NovaConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -460,6 +462,7 @@ export class NovaSim {
       const f = b.body.getFixtureList();
       if (f) f.setRestitution(cfg.ballRestitution);
     }
+    this.applyWells();
 
     this.world.step(DT, 8, 3);
     this.tick++;
@@ -716,8 +719,7 @@ export class NovaSim {
       const dx = p.x - b0.x, dy = p.y - b0.y;
       const d = Math.hypot(dx, dy) || 1;
       this.gravityDir = { x: dx / d, y: dy / d };
-      this.world.setGravity({ x: (dx / d) * cfg.gravity * 0.8, y: (dy / d) * cfg.gravity * 0.8 });
-      this.gravityTwistUntil = this.tick + Math.round(0.45 * HZ);
+      this.wells.push({ x: p.x, y: p.y, born: this.tick, until: this.tick + Math.round((cfg.wellSec ?? 0.8) * HZ) });
     }
 
     const last = this.starsAlive() === 0 && !this.stars.some((x) => x.alive && x.pendingAt >= 0);
@@ -740,6 +742,32 @@ export class NovaSim {
       this.score += 5000;
       this.ballsLeft++;
       this.events.push({ t: 'supernova' });
+    }
+  }
+
+  /** 爆発の引力：生きている井戸ごとに、ボールを井戸の方へ（近いほど強く）、少し横向き（渦）にも引く */
+  private applyWells(): void {
+    if (!this.wells.length) return;
+    const cfg = this.cfg;
+    this.wells = this.wells.filter((w) => w.until > this.tick);
+    const range = cfg.wellRange ?? 7, pull = (cfg.wellPull ?? 1.5) * cfg.gravity, swirl = cfg.wellSwirl ?? 0.35;
+    for (const b of this.balls) {
+      if (this.inLane(b)) continue;
+      const p = b.body.getPosition();
+      const m = b.body.getMass();
+      let fx = 0, fy = 0;
+      for (const w of this.wells) {
+        const dx = w.x - p.x, dy = w.y - p.y;
+        const d = Math.hypot(dx, dy);
+        if (d > range || d < 0.05) continue;
+        // 届く範囲の縁で 0、近いほど強い（1m で約2倍）。時間とともに弱まる
+        const fade = (w.until - this.tick) / Math.max(1, w.until - w.born);
+        const k = pull * (1 - d / range) * (1 + 0.8 / (d + 0.4)) * fade;
+        const ux = dx / d, uy = dy / d;
+        fx += (ux - uy * swirl) * k;
+        fy += (uy + ux * swirl) * k;
+      }
+      if (fx || fy) { b.body.applyForceToCenter({ x: fx * m, y: fy * m }, true); }
     }
   }
 

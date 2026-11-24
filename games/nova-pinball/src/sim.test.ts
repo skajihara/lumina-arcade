@@ -85,6 +85,30 @@ describe('NovaSim', () => {
     expect(off.fuses).toBe(0);
   });
 
+  it('ひねり3：爆発の引力がボールを星の方へ引き、時間で消える（なしでは引かない）', () => {
+    const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6.9, y: 6, charge: 2 }, { x: 2, y: 3 }], links: [] };
+    const pull = (twist: number) => {
+      const sim = new NovaSim(stage, { ...cfg(), twist });
+      const b = sim.balls[0].body;
+      b.setPosition({ x: 6.9, y: 11 });
+      b.setLinearVelocity({ x: 0, y: 0 });
+      (sim as unknown as { addCharge(s: unknown, n: number): void }).addCharge(sim.stars[0], 1);
+      let minY = 99, wells = 0;
+      for (let i = 0; i < 40; i++) {
+        sim.step(0);
+        wells = Math.max(wells, sim.wells.length);
+      }
+      minY = b.getPosition().y;
+      for (let i = 0; i < 200; i++) sim.step(0);
+      return { minY, wells, after: sim.wells.length };
+    };
+    const on = pull(3), off = pull(0);
+    expect(on.wells).toBe(1);
+    expect(on.after).toBe(0);
+    expect(off.wells).toBe(0);
+    expect(on.minY).toBeLessThan(off.minY - 0.3); // 上の星の方へ引かれて、落ちるのが遅れる
+  });
+
   it('チャージは時間で減る', () => {
     const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6, y: 8, charge: 2 }], links: [] };
     const c = cfg();
