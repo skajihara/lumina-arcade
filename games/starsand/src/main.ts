@@ -71,7 +71,13 @@ async function main() {
   center.append(toastEl);
   const hintEl = el('div');
   hintEl.style.cssText = 'position:absolute;left:50%;top:88px;transform:translateX(-50%);font-size:15px;color:var(--dim);letter-spacing:.06em;text-align:center;text-shadow:0 0 8px #000;width:50%';
-  hud.append(tl, tr, center, hintEl);
+  // 砂が止まっている間の知らせ（下の方）と、線を引いている指の横のインクの残り
+  const flowEl = el('div');
+  flowEl.style.cssText = 'position:absolute;left:50%;bottom:12%;transform:translateX(-50%);font-size:17px;letter-spacing:.08em;color:#fff6e0;padding:8px 18px;border-radius:999px;background:rgba(20,24,70,.55);border:1px solid rgba(255,217,138,.5);box-shadow:0 0 20px rgba(255,217,138,.25);backdrop-filter:blur(4px);white-space:nowrap;transition:opacity .3s';
+  const inkTip = el('div');
+  inkTip.style.cssText = 'position:fixed;font-size:12px;color:#cfe0ff;text-shadow:0 0 6px #000;pointer-events:none;opacity:0;transition:opacity .2s;z-index:11';
+  hud.append(tl, tr, center, hintEl, flowEl);
+  document.body.appendChild(inkTip);
   document.body.appendChild(hud);
   backLink();
   let toastTimer = 0;
@@ -117,6 +123,7 @@ async function main() {
     introCard(stages[i].id === 'ss-04' ? sandRules[3] : null, '混ざる光');
     mode = 'play';
     hintEl.textContent = touchText(stages[i].hint, [['ドラッグで線', 'なぞって線'], ['右ドラッグで消す', '「消しゴム」で消す']]);
+    flowing = false;
     synth.setKey(i % 5);
   };
 
@@ -170,7 +177,7 @@ async function main() {
       <div class="rulebox"></div>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
-      <div class="keys"><b>ドラッグ</b>で線を引く　<b>右ドラッグ</b>で消す　<kbd>Z</kbd> 最後の線を消す<br>
+      <div class="keys"><kbd>Space</kbd> 砂を流す／止める（最初は止まっている。止めている間にゆっくり線を引ける）<br><b>ドラッグ</b>で線を引く（引いている間は砂がゆっくり）　<b>右ドラッグ</b>で消す　<kbd>Z</kbd> 最後の線を消す<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：なぞって線を引く、下の「消しゴム」で消す側に切り替え</div>`;
     menu.querySelector('.rulebox')!.replaceWith(ruleCards(sandRules));
     const diff = menu.querySelector('.diff')!;
@@ -255,6 +262,8 @@ async function main() {
     }
   });
   window.addEventListener('pointermove', (e) => {
+    inkTip.style.left = `${e.clientX + 16}px`;
+    inkTip.style.top = `${e.clientY + 14}px`;
     if (!drawing || !sim) return;
     const c = toCell(e.clientX, e.clientY);
     if (drawing.erase) { sim.erase(c.x, c.y); drawing.last = c; return; }
@@ -283,6 +292,15 @@ async function main() {
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   let eraseMode = false;
+  /** 砂が流れているか（Space で切り替え。ステージの最初は止まっている） */
+  let flowing = false;
+  let slowTick = 0;
+  const toggleFlow = () => {
+    if (mode !== 'play' || !sim || sim.phase !== 'play') return;
+    flowing = !flowing;
+    if (flowing) { synth.tone(520, 0.4, { type: 'sine', vol: 0.08, slideTo: 880 }); synth.whoosh(0.5); }
+    else synth.tone(880, 0.4, { type: 'sine', vol: 0.08, slideTo: 330 });
+  };
   const undoStroke = () => {
     if (!sim || !strokes.length) return;
     const ids = strokes.pop()!;
@@ -296,6 +314,7 @@ async function main() {
     if (e.code === 'KeyR' && (mode === 'play' || mode === 'result' || mode === 'pause')) startStage(stageIndex);
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
     if (e.code === 'KeyZ' && mode === 'play') undoStroke();
+    if (e.code === 'Space') { e.preventDefault(); toggleFlow(); }
     if (e.code === 'KeyB' && e.shiftKey) autoplay = !autoplay;
   });
 
@@ -500,11 +519,18 @@ async function main() {
     const inkK = s.ink / Math.max(1, s.inkMax);
     const bar = Math.round(inkK * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">器 ${s.filled.filter(Boolean).length} / ${st.cups.length}</div><div style="font-size:13px;color:var(--dim)">残りの砂 ${s.remaining() + s.grains}</div>`;
+    // 止まっている間の知らせ・インクの残り（指の横）
+    const waiting = mode === 'play' && !flowing && s.phase === 'play' && !autoplay;
+    flowEl.style.opacity = waiting ? String(0.75 + 0.25 * Math.sin(t * 3)) : '0';
+    if (waiting) flowEl.textContent = touchText(s.tick === 0 ? '✦ 線を引いたら Space で砂を流す' : '⏸ 止まっている — 線を足して Space で流す', [['Space で', '「流す」で']]);
+    inkTip.style.opacity = drawing && !drawing.erase ? '1' : '0';
+    if (drawing) inkTip.textContent = `インク ${Math.round(inkK * 100)}%`;
     tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:var(--accent)">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>インク ${Math.round(inkK * 100)}%</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
 
   // スマホ・タブレット：キーボードの代わりの画面ボタン
   const tbar = touchButtons([
+    { label: '流す', onPress: () => toggleFlow(), state: () => ({ on: flowing, label: flowing ? '止める' : '流す' }) },
     { label: '消しゴム', onPress: () => { eraseMode = !eraseMode; }, state: () => ({ on: eraseMode }) },
     { label: '戻す', onPress: () => { if (mode === 'play') undoStroke(); } },
     { label: '‖', onPress: () => togglePause() },
@@ -518,6 +544,12 @@ async function main() {
         botStep(1 / HZ);
         if (botLine < (sim.stage.solution ?? []).reduce((m, l) => m + l.length - 1, 0)) return;
       }
+      // 砂は「流す」まで止まっている（止めている間にゆっくり線を引ける）。自動プレイは線を引き終えたら流す
+      if (autoplay) flowing = true;
+      if (!flowing) return;
+      // 線を引いている間は、砂がゆっくりになる（半分の速さ）
+      slowTick ^= 1;
+      if (drawing && !drawing.erase && slowTick) return;
       for (let k = 0; k < Math.round(cfg.speed); k++) {
         sim.step();
         for (const e of sim.events) handle(e);
