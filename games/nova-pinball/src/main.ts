@@ -7,7 +7,7 @@ import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
-import { injectBaseStyle, el, backLink } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type NovaConfig } from './config';
 import { stages } from './stages';
 import { NovaSim, HZ } from './sim';
@@ -297,6 +297,9 @@ async function main() {
   synth.setVolume(cfg.volume);
   ga.setBloom(cfg.bloom);
 
+  // スマホ・タブレット：キーボードの代わりの画面ボタン
+  const tbar = touchButtons([{ label: '‖', onPress: () => togglePause() }], 'bottom');
+
   const loop = new FixedLoop({
     update: () => {
       const mask = input.sample();
@@ -344,6 +347,7 @@ async function main() {
         const balls = sim.ballsLeft + sim.balls.length;
         tr.innerHTML = `<div class="big">${'●'.repeat(Math.min(9, balls))}</div><div>残りの星 ${sim.starsAlive()}　連鎖 ${sim.bestChain}</div>${mode === 'replay' ? '<div style="color:var(--accent)">▶ REPLAY（P で終了）</div>' : autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       }
+      tbar.update();
       hook.frames++;
     },
   }, HZ);

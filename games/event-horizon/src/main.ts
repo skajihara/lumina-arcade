@@ -12,7 +12,7 @@ import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
-import { injectBaseStyle, el, backLink } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type HorizonConfig } from './config';
 import { stages } from './stages';
 import { HorizonSim, HZ, WORLD_W, WORLD_H, IN_PULL, IN_BURST, type HorizonInput, type HorizonEvent } from './sim';
@@ -238,7 +238,7 @@ async function main() {
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys">マウスで動かす　<b>クリックしている間</b> 引き寄せる　<kbd>Space</kbd>／右クリック 解放<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音</div>`;
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：触れている間 引き寄せる、下の「解放」ボタン（2本指でも）</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -595,6 +595,12 @@ async function main() {
     tr.innerHTML = `<div class="big">${s.score.toLocaleString()}</div><div>残り ${left.toFixed(0)} 秒</div>${dil > 0.08 ? `<div style="color:#9fb8ff">時間の遅れ ×${s.timeScale.toFixed(2)}</div>` : ''}${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
 
+  // スマホ・タブレット：キーボードの代わりの画面ボタン
+  const tbar = touchButtons([
+    { label: '解放', onPress: () => { synth.unlock(); if (mode === 'play') burstQueued = true; } },
+    { label: '‖', onPress: () => togglePause() },
+  ], 'bottom', { landscape: true });
+
   const loop = new FixedLoop({
     update: () => {
       if (mode !== 'play' || !sim) return;
@@ -614,6 +620,7 @@ async function main() {
       ga.flash.tint = juice.flashColor;
       particles.multiplier = cfg.particles;
       draw(realDt);
+      tbar.update();
       hook.frames++;
     },
   }, HZ);

@@ -53,3 +53,34 @@ for (const file of pages) {
     expect(errors).toEqual([]);
   });
 }
+
+// スマホ（タッチの画面）：キーボードの代わりの画面ボタンが出て、押すと効く
+test.describe('スマホの画面ボタン', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+  const games = ['nova-pinball', 'echo-loop', 'stopped-world', 'event-horizon', 'origami-cosmos', 'starsand'];
+  for (const g of games) {
+    test(`${g}: 画面ボタンが出て、ポーズできる`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(pathToFileURL(resolve(playDir, `${g}.html`)).href + '?stage=0');
+      await waitReady(page);
+      await page.waitForTimeout(800);
+      const bar = page.locator('.tbar');
+      await expect(bar).toBeVisible();
+      await page.screenshot({ path: resolve(shots, `${g}-phone.png`) });
+      if (g === 'stopped-world') {
+        // 時を止める → 解き放つ（以前はタッチだと止めた時間を戻せなかった）
+        const state = () => page.evaluate(() => (window as unknown as { __lumina: { state(): { stopped?: boolean } } }).__lumina.state().stopped);
+        await page.locator('.tbtn', { hasText: '時を止める' }).tap();
+        await expect.poll(state).toBe(true);
+        await page.locator('.tbtn', { hasText: '解き放つ' }).tap();
+        await expect.poll(state).toBe(false);
+      }
+      await page.locator('.tbtn', { hasText: '‖' }).tap();
+      const mode = await page.evaluate(() => (window as unknown as { __lumina: { state(): { mode: string } } }).__lumina.state().mode);
+      expect(mode).toBe('pause');
+      await page.screenshot({ path: resolve(shots, `${g}-phone-pause.png`) });
+      expect(errors).toEqual([]);
+    });
+  }
+});

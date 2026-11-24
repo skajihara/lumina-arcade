@@ -11,7 +11,7 @@ import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { lerpColor } from '@engine/gfx';
-import { injectBaseStyle, el, backLink } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
 import { EchoSim, echoBias } from './sim';
@@ -189,7 +189,7 @@ async function main() {
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>フリッパーは過去の自分と共有。過去の自分が押した時にも動く</div>`;
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>フリッパーはループごとに自分専用（過去の自分のフリッパーは淡い紫の影）<br>スマホ：画面の左下／右下でフリッパー、上半分で発射</div>`;
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -280,6 +280,9 @@ async function main() {
     hudApi.toast(last ? `最後のループ — ${loop + 1} 人の自分と` : `LOOP ${loop + 1}　残響 ${loop} 人`);
   };
 
+  // スマホ・タブレット：キーボードの代わりの画面ボタン
+  const tbar = touchButtons([{ label: '‖', onPress: () => togglePause() }], 'bottom');
+
   const loop = new FixedLoop({
     update: () => {
       const mask = input.sample();
@@ -354,6 +357,7 @@ async function main() {
         const destroyed = es.destroyedPerLoop[es.loop] ?? 0;
         tr.innerHTML = `<div class="big">${destroyed}<span style="font-size:16px;color:var(--dim)"> / ${st.stars.length}</span></div><div>このループで壊した星　最多 ${es.best}</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       }
+      tbar.update();
       hook.frames++;
     },
   }, HZ);

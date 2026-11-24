@@ -6,7 +6,7 @@ const CSS = `
 :root { --ink:#e9ecff; --dim:#8f96c9; --accent:#9fd0ff; --gold:#ffd98a; }
 html,body { margin:0; height:100%; overflow:hidden; background:#02030a; color:var(--ink);
   font-family: "Hiragino Maru Gothic ProN","Zen Maru Gothic","Yu Gothic UI","Segoe UI",system-ui,sans-serif; }
-canvas#game { display:block; position:fixed; inset:0; }
+canvas#game { display:block; position:fixed; inset:0; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 .hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
 .hud .tl,.hud .tr { position:absolute; top:12px; font-size:15px; letter-spacing:.08em; text-shadow:0 0 8px #000; }
 .hud .tl { left:16px } .hud .tr { right:16px; text-align:right }
@@ -39,6 +39,19 @@ canvas#game { display:block; position:fixed; inset:0; }
 .sel { background:rgba(90,110,230,.7); box-shadow:0 0 14px #5a7dff; }
 .keys { font-size:13px; color:var(--dim); margin-top:14px; text-align:center; line-height:1.8; }
 kbd { border:1px solid #4a5290; border-radius:5px; padding:1px 6px; font-size:12px; color:var(--ink); }
+.tbar { position:fixed; left:50%; transform:translateX(-50%); z-index:15; display:flex; gap:10px; pointer-events:none; }
+.tbar.bottom { bottom:max(14px, env(safe-area-inset-bottom)); }
+.tbar.top { top:max(46px, env(safe-area-inset-top)); }
+.tbtn { pointer-events:auto; touch-action:manipulation; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none;
+  min-width:54px; height:54px; padding:0 14px; border-radius:27px; border:1px solid rgba(120,140,255,.55);
+  background:rgba(20,26,70,.55); color:var(--ink); font-family:inherit; font-size:15px; letter-spacing:.06em;
+  white-space:nowrap; box-shadow:0 0 14px rgba(90,125,255,.25); backdrop-filter:blur(2px); transition:background .12s, box-shadow .12s, transform .08s; }
+.tbtn.on { background:rgba(255,217,138,.32); border-color:#ffd98a; box-shadow:0 0 18px rgba(255,217,138,.6); color:#fff; }
+.tbtn:active { transform:scale(.93); background:rgba(90,110,230,.6); }
+.tbar.top .tbtn { height:40px; min-width:40px; border-radius:20px; font-size:14px; opacity:.75; }
+.rotnote { display:none; position:fixed; left:0; right:0; top:22%; text-align:center; z-index:12; font-size:13px; color:var(--dim); letter-spacing:.12em; pointer-events:none; text-shadow:0 0 8px #000; }
+@media (orientation: portrait) { .touch-ui .rotnote { display:block; } }
+.touch-ui .tlift { bottom:84px !important; }
 .back { position:fixed; left:12px; bottom:10px; z-index:15; font-size:12px; color:var(--dim); text-decoration:none; pointer-events:auto; }
 `;
 
@@ -60,4 +73,60 @@ export function backLink(): HTMLAnchorElement {
   const a = el('a', { class: 'back', href: './index.html' }, '← 星図へ戻る');
   document.body.appendChild(a);
   return a;
+}
+
+export interface TouchButton {
+  /** ボタンの文字（短く） */
+  label: string;
+  onPress: () => void;
+  /** 毎フレーム呼んで、押されている状態（金色）と文字を更新する */
+  state?: () => { on?: boolean; label?: string; hidden?: boolean };
+}
+
+/** タッチ操作の画面かどうか（`?touch=1` で強制的に表示、`?touch=0` で隠す） */
+export function isTouchUi(): boolean {
+  const q = new URLSearchParams(location.search).get('touch');
+  if (q === '1') return true;
+  if (q === '0') return false;
+  return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+}
+
+/**
+ * スマホ・タブレット用の画面ボタン（キーボードでしかできない操作の代わり）。
+ * タッチの画面でだけ出る。パソコンでも最初に画面をタッチした時点で出る。
+ * menu（z-index 20）より下なので、タイトル・ポーズ・リザルトの間は隠れる。
+ */
+export function touchButtons(buttons: TouchButton[], pos: 'bottom' | 'top' = 'bottom', opts: { landscape?: boolean } = {}): { el: HTMLDivElement; update(): void } {
+  const bar = el('div', { class: `tbar ${pos}` });
+  // 横長の画面のゲームは、縦持ちだと小さいので一言そえる
+  if (opts.landscape) document.body.appendChild(el('div', { class: 'rotnote' }, '⟲ 横向きにすると大きく遊べます'));
+  const els = buttons.map((b) => {
+    const e = el('button', { class: 'tbtn', type: 'button' }, b.label);
+    // pointerdown で即反応（click の遅延を待たない）。キャンバスへは伝えない
+    e.addEventListener('pointerdown', (ev) => { ev.preventDefault(); ev.stopPropagation(); b.onPress(); });
+    e.addEventListener('click', (ev) => ev.preventDefault());
+    bar.appendChild(e);
+    return e;
+  });
+  const show = (on: boolean) => { bar.style.display = on ? 'flex' : 'none'; document.body.classList.toggle('touch-ui', on); };
+  show(isTouchUi());
+  if (new URLSearchParams(location.search).get('touch') !== '0') {
+    window.addEventListener('touchstart', () => show(true), { once: true, passive: true });
+  }
+  document.body.appendChild(bar);
+  const last: string[] = buttons.map((b) => b.label);
+  return {
+    el: bar,
+    update() {
+      if (bar.style.display === 'none') return;
+      buttons.forEach((b, i) => {
+        if (!b.state) return;
+        const st = b.state();
+        els[i].classList.toggle('on', !!st.on);
+        els[i].style.display = st.hidden ? 'none' : '';
+        const lb = st.label ?? b.label;
+        if (lb !== last[i]) { els[i].textContent = lb; last[i] = lb; }
+      });
+    },
+  };
 }
