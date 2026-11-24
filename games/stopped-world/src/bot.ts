@@ -19,11 +19,11 @@ export interface Plan {
 export function randomPlan(stage: StageDef, cfg: StopConfig, rng: Rng, human = false): Plan {
   const steps: Record<number, Action[]> = {};
   const movable = stage.objects.map((o, i) => ({ o, i })).filter(({ o }) => !o.fixed);
-  const stops = rng.int(1, human ? 4 : 3);
+  const stops = Math.min(rng.int(1, human ? 4 : 3), stage.stops ?? 99);
   let tick = 30;
   for (let k = 0; k < stops; k++) {
     const acts: Action[] = [{ t: 'stop' }];
-    const n = rng.int(1, Math.round(cfg.maxForces));
+    const n = rng.int(1, Math.min(Math.round(cfg.maxForces), stage.forces ?? 99));
     for (let j = 0; j < n; j++) {
       const { i } = rng.pick(movable);
       const a = rng.range(-Math.PI, 0.3); // ほとんど上向き〜横

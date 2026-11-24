@@ -79,7 +79,7 @@ const normal: StopConfig = {
   forcePerHit: 6,
   maxForce: 40,
   control: 0,
-  slingPull: 2.5,
+  slingPull: 3.75,
   slingMax: 3.5,
   slingCurve: 0.55,
   nestSoft: 2.5,
