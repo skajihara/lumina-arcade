@@ -11,7 +11,7 @@ import { createTuning } from '@engine/tuning';
 import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
 import { SandSim, W, H, SAND, LINE, WALL, COLORS, type SandEvent } from './sim';
@@ -113,7 +113,7 @@ async function main() {
     botLine = 0;
     botT = 0;
     mode = 'play';
-    hintEl.textContent = stages[i].hint;
+    hintEl.textContent = touchText(stages[i].hint, [['ドラッグで線', 'なぞって線'], ['右ドラッグで消す', '「消しゴム」で消す']]);
     synth.setKey(i % 5);
   };
 
@@ -221,7 +221,7 @@ async function main() {
     const cells = sim.drawLineCells(a.x, a.y, b.x, b.y);
     if (strokes.length) strokes[strokes.length - 1].push(...cells);
     if (cells.length) synth.tone(900 + (b.y % 20) * 20, 0.05, { type: 'sine', vol: 0.015, wet: 0.3 });
-    if (before > 0 && sim.ink <= 0) toast('インクが尽きた（右ドラッグか Z で消すと戻る）');
+    if (before > 0 && sim.ink <= 0) toast(touchText('インクが尽きた（右ドラッグか Z で消すと戻る）', [['右ドラッグか Z', '「消しゴム」か「戻す」']]));
   };
   ga.app.canvas.addEventListener('pointerdown', (e) => {
     synth.unlock();
@@ -414,7 +414,7 @@ async function main() {
     const inkK = s.ink / Math.max(1, s.inkMax);
     const bar = Math.round(inkK * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">器 ${s.filled.filter(Boolean).length} / ${st.cups.length}</div><div style="font-size:13px;color:var(--dim)">残りの砂 ${s.remaining() + s.grains}</div>`;
-    tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:var(--accent)">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>インク ${Math.round(inkK * 100)}%</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:var(--accent)">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>インク ${Math.round(inkK * 100)}%</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
 
   // スマホ・タブレット：キーボードの代わりの画面ボタン

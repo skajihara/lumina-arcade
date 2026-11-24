@@ -12,7 +12,7 @@ import { Save } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { Rng } from '@engine/rng';
 import { skyTexture, makeStarfield } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
 import { stages } from './stages';
 import { randomPlan, runPlan, type Plan } from './bot';
@@ -109,7 +109,7 @@ async function main() {
     resultTimer = -1;
     mode = 'play';
     drawGround();
-    toast(stages[i].hint);
+    toast(touchText(stages[i].hint, [['もう一度 Space で解放', '「解き放つ」で解放'], ['Space で時間を止め', '「時を止める」で時間を止め'], ['卵をドラッグして', '卵から指をすべらせて']]));
   };
 
   const showResult = () => {
@@ -457,7 +457,7 @@ async function main() {
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
     const barCol = gaugeGlow > 0 ? `rgb(${Math.round(127 + 128 * gaugeGlow)},240,255)` : stopped ? '#fff' : 'var(--accent)';
-    tr.innerHTML = `<div style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}`;
+    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}`;
   };
 
   // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
