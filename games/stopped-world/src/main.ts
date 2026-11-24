@@ -82,6 +82,8 @@ async function main() {
   let t = 0;
   /** ひねり1：壊した所から時間停止ゲージへ飛んでいく「時の粒」 */
   let refillFx: { x: number; y: number; age: number; amount: number }[] = [];
+  /** 卵のひび（強めにぶつかった回数。見た目だけ）と、ひびの知らせを出した時刻 */
+  let cracks = 0, crackToldAt = -99;
   let gaugeGlow = 0;
 
   const closeMenu = () => { menu?.remove(); menu = null; };
@@ -102,6 +104,8 @@ async function main() {
     closeMenu();
     stageIndex = i;
     sim = new StopSim(stages[i], cfg);
+    cracks = 0;
+    crackToldAt = -99;
     pending = [];
     drag = null;
     refillFx = [];
@@ -344,7 +348,16 @@ async function main() {
         case 'break':
           particles.emit(e.x * SCALE, e.y * SCALE, { count: e.kind === 'egg' ? 60 : 40, speed: [60, 300], life: [0.4, 1.0], size: [0.05, 0.2], color: e.kind === 'egg' ? [0xffffff, 0xffd27f] : [0x9fb8ff, 0xc9a3ff] });
           synth.noise(0.3, { vol: 0.25, from: 3000, to: 300 });
-          if (e.kind === 'egg') toast('卵が割れた');
+          if (e.kind === 'egg') toast(e.speed ? `卵が割れた — ぶつかった速さ ${e.speed.toFixed(1)}（${cfg.eggBreak} を超えると割れる）` : '卵が割れた');
+          break;
+        case 'crack':
+          cracks = Math.min(4, cracks + 1);
+          particles.emit(e.x * SCALE, e.y * SCALE, { count: 10, speed: [30, 120], life: [0.2, 0.5], size: [0.04, 0.1], color: [0xffffff, 0xff6b8a] });
+          synth.noise(0.08, { vol: 0.08, from: 4000, to: 2000 });
+          if (t - crackToldAt > 2.5) {
+            toast(`ひび！ ぶつかった速さ ${e.speed.toFixed(1)} — ${cfg.eggBreak} を超えると割れる`);
+            crackToldAt = t;
+          }
           break;
         case 'refill':
           refillFx.push({ x: e.x * SCALE, y: e.y * SCALE, age: 0, amount: e.amount });
@@ -394,6 +407,26 @@ async function main() {
       if (d.kind === 'egg') {
         g.ellipse(x, y, d.w * SCALE * 1.25, d.w * SCALE * 1.35).fill({ color: 0xffd27f, alpha: 0.15 });
         g.ellipse(x, y, d.w * SCALE * 0.95, d.w * SCALE * 1.1).fill({ color: 0xfff6e0 }).stroke({ width: 2, color: 0xffd27f });
+        // ひび（強めにぶつかった回数だけ。卵と一緒に回る）
+        for (let k = 0; k < cracks; k++) {
+          const ca = a + k * 1.7, r = d.w * SCALE;
+          const c = Math.cos(ca), s = Math.sin(ca);
+          const pts = [[0, -0.95], [0.18, -0.55], [-0.08, -0.3], [0.15, 0.05]].map(([u, v]) => [x + (u * c - v * s) * r, y + (u * s + v * c) * r]);
+          g.moveTo(pts[0][0], pts[0][1]);
+          for (const q of pts.slice(1)) g.lineTo(q[0], q[1]);
+          g.stroke({ width: 1.5, color: 0xb05a3a, alpha: 0.9 });
+        }
+        // 速さのゲージ：卵の周りの弧。割れる速さに近づくほど長く・赤く
+        if (!sim.stopped) {
+          const v = o.body.getLinearVelocity();
+          const ratio = Math.hypot(v.x, v.y) / cfg.eggBreak;
+          if (ratio > 0.25) {
+            const col = ratio < 0.55 ? 0x7ff0ff : ratio < 0.85 ? 0xffd27f : 0xff4d6d;
+            const rr = d.w * SCALE * 1.6;
+            g.moveTo(x, y - rr).arc(x, y, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, ratio)).stroke({ width: 3, color: col, alpha: 0.85 });
+            if (ratio >= 1) g.circle(x, y, rr + 4).stroke({ width: 1.5, color: 0xff4d6d, alpha: 0.5 + 0.5 * Math.sin(t * 20) });
+          }
+        }
       } else if (d.kind === 'bomb') {
         g.circle(x, y, d.w * SCALE).fill({ color: 0x2a2450 }).stroke({ width: 2, color: 0xffa3e0 });
         const spark = 0.6 + 0.4 * Math.sin(t * (o.armed ? 30 : 8));
@@ -457,7 +490,7 @@ async function main() {
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
     const barCol = gaugeGlow > 0 ? `rgb(${Math.round(127 + 128 * gaugeGlow)},240,255)` : stopped ? '#fff' : 'var(--accent)';
-    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}`;
+    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${Math.round(cfg.maxForces)}</div>${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}${stopped && pred.some((q) => q.kind === 'egg' && q.ends === 'gone') ? '<div style="color:#ff6b8a">✕ このままだと卵が割れる</div>' : ''}`;
   };
 
   // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
@@ -504,7 +537,10 @@ async function main() {
       if (p.ends === 'gone') {
         // 消える（割れる・壊れる・爆発）所に×
         const c2 = p.kind === 'egg' ? 0xff6b8a : 0xffa3e0;
-        g.moveTo(ex - 7, ey - 7).lineTo(ex + 7, ey + 7).moveTo(ex + 7, ey - 7).lineTo(ex - 7, ey + 7).stroke({ width: 3, color: c2, alpha: 0.9, cap: 'round' });
+        const big = p.kind === 'egg' ? 10 : 7;
+        g.moveTo(ex - big, ey - big).lineTo(ex + big, ey + big).moveTo(ex + big, ey - big).lineTo(ex - big, ey + big).stroke({ width: 3, color: c2, alpha: 0.9, cap: 'round' });
+        // 卵が割れる所は、脈打つ輪で目立たせる
+        if (p.kind === 'egg') g.circle(ex, ey, 14 + 4 * Math.sin(t * 8)).stroke({ width: 2, color: 0xff6b8a, alpha: 0.6 });
       } else if (n > 1) g.circle(ex, ey, 5).stroke({ width: 2, color: col, alpha: 0.55 });
     }
   };

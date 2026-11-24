@@ -135,7 +135,9 @@ test('stopped-world: 卵を引っぱって放すと、逆向きに飛ぶ（パ�
   const stopped = await page.evaluate(() => (window as unknown as { __lumina: H }).__lumina.state().stopped);
   expect(stopped).toBe(true); // つかんだ時に時間が止まる
   await page.keyboard.press('Space');
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: resolve(shots, 'stopped-world-fly.png') });
+  await page.waitForTimeout(250);
   const x1 = await page.evaluate(() => {
     const o = (window as unknown as { __lumina: H }).__lumina.sim().objs.find((q) => q.def.kind === 'egg')!;
     return o.body.getPosition().x;
