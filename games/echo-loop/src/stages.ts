@@ -54,10 +54,11 @@ export const stages: EchoStage[] = [
   {
     id: 'echo-clock', ...base, outlanes: true,
     name: '時計',
-    hint: '十二の時刻。だれがどの時刻を受け持つか',
+    hint: '十二の時刻と、回る時計の針。針は毎ループ同じ時刻に同じ所 — 針に弾かせて時刻を打て',
     stars: pts(ring(6.9, 8.4, 4.4, 12), 0.42),
     links: links(0, 12, true),
     bumpers: [{ x: 6.9, y: 8.4, r: 0.8 }],
+    hand: { x: 6.9, y: 8.4, len: 3.3 },
     hue: 0.5,
   },
   {
@@ -67,6 +68,7 @@ export const stages: EchoStage[] = [
     stars: pts([...line(2.6, 4.0, 4.6, 12.0, 5), ...line(11.2, 4.0, 9.2, 12.0, 5), ...ring(6.9, 5.0, 0.9, 3)], 0.42),
     links: [...links(0, 5), ...links(5, 5), ...links(10, 3, true)],
     bumpers: [{ x: 6.9, y: 10.6, r: 0.6 }],
+    hand: { x: 6.9, y: 10.6, len: 2.0, dir: -1 },
     hue: 0.52,
   },
   {
@@ -98,17 +100,18 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-crossing', ...base, outlanes: true,
-    extraLoops: 4,
+    extraLoops: 3,
     name: '交差点',
     hint: '軌道が交わる。残響とぶつかると過去が変わる — それを利用しろ',
     stars: pts([...ring(4.0, 5.2, 0.9, 3), ...ring(9.8, 5.2, 0.9, 3), ...ring(4.0, 11.4, 0.9, 3), ...ring(9.8, 11.4, 0.9, 3)], 0.52),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3, true), ...links(9, 3, true)],
     bumpers: [{ x: 6.9, y: 8.3, r: 0.5 }],
+    hand: { x: 6.9, y: 8.3, len: 2.6 },
     hue: 0.51,
   },
   {
     id: 'echo-scatter', ...base, outlanes: true,
-    extraLoops: 5,
+    extraLoops: 3,
     name: '散開',
     hint: '四隅の群れと、真ん中の大きな星。最後のループで全員そろえ',
     stars: pts([
@@ -120,11 +123,12 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-triad', ...base,
-    extraLoops: 3,
+    extraLoops: 2,
     name: '三つ星',
     hint: '三つの群れ。三人の自分で一つずつ',
     stars: pts([...ring(3.4, 10.4, 0.95, 3), ...ring(6.9, 5.6, 0.95, 3), ...ring(10.4, 10.4, 0.95, 3)], 0.5),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3, true)],
+    hand: { x: 6.9, y: 9.2, len: 2.2, dir: -1 },
     hue: 0.52,
   },
   {
@@ -138,6 +142,7 @@ export const stages: EchoStage[] = [
     ], 0.4),
     links: [...links(0, 3, true), ...links(3, 3, true), ...links(6, 3), ...links(9, 3, true), ...links(12, 3, true), ...links(15, 3)],
     bumpers: [{ x: 6.9, y: 10.1, r: 0.55 }],
+    hand: { x: 6.9, y: 10.1, len: 1.8 },
     hue: 0.54,
   },
 ];

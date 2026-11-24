@@ -15,7 +15,7 @@ import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
-import { echoRules } from './rules';
+import { echoRules, handFrame } from './rules';
 import { EchoSim, echoBias } from './sim';
 import { HZ, type SimEvent } from '../../nova-pinball/src/sim';
 import { NovaView, VIEW_H, VIEW_W, SCALE, chainTier } from '../../nova-pinball/src/view';
@@ -106,6 +106,9 @@ async function main() {
   const tagPool: Text[] = [];
   /** ループの最初の短い説明（画面の中央に数秒） */
   let loopNote: { text: string; t: number } | null = null;
+  /** 時計の針にボールが当たった直後の光（1→0） */
+  let handFlash = 0;
+  let handTouching = new Set<number>();
   const noteText = new Text({ text: '', style: { fontFamily: 'system-ui, sans-serif', fontSize: 22, fill: 0xffffff, align: 'center', dropShadow: { color: 0x000000, blur: 6, distance: 0, alpha: 0.9 } } });
   noteText.anchor.set(0.5);
 
@@ -151,7 +154,7 @@ async function main() {
     hudApi.chain(0);
     hudApi.toast(stages[i].hint);
     // このステージで初めて出てくる要素の図解（RULE-01c）：1面は残響、4面は共鳴
-    { const r = echoRules(cfg.loopSec); const id = stages[i].id; introCard(id === 'echo-bridge' ? r[1] : id === 'echo-twin' && cfg.resonance > 0 && r[3] ? r[3] : null, id === 'echo-bridge' ? '残響' : '共鳴'); }
+    { const r = echoRules(cfg.loopSec); const id = stages[i].id; introCard(id === 'echo-bridge' ? r[1] : id === 'echo-clock' && cfg.hand > 0 ? handFrame : id === 'echo-twin' && cfg.resonance > 0 && r[3] ? r[3] : null, id === 'echo-bridge' ? '残響' : id === 'echo-clock' ? '時計の針' : '共鳴'); }
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);
@@ -332,6 +335,27 @@ async function main() {
       }
       const before = es.loop;
       es.step(m);
+      // 時計の針に当たった瞬間：光と音（今の自分のボールだけ大きく）
+      if (es.hand && es.loop === before) {
+        const now = new Set<number>();
+        for (let c = es.hand.getContactList(); c; c = c.next ?? null) {
+          if (!c.contact.isTouching()) continue;
+          const other = c.other?.getUserData() as { kind?: string; id?: number } | null;
+          if (other?.kind !== 'ball' || other.id === undefined) continue;
+          now.add(other.id);
+          if (!handTouching.has(other.id)) {
+            const ball = es.sim.balls.find((b) => b.id === other.id);
+            const mine = ball?.owner === es.loop;
+            handFlash = mine ? 1 : Math.max(handFlash, 0.5);
+            synth.tone(mine ? 1320 : 990, 0.12, { type: 'triangle', vol: mine ? 0.08 : 0.035, slideTo: mine ? 1760 : 1180 });
+            if (ball) {
+              const p = ball.body.getPosition();
+              view.particles.emit(p.x * SCALE, p.y * SCALE, { count: mine ? 16 : 6, speed: [60, 220], life: [0.2, 0.5], size: [0.04, 0.12], color: [0x7ff0ff, 0xffffff] });
+            }
+          }
+        }
+        handTouching = now;
+      }
       for (const e of es.events) {
         if (e.t === 'hit' && e.by !== undefined && es.loop === before) hitLog.push({ tick: es.sim.tick, star: e.star, x: e.x, y: e.y, by: e.by });
         if (e.t === 'echoClear' || e.t === 'echoFail') resultTimer = es.totalTicks + Math.round(HZ * (e.t === 'echoClear' ? 3.2 : 1.2));
@@ -431,7 +455,7 @@ async function main() {
     // 長い針：今のループの進み（巻き戻りの瞬間は逆へ速く回る）
     const back = rewindFx > 0 ? rewindFx * Math.PI * 2 : 0;
     const a1 = -Math.PI / 2 + k * Math.PI * 2 - back;
-    g.moveTo(cx, cy).lineTo(cx + Math.cos(a1) * R * 0.84, cy + Math.sin(a1) * R * 0.84).stroke({ width: 2, color: 0x9fe8ff, alpha: 0.35, cap: 'round' });
+    g.moveTo(cx, cy).lineTo(cx + Math.cos(a1) * R * 0.84, cy + Math.sin(a1) * R * 0.84).stroke({ width: 2, color: 0x9fe8ff, alpha: es.hand ? 0.12 : 0.35, cap: 'round' });
     // 短い針：何ループ目か
     const a2 = -Math.PI / 2 + ((es.loop + k) / Math.max(1, es.maxLoops)) * Math.PI * 2;
     g.moveTo(cx, cy).lineTo(cx + Math.cos(a2) * R * 0.5, cy + Math.sin(a2) * R * 0.5).stroke({ width: 5, color: 0xc9a3ff, alpha: 0.3, cap: 'round' });
@@ -480,6 +504,26 @@ async function main() {
         g.stroke({ width: 2, color: col, alpha: 0.45 });
       }
     });
+    // 時計の針（EL-12）：盤面を回る光の棒。当たった直後は明るく
+    if (es.hand && es.stage.hand) {
+      const h = es.stage.hand;
+      const a = es.hand.getAngle();
+      const len = h.len * cfg.handLen * SCALE;
+      const x0 = h.x * SCALE, y0 = h.y * SCALE;
+      const x1 = x0 + Math.cos(a) * len, y1 = y0 + Math.sin(a) * len;
+      // 通り過ぎた跡（扇形の淡い光）
+      const dir = Math.sign(es.handSpeed) || 1;
+      for (let k = 1; k <= 6; k++) {
+        const b = a - dir * k * 0.06;
+        g.moveTo(x0, y0).lineTo(x0 + Math.cos(b) * len, y0 + Math.sin(b) * len).stroke({ width: 3, color: 0x7ff0ff, alpha: 0.12 * (1 - k / 7) });
+      }
+      const hot = handFlash;
+      g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 14, color: 0x7ff0ff, alpha: 0.12 + 0.25 * hot, cap: 'round' });
+      g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 5, color: hot > 0.1 ? 0xffffff : 0xbff8ff, alpha: 0.9, cap: 'round' });
+      g.circle(x0, y0, 0.3 * SCALE).fill({ color: 0x0b1030, alpha: 0.9 }).stroke({ width: 2.5, color: 0x9fe8ff, alpha: 0.9 });
+      g.circle(x1, y1, 4 + 4 * hot).fill({ color: 0xffffff, alpha: 0.8 });
+      handFlash = Math.max(0, handFlash - dt * 4);
+    }
     // 残響がこれから当てる星の予告（✕）：前のループの記録から、書き換わっていない残響の、この先 2 秒の当たり
     const LOOK = Math.round(HZ * 2);
     const marked = new Set<number>();

@@ -8,12 +8,15 @@
  * - 今のボールが残響にぶつかったり、残響より先に星を壊したりすると、過去が書き換わる
  * - 同じ1ループの中で全部の星を爆発させたらクリア。maxLoops を使い切ったら失敗
  */
+import { Box, Circle, type Body } from 'planck';
 import { NovaSim, HZ, FIELD_RIGHT, type Ball, type SimEvent } from '../../nova-pinball/src/sim';
 import type { StageDef } from '../../nova-pinball/src/stages';
 
 /** Echo Loop のステージ：Nova の盤面に「このステージだけ増やすループ数」を足したもの */
 export interface EchoStage extends StageDef {
   extraLoops?: number;
+  /** 時計の針（EL-12）：(x, y) を軸に1ループで1周する光の棒。ボールを弾く。dir -1 で反時計回り */
+  hand?: { x: number; y: number; len: number; dir?: number };
 }
 import type { EchoConfig } from './config';
 
@@ -83,10 +86,34 @@ export class EchoSim {
       return this.cfg.echoCollide > 0;
     };
     this.sim = sim;
+    this.hand = null;
+    const h = this.stage.hand;
+    if (h && this.cfg.hand > 0) {
+      // 針の角度はループの時刻だけで決まる（どのループでも同じ時刻に同じ所）＝残響もそのまま再生される
+      const body = sim.world.createBody({ type: 'kinematic', position: { x: h.x, y: h.y }, angle: this.handAngle(0), userData: { kind: 'wall' } });
+      const len = h.len * this.cfg.handLen;
+      body.createFixture(new Box(len / 2, 0.11, { x: len / 2, y: 0 }, 0), { friction: 0.05, restitution: this.cfg.handBounce });
+      body.createFixture(new Circle(0.3), { friction: 0.05, restitution: this.cfg.handBounce });
+      body.setAngularVelocity(this.handSpeed);
+      this.hand = body;
+    }
     this.current = [];
     this.destroyedPerLoop[this.loop] = 0;
     this.destroyedIds[this.loop] = new Set();
     this.events.push({ t: 'loopStart', loop: this.loop });
+  }
+
+  /** 時計の針（なければ null） */
+  hand: Body | null = null;
+
+  /** 針の回る速さ（ラジアン/秒、+ が時計回り） */
+  get handSpeed(): number {
+    return ((this.stage.hand?.dir ?? 1) * this.cfg.handTurns * Math.PI * 2) / this.cfg.loopSec;
+  }
+
+  /** ループの時刻 tick での針の角度（12時の向きから） */
+  handAngle(tick: number): number {
+    return -Math.PI / 2 + this.handSpeed * (tick / HZ);
   }
 
   /** 各ボールを発射したティック（ループ内） */
