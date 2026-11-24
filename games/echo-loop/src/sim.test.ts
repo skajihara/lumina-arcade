@@ -101,3 +101,28 @@ describe('EchoSim', () => {
     expect(count(0)).toBe(0);
   }, 60_000);
 });
+
+describe('EL-11/12 残響の再生', () => {
+  it('今のボールを発射しても、通り道で残響にぶつからず、残響は前と同じ道をたどる（時計の針の面でも）', () => {
+    for (const st of [echoStages[0], echoStages[1]]) {
+      const es = new EchoSim(st, cfg());
+      const bot = new NovaBot(1, 0.85);
+      const p0: { x: number; y: number }[] = [];
+      while (es.loop === 0) {
+        bot.owner = 0;
+        es.step(bot.input(es.sim));
+        const b = es.sim.balls.find((q) => q.owner === 0)!;
+        p0[es.sim.tick] = { x: b.body.getPosition().x, y: b.body.getPosition().y };
+      }
+      // 2ループ目：今のボールは発射だけして何もしない（最初の3秒）
+      let maxd = 0;
+      while (es.sim.tick < 360) {
+        es.step(es.sim.tick > 30 && es.sim.tick < 100 ? 4 : 0);
+        const b = es.sim.balls.find((q) => q.owner === 0)!;
+        const q = p0[es.sim.tick];
+        if (q) maxd = Math.max(maxd, Math.hypot(b.body.getPosition().x - q.x, b.body.getPosition().y - q.y));
+      }
+      expect(maxd).toBeLessThan(0.01);
+    }
+  });
+});

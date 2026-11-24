@@ -86,3 +86,24 @@ export function echoRules(loopSec: number): RuleFrame[] {
     },
   ];
 }
+
+/** EL-12：時計の針の NEW カード */
+export const handFrame: RuleFrame = {
+  caption: '時計の針は1ループで1周。毎ループ同じ時刻に同じ所にいて、ボールを弾く',
+  draw: (g, t) => {
+    const p = phase(t, 4);
+    const cx = 68, cy = 50, len = 30;
+    const a = -Math.PI / 2 + p * Math.PI * 2;
+    ring(g, cx, cy, len + 6, 'rgba(127,240,255,.25)', 1, 1);
+    g.save(); g.strokeStyle = ECHO; g.lineWidth = 4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); g.stroke(); g.restore();
+    glow(g, cx, cy, 4, ECHO);
+    // 針に弾かれるボール（3時のあたりで）
+    const k = seg(p, 0.15, 0.25), k2 = seg(p, 0.25, 0.6);
+    const bx = p < 0.25 ? lerp(120, cx + len * 0.8, k) : lerp(cx + len * 0.8, 112, k2);
+    const by = p < 0.25 ? lerp(10, cy, k) : lerp(cy, 92, k2) - Math.sin(k2 * Math.PI) * 30;
+    glow(g, bx, by, 3.5, ME);
+    if (p > 0.24 && p < 0.34) label(g, 'カン', cx + len, cy - 14, GOLD, 11, seg(p, 0.24, 0.27));
+    starShape(g, 112, 86, 6, GOLD);
+  },
+};
