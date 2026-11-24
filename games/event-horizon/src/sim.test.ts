@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashNumbers } from '@engine/rng';
 import { presets, DEFAULT_PRESET } from './config';
+import { stages } from './stages';
 import { HorizonSim, IN_BURST, IN_PULL, type StageDef, type HorizonInput } from './sim';
 
 const cfg = () => ({ ...presets[DEFAULT_PRESET] });
@@ -30,6 +31,13 @@ describe('HorizonSim', () => {
     const a = run(stage, 1200, f);
     const b = run(stage, 1200, f);
     expect(hashNumbers(a.sim.digest())).toBe(hashNumbers(b.sim.digest()));
+  });
+
+  it('やさしいは、必要数が4以上の面だけ1つ少なくてよい', () => {
+    const mk = (need: number): StageDef => ({ ...(stages[0] as StageDef), need });
+    expect(new HorizonSim(mk(7), { ...presets['やさしい'] }).need).toBe(6);
+    expect(new HorizonSim(mk(3), { ...presets['やさしい'] }).need).toBe(3);
+    expect(new HorizonSim(mk(7), { ...presets['ふつう'] }).need).toBe(7);
   });
 
   it('ブラックホールは最高速度でしか動けない', () => {

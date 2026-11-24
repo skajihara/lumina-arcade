@@ -181,7 +181,8 @@ export class HorizonSim {
 
   get need(): number {
     if (this.stage.attack) return Infinity;
-    return this.stage.need ?? this.stage.shards.length;
+    const n = this.stage.need ?? this.stage.shards.length;
+    return n >= 4 ? n - Math.round(this.cfg.needEase ?? 0) : n;
   }
 
   get spits(): boolean {
