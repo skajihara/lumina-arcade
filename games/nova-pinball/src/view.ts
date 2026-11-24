@@ -2,6 +2,7 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { glowTexture, ringTexture, sparkleTexture, skyTexture, makeStarfield, hsl, lerpColor, type Starfield } from '@engine/gfx';
 import { Particles } from '@engine/particles';
+import { fxRandom } from '@engine/rng';
 import { synth } from '@engine/audio';
 import type { Juice } from '@engine/juice';
 import { BALL_R, BOARD_H, BOARD_W, boardWalls, type Ball, SLING_L, SLING_R, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
@@ -78,6 +79,9 @@ export class NovaView {
   /** 夜空に浮かぶ星座の線画（超新星で現れる） */
   private skyArt = new Graphics();
   private skyArtT = -1;
+  /** 引力の場：場に流される光の粒と、星の周りの縮んでいく輪（重力レンズ） */
+  private flowG = new Graphics();
+  private motes: { x: number; y: number; vx: number; vy: number; age: number; life: number }[] = [];
   /** 超新星の瞬間の星座（線と星の位置、px） */
   private skyArtShape: { pts: { x: number; y: number }[]; links: [number, number][] } | null = null;
   /** カメラ：ズーム倍率と注視点（論理座標） */
@@ -90,7 +94,7 @@ export class NovaView {
     this.sky.width = VIEW_W;
     this.sky.height = VIEW_H;
     this.field = makeStarfield(VIEW_W, VIEW_H, 180, 11 + sim.stage.id.length);
-    this.container.addChild(this.sky, this.field.container, this.skyArt, this.board, this.gimmicks, this.links, this.bumperG, this.starLayer);
+    this.container.addChild(this.sky, this.field.container, this.flowG, this.skyArt, this.board, this.gimmicks, this.links, this.bumperG, this.starLayer);
     this.drawBoard();
     this.buildStars();
     // Echo Loop：過去の自分のフリッパーは淡い紫の影として描く（今の自分のものを一番上に）
@@ -441,6 +445,7 @@ export class NovaView {
     const sim = this.sim;
     const max = Math.round(this.cfg.maxCharge);
 
+    this.drawFlow(realDt);
     // 星
     sim.stars.forEach((s, i) => {
       const sv = this.stars[i];
@@ -666,6 +671,58 @@ export class NovaView {
       g.circle(cx, cy, 14).fill({ color: 0x7ff0ff, alpha: a * 0.25 });
       g.circle(cx, cy, 5).fill({ color: 0xcffaff, alpha: a });
     } else g.circle(cx, cy, 4).stroke({ width: 1, color: col, alpha: 0.3 });
+  }
+
+  /**
+   * 引力の場を見せる：星がいつも引いていること（NP-14）。
+   * 光の粒を場に流す（星へ吸い込まれ、周りを回る）。星の周りには、重さ（灯るほど重い）に応じて縮んでいく輪
+   */
+  private drawFlow(dt: number): void {
+    const g = this.flowG;
+    g.clear();
+    const sim = this.sim;
+    const pull = sim.cfg.starPull ?? 0;
+    if (pull <= 0 && !sim.wells.length) return;
+    const max = Math.max(1, Math.round(this.cfg.maxCharge));
+    // 星の周りの輪（重力レンズ）
+    if (pull > 0) {
+      const range = (sim.cfg.starRange ?? 5) * SCALE;
+      for (const s of sim.stars) {
+        if (!s.alive) continue;
+        const p = s.body.getPosition();
+        const mass = (s.r / 0.55) * (0.45 + 0.55 * Math.min(1, s.charge / max));
+        for (let k = 0; k < 3; k++) {
+          const f = 1 - ((this.t * 0.35 + k / 3 + s.id * 0.13) % 1);
+          const r = s.r * SCALE * 1.6 + (range * 0.55) * f;
+          g.circle(p.x * SCALE, p.y * SCALE, r).stroke({ width: 1.2, color: s.charge > 0 ? 0xffe1a8 : 0xa9b8ff, alpha: 0.13 * mass * Math.min(1, pull) * (1 - f) * (0.4 + f) });
+        }
+      }
+    }
+    // 流れる光の粒
+    const N = 170;
+    while (this.motes.length < N) this.motes.push(this.spawnMote());
+    const k = 0.55; // 粒は場の 55% の強さで流す（見やすさのため。重力は入れない）
+    for (const m of this.motes) {
+      const f = sim.fieldAt(m.x, m.y);
+      m.vx = (m.vx + f.x * k * dt) * (1 - dt * 0.6);
+      m.vy = (m.vy + f.y * k * dt) * (1 - dt * 0.6);
+      const sp = Math.hypot(m.vx, m.vy);
+      if (sp > 9) { m.vx *= 9 / sp; m.vy *= 9 / sp; }
+      const ox = m.x, oy = m.y;
+      m.x += m.vx * dt; m.y += m.vy * dt;
+      m.age += dt;
+      const near = sim.stars.some((s) => s.alive && Math.hypot(s.body.getPosition().x - m.x, s.body.getPosition().y - m.y) < s.r * 0.9);
+      if (m.age > m.life || near || m.x < 0 || m.x > BOARD_W || m.y < 0 || m.y > BOARD_H) { Object.assign(m, this.spawnMote()); continue; }
+      const life = Math.sin((m.age / m.life) * Math.PI);
+      const a = Math.min(1, sp / 4) * life;
+      if (a < 0.03) continue;
+      const tx = ox - m.vx * 0.08, ty = oy - m.vy * 0.08;
+      g.moveTo(tx * SCALE, ty * SCALE).lineTo(m.x * SCALE, m.y * SCALE).stroke({ width: 1.6, color: 0xcfd8ff, alpha: 0.45 * a, cap: 'round' });
+    }
+  }
+
+  private spawnMote() {
+    return { x: fxRandom(0, BOARD_W), y: fxRandom(0, BOARD_H - 2), vx: 0, vy: 0, age: 0, life: fxRandom(2, 5) };
   }
 
   destroy(): void {

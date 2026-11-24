@@ -32,6 +32,8 @@ const base = (p: NovaConfig): EchoConfig => ({
   ballSave: 0,
   balls: 1,
   twist: 0,
+  // Nova の「星の引力」は使わない（残響の動きを読みやすく保つ）
+  starPull: 0,
   // 星座の線は連鎖を運ばない（群れごとに別のループで落とす遊びを保つ）
   fuseSpeed: 0,
   loopSec: 10,
