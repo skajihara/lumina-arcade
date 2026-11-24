@@ -14,6 +14,8 @@ import { lerpColor } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
+import { ruleCards } from '@engine/rules';
+import { echoRules } from './rules';
 import { EchoSim, echoBias } from './sim';
 import { HZ, type SimEvent } from '../../nova-pinball/src/sim';
 import { NovaView, VIEW_H, VIEW_W, SCALE, chainTier } from '../../nova-pinball/src/view';
@@ -183,13 +185,13 @@ async function main() {
     menu.innerHTML = `
       <h1>ECHO LOOP</h1>
       <h2>残 響 ル ー プ</h2>
-      <p>${cfg.loopSec} 秒で時間が巻き戻る。さっきの自分のボールは「残響」になり、同じ動きをくり返す。<br>
-      ループを重ねて仲間を増やし、<b style="color:var(--ink)">同じ ${cfg.loopSec} 秒の中で</b>全部の星を燃やせ。<br>
-      残響にぶつかると、過去が書き換わる。</p>
+      <div class="rulebox"></div>
+      <p style="font-size:13px">残響にぶつかると、過去が書き換わる。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>フリッパーはループごとに自分専用（過去の自分のフリッパーは淡い紫の影）<br>スマホ：画面の左下／右下でフリッパー、上半分で発射</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(echoRules(cfg.loopSec)));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -222,6 +224,7 @@ async function main() {
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
       row.append(c, r, m);
+      menu.appendChild(ruleCards(echoRules(cfg.loopSec)));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();

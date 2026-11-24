@@ -15,6 +15,8 @@ import { skyTexture, makeStarfield } from '@engine/gfx';
 import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
 import { stages } from './stages';
+import { ruleCards } from '@engine/rules';
+import { stoppedRules } from './rules';
 import { randomPlan, runPlan, type Plan } from './bot';
 import { StopSim, HZ, WORLD_W, WORLD_H, type Action, type Obj } from './sim';
 
@@ -154,13 +156,14 @@ async function main() {
     menu.innerHTML = `
       <h1>STOPPED WORLD</h1>
       <h2>時 止 め の 一 撃</h2>
-      <p>時間を止めると、世界は色を失って静止する。止まった物体を叩いても動かない — 力が矢印として溜まるだけ。<br>
-      時間を戻した瞬間、溜めた力が<b style="color:var(--ink)">全部同時に</b>解き放たれる。止めている間は、戻した直後の動きが点線で見える。<br>
+      <div class="rulebox"></div>
+      <p style="font-size:13px">止めている間は、解き放った直後の動きが点線で見える。<br>
       ${Math.round(cfg.twist) % 2 === 1 ? '箱が壊れる・爆弾が弾けるたびに、<b style="color:#7ff0ff">止められる時間が少し戻る</b>。連鎖させるほど、もう一度止められる。' : ''}</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><kbd>Space</kbd> 時間を止める／戻す　物体を<b>ドラッグ</b>で力を置く（向きと長さ）<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下の「時を止める」ボタン、物体をなぞって力を置く</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(stoppedRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -192,6 +195,7 @@ async function main() {
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
       row.append(c, r, m);
+      menu.appendChild(ruleCards(stoppedRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
