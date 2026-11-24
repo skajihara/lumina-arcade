@@ -47,16 +47,21 @@ export const stoppedRules: RuleFrame[] = [
     },
   },
   {
-    caption: '止まった物体を<b style="color:#ffd98a">ドラッグ</b>して、力の矢印を置く',
+    caption: '止まった物体を<b style="color:#ffd98a">引っぱって放す</b>と、逆向きに力が溜まる（引くほど強い）',
     draw: (g, t) => {
-      const p = phase(t, 2.4);
+      const p = phase(t, 2.6);
       g.save(); g.fillStyle = 'rgba(160,170,200,.10)'; g.fillRect(0, 0, 136, 96); g.restore();
-      egg(g, 40, 60, '#d8d8e8');
-      const k = ease(seg(p, 0.1, 0.6));
-      if (k > 0) arrow(g, 40, 60, lerp(40, 96, k), lerp(60, 30, k), GOLD, 1, 3);
-      // 指（カーソル）
-      glow(g, lerp(40, 96, k), lerp(60, 30, k), 2.5, '#ffffff', p < 0.85 ? 0.9 : 0);
-      if (k >= 1) line(g, 96, 30, 122, 22, GOLD, 0.6, 1.5, [3, 4]);
+      const ox = 62, oy = 54;
+      const k = ease(seg(p, 0.1, 0.55));
+      const hx = lerp(ox, ox - 34, k), hy = lerp(oy, oy + 24, k);
+      if (p < 0.62) {
+        line(g, ox - 4, oy - 3, hx, hy, '#ffffff', 0.5 + 0.4 * k, 1.5);
+        line(g, ox + 4, oy + 3, hx, hy, '#ffffff', 0.5 + 0.4 * k, 1.5);
+        glow(g, hx, hy, 2.5, '#ffffff', 0.9);
+      }
+      egg(g, ox, oy, '#d8d8e8');
+      if (k > 0.1) arrow(g, ox, oy, ox + (ox - hx) * 1.3, oy + (oy - hy) * 1.3, GOLD, 1, 3);
+      if (p > 0.62) line(g, ox + (ox - hx) * 1.3, oy + (oy - hy) * 1.3, 130, 2, GOLD, 0.6, 1.5, [3, 4]);
     },
   },
   {
