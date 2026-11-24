@@ -27,6 +27,21 @@ it('stopped-world solvability report', () => {
     });
     lines.push('');
   }
+  // SW-13：解ける計画の割合（ランダムな計画のうちクリアできた割合）。小さいほど「読み」が要る
+  const FN = 1000;
+  lines.push('## 解ける計画の割合（ランダムな計画' + FN + '個）', '', '止められる回数（◆）が決まっている面は、その回数まで。後半ほど小さくなるように並べる', '',
+    '| # | ステージ | 止められる回数 | やさしい | ふつう | むずかしい |', '|---|---|---|---|---|---|');
+  stages.forEach((st, i) => {
+    const cells = ['やさしい', 'ふつう', 'むずかしい'].map((p) => {
+      const cfg = { ...presets[p] };
+      const rng = new Rng(500 + i);
+      let ok = 0;
+      for (let k = 0; k < FN; k++) if (runPlan(st, cfg, randomPlan(st, cfg, rng)).phase === 'clear') ok++;
+      return `${((ok / FN) * 100).toFixed(1)}%`;
+    });
+    lines.push(`| ${i + 1} | ${st.name} | ${st.stops ?? '—'} | ${cells.join(' | ')} |`);
+  });
+  lines.push('');
   // ひねりの比較：人に近い速さの計画で、解けた時に残るゲージ（★の基準）を、ひねり0（なし）と1（壊すと時間が戻る）で比べる
   const HN = 150;
   lines.push('## ひねりの比較（ふつう）', '', `人に近い速さの計画（止めている時間＝1秒＋矢印1本0.6秒）をランダムに${HN}個。解けた計画の割合／その平均残りゲージ／★3（残り半分以上）の数`, '',

@@ -174,9 +174,14 @@ export class StopSim {
     return this.stage.forces ? Math.min(c, this.stage.forces) : c;
   }
 
+  /** このステージで止められる回数（ステージの指定＋難易度の上乗せ。指定なしは無制限） */
+  get stopLimit(): number {
+    return this.stage.stops ? this.stage.stops + Math.max(0, Math.round(this.cfg.bonusStops ?? 0)) : Infinity;
+  }
+
   /** あと何回止められるか（無制限なら Infinity） */
   get stopsLeft(): number {
-    return this.stage.stops ? this.stage.stops - this.stopsUsed : Infinity;
+    return this.stage.stops ? this.stopLimit - this.stopsUsed : Infinity;
   }
 
   /** もう止められない（ゲージが尽きた、または回数を使い切った） */

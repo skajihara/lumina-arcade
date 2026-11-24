@@ -19,6 +19,8 @@ export interface StopConfig {
   slingMax: number;
   /** パチンコ式：引く長さに対する強さの曲線（1 で比例、小さいほど少し引くだけで強い） */
   slingCurve: number;
+  /** 止められる回数が決まっている面で、上乗せする回数（やさしいは +1） */
+  bonusStops: number;
   /** 巣のやわらかさ：巣の中では、割れる衝撃がこの倍になる */
   nestSoft: number;
   /** 卵が割れる衝撃の強さ（速度の差）。これを超えると1回で割れる */
@@ -55,6 +57,7 @@ export const schema: Schema<StopConfig> = {
   slingPull: { label: 'いっぱいに引く距離', min: 1, max: 8, step: 0.1, folder: '時間停止' },
   slingMax: { label: 'いっぱいに引いた時の力（倍）', min: 0.5, max: 8, step: 0.1, folder: '時間停止' },
   slingCurve: { label: '引く長さと強さの曲線（1比例・小さいほど少しで強い）', min: 0.3, max: 1.5, step: 0.05, folder: '時間停止' },
+  bonusStops: { label: '止められる回数の上乗せ（回数が決まっている面）', min: 0, max: 5, step: 1, folder: '時間停止', restart: true },
   eggHp: { label: '卵が割れるまでのひびの数（0でひびでは割れない）', min: 0, max: 6, step: 1, folder: '物体' },
   nestSoft: { label: '巣のやわらかさ（割れる衝撃の倍）', min: 1, max: 5, step: 0.1, folder: '物体' },
   eggBreak: { label: '卵が割れる衝撃', min: 2, max: 40, step: 0.5, folder: '物体' },
@@ -82,6 +85,7 @@ const normal: StopConfig = {
   slingPull: 3.75,
   slingMax: 3.5,
   slingCurve: 0.55,
+  bonusStops: 0,
   nestSoft: 2.5,
   eggBreak: 14,
   eggHp: 3,
@@ -100,7 +104,7 @@ const normal: StopConfig = {
 };
 
 export const presets: Record<string, StopConfig> = {
-  やさしい: { ...normal, stopGauge: 14, maxForces: 6, eggBreak: 18, predictSec: 1.6 },
+  やさしい: { ...normal, bonusStops: 1, stopGauge: 14, maxForces: 6, eggBreak: 18, predictSec: 1.6 },
   ふつう: normal,
   むずかしい: { ...normal, stopGauge: 5, maxForces: 3, eggBreak: 11, predictSec: 0.5 },
 };
