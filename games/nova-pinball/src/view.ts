@@ -63,7 +63,7 @@ export class NovaView {
   private launchMeter = new Graphics();
   particles = new Particles(3000);
   /** ボールごとの色と濃さ（Echo Loop の残響用）。null なら全部同じ */
-  ballStyle: ((b: Ball) => { tint: number; alpha: number }) | null = null;
+  ballStyle: ((b: Ball) => { tint: number; alpha: number; scale?: number }) | null = null;
   /** ボールの持ち主ごとの音量（Echo Loop：残響の音は遠く小さく）。null なら 1 */
   soundScale: ((owner: number) => number) | null = null;
   private t = 0;
@@ -562,13 +562,14 @@ export class NovaView {
         v.core.tint = style.tint;
         v.core.alpha = style.alpha;
         v.glow.alpha = style.alpha;
+        v.core.scale.set(style.scale ?? 1);
       }
       // 速いほど軌跡が長く、明るく、青白くなる
       const bv = b.body.getLinearVelocity();
       const sp = Math.min(1, Math.hypot(bv.x, bv.y) / 32);
       const len = Math.round(6 + sp * (TRAIL_MAX - 6));
       const tcol = lerpColor(0x7fa8ff, 0xe8fbff, sp);
-      v.glow.scale.set(((BALL_R * SCALE * 5) / 128) * (1 + sp * 0.35));
+      v.glow.scale.set(((BALL_R * SCALE * 5) / 128) * (1 + sp * 0.35) * (style?.scale ?? 1));
       v.trail.forEach((t, k) => {
         const tp = b.trail[k] ?? { x, y };
         t.x = tp.x; t.y = tp.y;
@@ -576,7 +577,7 @@ export class NovaView {
         if (!style) t.tint = tcol;
         t.alpha = (0.25 + 0.25 * sp) * (1 - k / len) * (style?.alpha ?? 1);
         if (style) t.tint = lerpColor(style.tint, tcol, 0.3);
-        t.scale.set(((BALL_R * SCALE * 2.6) / 128) * (1 - k / (len * 1.3)));
+        t.scale.set(((BALL_R * SCALE * 2.6) / 128) * (1 - k / (len * 1.3)) * (style?.scale ?? 1));
       });
     }
     for (const [id, v] of this.ballSprites) {

@@ -3,7 +3,7 @@
  * 盤面の描画は Nova Pinball の NovaView をそのまま使い、その上に「残響の軌跡」と「ループの時計」を重ねる。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
-import { Graphics } from 'pixi.js';
+import { Container, Graphics, Text } from 'pixi.js';
 import { FixedLoop } from '@engine/loop';
 import { Input } from '@engine/input';
 import { Juice } from '@engine/juice';
@@ -98,6 +98,16 @@ async function main() {
   /** このループで過去が書き換わった残響 */
   const rewritten = new Set<number>();
   let rewindFx = 0;
+  /** このループで、だれ（持ち主）がいつどの星に当てたか（次のループで「残響がここで当てる」✕の予告に使う） */
+  let hitLog: { tick: number; star: number; x: number; y: number; by: number }[] = [];
+  let prevHitLog: typeof hitLog = [];
+  /** 残響の番号と「今の自分」の札（ボールの横に付ける） */
+  const tags = new Container();
+  const tagPool: Text[] = [];
+  /** ループの最初の短い説明（画面の中央に数秒） */
+  let loopNote: { text: string; t: number } | null = null;
+  const noteText = new Text({ text: '', style: { fontFamily: 'system-ui, sans-serif', fontSize: 22, fill: 0xffffff, align: 'center', dropShadow: { color: 0x000000, blur: 6, distance: 0, alpha: 0.9 } } });
+  noteText.anchor.set(0.5);
 
   const closeMenu = () => { menu?.remove(); menu = null; };
 
@@ -107,14 +117,19 @@ async function main() {
     if (view) {
       view.container.removeChild(overlay);
       view.container.removeChild(clockG);
+      view.container.removeChild(tags);
+      view.container.removeChild(noteText);
       view.destroy();
     }
     view = new NovaView(es.sim, juice, cfg, hudApi);
     const cur = es.loop;
-    view.ballStyle = (b) => ({ tint: echoColor(cur - b.owner), alpha: echoAlpha(cur - b.owner) });
+    // 今の自分は大きく白く、残響は色付きで半透明・少し小さく（EL-11：区別がつくように）
+    view.ballStyle = (b) => (b.owner === cur ? { tint: 0xffffff, alpha: 1, scale: 1.3 } : { tint: echoColor(cur - b.owner), alpha: echoAlpha(cur - b.owner) * 0.7, scale: 0.85 });
     // 残響の当たり音は、古いほど小さく遠く
     view.soundScale = (owner) => (owner === cur ? 1 : Math.max(0.25, 0.6 - (cur - owner) * 0.08));
     view.container.addChild(overlay);
+    view.container.addChild(tags);
+    view.container.addChild(noteText);
     // 時計は夜空のすぐ上（盤面の線より後ろ）
     view.container.addChildAt(clockG, Math.min(2, view.container.children.length));
     ga.world.removeChildren();
@@ -128,6 +143,9 @@ async function main() {
     paths = [];
     prevPaths = [];
     rewritten.clear();
+    hitLog = [];
+    prevHitLog = [];
+    loopNote = { text: '星をねらって打つ。10秒たつと時間が巻き戻り、\n今の自分は「残響」になって同じ動きをくり返す', t: 0 };
     finaleT = -1;
     attachView();
     hudApi.chain(0);
@@ -280,6 +298,11 @@ async function main() {
   const onRewind = (loop: number) => {
     prevPaths = paths;
     paths = [];
+    prevHitLog = hitLog;
+    hitLog = [];
+    loopNote = loop === 1
+      ? { text: '巻き戻った — 前の自分（残響）が、同じ動きをくり返す\n✕ は残響がこれから当てる星。残りの星をねらえ', t: 0 }
+      : { text: `LOOP ${loop + 1} — 残響 ${loop} 人が、それぞれの動きをくり返す`, t: 0 };
     rewritten.clear();
     attachView();
     rewindFx = 1;
@@ -289,7 +312,10 @@ async function main() {
     synth.arp([8, 6, 4, 2, 0], 0.045, 0.07);
     synth.nextChord(0.05);
     const last = loop === (es?.maxLoops ?? 0) - 1;
-    hudApi.toast(last ? `最後のループ — ${loop + 1} 人の自分と` : `LOOP ${loop + 1}　残響 ${loop} 人`);
+    if (last) {
+      hudApi.toast(`最後のループ — ${loop + 1} 人の自分と`);
+      loopNote = { text: `最後のループ — 残響 ${loop} 人と今の自分で、残りを全部`, t: 0 };
+    }
   };
 
   // スマホ・タブレット：キーボードの代わりの画面ボタン
@@ -307,6 +333,7 @@ async function main() {
       const before = es.loop;
       es.step(m);
       for (const e of es.events) {
+        if (e.t === 'hit' && e.by !== undefined && es.loop === before) hitLog.push({ tick: es.sim.tick, star: e.star, x: e.x, y: e.y, by: e.by });
         if (e.t === 'echoClear' || e.t === 'echoFail') resultTimer = es.totalTicks + Math.round(HZ * (e.t === 'echoClear' ? 3.2 : 1.2));
         if (e.t === 'echoClear') onAllClear();
         if (e.t === 'echoFail') {
@@ -453,6 +480,51 @@ async function main() {
         g.stroke({ width: 2, color: col, alpha: 0.45 });
       }
     });
+    // 残響がこれから当てる星の予告（✕）：前のループの記録から、書き換わっていない残響の、この先 2 秒の当たり
+    const LOOK = Math.round(HZ * 2);
+    const marked = new Set<number>();
+    for (const h of prevHitLog) {
+      if (h.by >= cur || rewritten.has(h.by) || h.tick < t || h.tick > t + LOOK || marked.has(h.star)) continue;
+      const star = es.sim.stars[h.star];
+      if (!star || !star.alive) continue;
+      marked.add(h.star);
+      const p = star.body.getPosition();
+      const x = p.x * SCALE, y = p.y * SCALE;
+      const k = 1 - (h.tick - t) / LOOK; // 0 → 1（当たる瞬間）
+      const col = echoColor(cur - h.by);
+      const r = 9 + (1 - k) * 16;
+      g.circle(x, y, r).stroke({ width: 1.5, color: col, alpha: 0.25 + 0.5 * k });
+      const d = 6;
+      g.moveTo(x - d, y - d).lineTo(x + d, y + d).moveTo(x + d, y - d).lineTo(x - d, y + d).stroke({ width: 2.5, color: col, alpha: 0.4 + 0.5 * k, cap: 'round' });
+    }
+    // ボールの札：今の自分に「今」、残響には何ループ目の自分かの番号
+    let ti = 0;
+    for (const b of es.sim.balls) {
+      if (!b.launched && b.owner !== cur) continue;
+      const tag = tagPool[ti] ?? (tagPool[ti] = tags.addChild(new Text({ text: '', style: { fontFamily: 'system-ui, sans-serif', fontSize: 13, fontWeight: 'bold', fill: 0xffffff, dropShadow: { color: 0x000000, blur: 4, distance: 0, alpha: 0.9 } } })));
+      ti++;
+      const p = b.body.getPosition();
+      const now = b.owner === cur;
+      tag.text = now ? '今' : String(b.owner + 1);
+      tag.style.fill = now ? 0xffffff : echoColor(cur - b.owner);
+      tag.alpha = now ? 1 : 0.8;
+      tag.anchor.set(0.5);
+      tag.x = p.x * SCALE + (now ? 0 : 12);
+      tag.y = p.y * SCALE - (now ? 26 : 14);
+      tag.visible = es.phase === 'play';
+    }
+    for (let i = ti; i < tagPool.length; i++) tagPool[i].visible = false;
+    // ループの最初の短い説明（4 秒）
+    if (loopNote && es.phase === 'play') {
+      loopNote.t += dt;
+      const a = Math.min(1, loopNote.t * 3) * Math.min(1, Math.max(0, 4 - loopNote.t));
+      noteText.text = loopNote.text;
+      noteText.alpha = a;
+      noteText.x = VIEW_W / 2;
+      noteText.y = VIEW_H * 0.3;
+      noteText.visible = a > 0;
+      if (loopNote.t > 4) loopNote = null;
+    } else noteText.visible = false;
     // 最後のループ：盤面の縁が金色に脈打つ
     const lastLoop = es.loop === es.maxLoops - 1;
     if (lastLoop && es.phase === 'play') {
