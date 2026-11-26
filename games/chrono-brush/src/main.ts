@@ -58,6 +58,7 @@ async function main() {
     mode = 'play';
     stageIndex = i;
     sim = ChronoSim.of(chronoStages[i], toChrono(cfg));
+    links = [];
     bot = new ChronoBot(0.85);
     starLayer.removeChildren();
     sprites = [];
@@ -66,6 +67,10 @@ async function main() {
     const cur = sim;
   };
   const restart = () => start(stageIndex);
+  /** 捕まえた所（星座の線の点） */
+  let links: { x: number; y: number; age: number }[] = [];
+  const linkG = new Graphics();
+  ga.world.addChild(linkG);
 
   /** ★：必要数で★1、残りの半分で★2、残りの 8 割で★3 */
   const starsOf = (caught: number) => {
@@ -210,6 +215,9 @@ async function main() {
       sim.step();
       for (const e of sim.events) {
         if (e.t === 'catch') {
+          // 捕まえた星どうしを金の線で結ぶ（籠に星座が描かれていく）
+          links.push({ x: e.x, y: e.y, age: 0 });
+          juice.hitstop(0.03);
           particles.emit(e.x, e.y, { count: 40, speed: [60, 300], life: [0.4, 1], size: [0.05, 0.18], color: [0xffd98a, 0xffffff] });
           synth.hbell(3 + e.n, 0.1, 1.2);
           juice.shake(0.1);
@@ -259,6 +267,19 @@ async function main() {
           const a = -t * 0.8 + (k * Math.PI) / 4;
           voidG.moveTo(v.x + Math.cos(a) * v.r, v.y + Math.sin(a) * v.r).arc(v.x, v.y, v.r, a, a + 0.3).stroke({ width: 2, color: 0x8a5acd, alpha: 0.6 });
         }
+      }
+      // 捕まえた星の星座：籠の上に、捕まえた順に点を並べて線で結ぶ（新しい線ほど明るく）
+      linkG.clear();
+      links.forEach((l) => { l.age += dt; });
+      const lx = (k: number) => VIEW_W / 2 + (k - (links.length - 1) / 2) * 34;
+      const ly = (k: number) => 70 + Math.sin(k * 1.7) * 14;
+      for (let k = 0; k < links.length; k++) {
+        const a = Math.min(1, links[k].age * 3);
+        // 籠から星座の点へ飛んでいく光
+        const f = Math.min(1, links[k].age / 0.6);
+        if (f < 1) linkG.moveTo(links[k].x, links[k].y).lineTo(links[k].x + (lx(k) - links[k].x) * f, links[k].y + (ly(k) - links[k].y) * f).stroke({ width: 2, color: 0xffd98a, alpha: 0.8 * (1 - f) });
+        linkG.circle(lx(k), ly(k), 3.5 + 2 * Math.max(0, 1 - links[k].age)).fill({ color: 0xfff1c8, alpha: a });
+        if (k > 0) linkG.moveTo(lx(k - 1), ly(k - 1)).lineTo(lx(k), ly(k)).stroke({ width: 1.5, color: 0xffd98a, alpha: 0.5 * a });
       }
       // 籠
       const bx = sim.basketX(), by = VIEW_H - 40, w = sim.cfg.basketW;

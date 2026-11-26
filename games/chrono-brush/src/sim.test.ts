@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ChronoSim, chronoStages, defaults } from './sim';
 import { ChronoBot } from './bot';
 
-describe('時空の絵筆（実験）', () => {
+describe('時空の絵筆', () => {
   it('遅い時間の中では星がゆっくり落ちる', () => {
     const a = new ChronoSim(defaults, 3);
     const b = new ChronoSim(defaults, 3);

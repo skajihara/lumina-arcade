@@ -56,7 +56,7 @@ export const games: GameEntry[] = [
     at: [0.1, 0.46], hue: '#a8ffe0',
   },
   {
-    id: 'chrono-brush', title: 'Chrono Brush', jp: '時空の絵筆', status: 'ready', stages: 6,
+    id: 'chrono-brush', title: 'Chrono Brush', jp: '時空の絵筆', status: 'ready', stages: 10,
     desc: '夜空に時間の流れを塗る。遅い・速い・逆再生の時間で、降る星を風に乗せて星座の籠へ。',
     shape: [[0.5, 0.5], [0.15, 0.2], [0.85, 0.3], [0.7, 0.85], [0.25, 0.75]], edges: [[1, 0], [0, 2], [0, 3], [0, 4], [1, 4]],
     at: [0.47, 0.43], hue: '#9fc0ff',
