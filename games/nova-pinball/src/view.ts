@@ -550,7 +550,7 @@ export class NovaView {
       sv.core.rotation += realDt * (0.2 + ch * 0.6);
       sv.core.scale.set(1 + sv.pulse * 0.25);
     });
-    if (sim.stars.some((s) => s.loose && s.alive)) this.linksDirty = true;
+    if (sim.stars.some((s) => (s.loose || s.orbit) && s.alive)) this.linksDirty = true;
     if (this.linksDirty || sim.litLinks.size > 0 || this.fuses.length > 0) {
       this.drawLinks();
       this.linksDirty = false;
@@ -772,6 +772,22 @@ export class NovaView {
           g.circle((p.x + (q.x - p.x) * f) * SCALE, (p.y + (q.y - p.y) * f) * SCALE, 2.2).fill({ color: k % 2 ? 0xff8fb0 : 0x7ff0ff, alpha: 0.75 * Math.min(1, left * 3) });
         }
         g.circle(q.x * SCALE, q.y * SCALE, tg.r * SCALE + 8 + 3 * Math.sin(this.t * 10)).stroke({ width: 2, color: 0xff8fb0, alpha: 0.7 * Math.min(1, left * 3) });
+      }
+    }
+    // 回る星の軌道（NP-13b）：うすい点線の輪と、回る向きに流れる光の粒
+    {
+      const seen = new Set<string>();
+      for (const s of sim.stars) {
+        const o = s.orbit;
+        if (!o) continue;
+        const key = `${o.cx},${o.cy},${o.rad.toFixed(2)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const n = Math.max(24, Math.round(o.rad * 14));
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2 + o.w * sim.time * 0.5;
+          g.circle((o.cx + Math.cos(a) * o.rad) * SCALE, (o.cy + Math.sin(a) * o.rad) * SCALE, k % 3 === 0 ? 2.4 : 1.4).fill({ color: 0xcfe0ff, alpha: k % 3 === 0 ? 0.55 : 0.3 });
+        }
       }
     }
     for (const it of sim.items) {

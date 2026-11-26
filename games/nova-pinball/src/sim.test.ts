@@ -367,4 +367,17 @@ describe('NP-16 発射', () => {
     p2.wave = 3; p2.spawnWave();
     expect(off.items.length).toBe(0);
   });
+
+  it('回る星は中心の周りを決まった周期で回り、半径が変わらない（NP-13b）', () => {
+    const st = stages.find((s) => s.id === 'orbit')!;
+    const sim = new NovaSim(st, cfg());
+    const s0 = sim.stars[0];
+    const o = s0.orbit!;
+    const start = s0.body.getPosition().clone();
+    for (let i = 0; i < 120 * 4.5; i++) sim.step(0);
+    const p = s0.body.getPosition();
+    expect(Math.hypot(p.x - o.cx, p.y - o.cy)).toBeCloseTo(o.rad, 1);
+    // 9 秒で1周 → 4.5 秒で反対側
+    expect(Math.hypot(p.x - (2 * o.cx - start.x), p.y - (2 * o.cy - start.y))).toBeLessThan(0.1);
+  });
 });

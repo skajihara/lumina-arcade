@@ -73,6 +73,8 @@ export interface Star {
   lastOwnerTick: number;
   /** 共鳴した（違うループの自分がほぼ同時に当てた）→ 爆風が大きくなる */
   resonant: boolean;
+  /** 回る星（NP-13b）：中心・半径・始めの角度・角速度（rad/秒） */
+  orbit?: { cx: number; cy: number; rad: number; a0: number; w: number };
 }
 
 export interface Flipper {
@@ -375,7 +377,7 @@ export class NovaSim {
     const i = this.stars.length;
     const r = d.r ?? 0.55;
     const body = this.world.createBody({
-      type: d.loose ? 'dynamic' : 'static',
+      type: d.loose ? 'dynamic' : d.orbit ? 'kinematic' : 'static',
       position: { x: d.x, y: d.y },
       linearDamping: 1.2,
       angularDamping: 2,
@@ -387,7 +389,24 @@ export class NovaSim {
       id: i, body, r, loose: !!d.loose, charge: d.charge ?? 0, decay: 0, alive: true,
       pendingAt: -1, pendingChain: 0, exploded: false, explodedChain: -1, lastHit: -999, blastChain: -1,
       color: d.color ?? 0, lastOwner: -1, lastOwnerTick: -999, resonant: false,
+      orbit: d.orbit && !d.loose ? {
+        cx: d.orbit.cx, cy: d.orbit.cy,
+        rad: Math.hypot(d.x - d.orbit.cx, d.y - d.orbit.cy),
+        a0: Math.atan2(d.y - d.orbit.cy, d.x - d.orbit.cx),
+        w: (Math.PI * 2) / d.orbit.period,
+      } : undefined,
     });
+  }
+
+  /** 回る星：次のティックで円の上の決まった所に来るように速度を与える（キネマティック。ボールは押し返される） */
+  private moveOrbits(): void {
+    const t = (this.tick + 1) / HZ;
+    for (const s of this.stars) {
+      if (!s.alive || !s.orbit) continue;
+      const o = s.orbit, a = o.a0 + o.w * t;
+      const p = s.body.getPosition();
+      s.body.setLinearVelocity({ x: (o.cx + Math.cos(a) * o.rad - p.x) * HZ, y: (o.cy + Math.sin(a) * o.rad - p.y) * HZ });
+    }
   }
 
   /**
@@ -567,6 +586,7 @@ export class NovaSim {
       if (f) f.setRestitution(cfg.ballRestitution);
     }
     this.applyWells();
+    this.moveOrbits();
 
     this.world.step(DT, 8, 3);
     this.tick++;
@@ -795,7 +815,7 @@ export class NovaSim {
     if (!s.alive) return;
     s.charge += n;
     // ひねりB：灯った星はボールで押して運べる
-    if (this.cfg.twist === 2 && !s.loose && s.charge > 0) {
+    if (this.cfg.twist === 2 && !s.loose && !s.orbit && s.charge > 0) {
       s.loose = true;
       s.body.setDynamic();
       s.body.setLinearDamping(2.2);
