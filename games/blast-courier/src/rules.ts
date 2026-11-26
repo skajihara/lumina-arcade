@@ -74,3 +74,54 @@ export const blastRules: RuleFrame[] = [
     },
   },
 ];
+
+/** NEW-07：その面で初めて出てくる要素の「NEW」カード */
+export const blastIntros: Record<string, { title: string; frame: RuleFrame }> = {
+  'bc-2': { title: '雲', frame: blastRules[3] },
+  'bc-3': {
+    title: '吸う（右クリック）',
+    frame: {
+      caption: '右クリック（または 2）で吸う。その場へ卵を引き寄せる。ひびは入らないので、崖の上へそっと運べる',
+      draw: (g, t) => {
+        const p = phase(t, 2.6);
+        line(g, 6, 80, 60, 80, LAND, 0.9, 2);
+        line(g, 74, 44, 132, 44, LAND, 0.9, 2);
+        const k = seg(p, 0.15, 0.8);
+        if (p > 0.1 && p < 0.4) ring(g, 96, 30, (1 - seg(p, 0.1, 0.4)) * 26, '#9fe0ff', 0.8, 2);
+        glow(g, 96, 30, 2.5, '#9fe0ff', p < 0.5 ? 1 : 0.3);
+        egg(g, lerp(40, 94, k), lerp(74, 36, k) + Math.sin(k * Math.PI) * -8);
+      },
+    },
+  },
+  'bc-4': { title: '昇る（3）', frame: blastRules[1] },
+  'bc-5': { title: '遅れ（4）', frame: blastRules[2] },
+  'bc-6': {
+    title: '渡し舟の島',
+    frame: {
+      caption: '小さな島が谷を行き来する。島が来た時に、そっと飛び乗ろう',
+      draw: (g, t) => {
+        const x = 64 + Math.sin(t * 1.2) * 30;
+        line(g, 4, 60, 28, 60, LAND, 0.9, 2);
+        line(g, 108, 60, 132, 60, LAND, 0.9, 2);
+        line(g, x - 10, 66, x + 10, 66, '#bff0dc', 0.95, 2.5);
+        egg(g, x, 60);
+        label(g, '⇆', x - 4, 82, LAND, 10);
+      },
+    },
+  },
+  'bc-7': {
+    title: '棘',
+    frame: {
+      caption: '光る棘に触れると、卵は一度で割れる。高い弧で越えよう',
+      draw: (g, t) => {
+        const p = phase(t, 2.6);
+        g.save(); g.fillStyle = 'rgba(80,20,60,.9)'; g.strokeStyle = '#ff7aa8'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(54, 94); g.lineTo(68, 50); g.lineTo(82, 94); g.closePath(); g.fill(); g.stroke(); g.restore();
+        line(g, 4, 70, 40, 70, LAND, 0.9, 2);
+        line(g, 96, 70, 132, 70, LAND, 0.9, 2);
+        const k = seg(p, 0.1, 0.9);
+        egg(g, lerp(24, 112, k), 64 - Math.sin(k * Math.PI) * 46);
+      },
+    },
+  },
+};
