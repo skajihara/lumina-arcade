@@ -12,6 +12,8 @@ export interface NovaConfig {
   /** 月のバンパー：満月の時の弾く速さ・満ち欠けの周期（秒） */
   moonKick: number;
   moonPeriod: number;
+  /** 満月の光（NP-18b）：満月の時に月へ当てると、一番近い灯っていない星へ光が飛んでチャージ +1（0 で無し） */
+  moonCharge: number;
   /** 盤面の下の方（下 3 割）で引力を何倍にするか（NP-17。1 で弱めない） */
   lowPull: number;
   ballRestitution: number;
@@ -61,6 +63,7 @@ export const schema: Schema<NovaConfig> = {
   flipperLength: { label: 'フリッパーの長さ', min: 1.6, max: 2.8, step: 0.05, folder: '盤面', restart: true },
   slingMode: { label: '下の左右（0スリングショット／1月のバンパー）', min: 0, max: 1, step: 1, folder: '盤面', restart: true },
   moonKick: { label: '月のバンパー：満月の時の強さ', min: 4, max: 30, step: 0.5, folder: '盤面' },
+  moonCharge: { label: '満月の光：満月で当てると近くの星を1つ灯す（0/1）', min: 0, max: 1, step: 1, folder: '盤面' },
   moonPeriod: { label: '月の満ち欠けの周期（秒）', min: 1, max: 20, step: 0.5, folder: '盤面' },
   lowPull: { label: '盤面の下の方の引力（倍）', min: 0, max: 1, step: 0.05, folder: '盤面' },
   ballRestitution: { label: 'ボールの弾み', min: 0, max: 0.95, step: 0.01, folder: '盤面' },
@@ -107,6 +110,7 @@ const normal: NovaConfig = {
   slingMode: 1,
   moonKick: 16,
   moonPeriod: 6,
+  moonCharge: 1,
   ballRestitution: 0.45,
   popKick: 4.5,
   slingKick: 9,

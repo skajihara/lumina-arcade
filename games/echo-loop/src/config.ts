@@ -62,6 +62,8 @@ const base = (p: NovaConfig): EchoConfig => ({
   flipperLength: 2.0,
   // Nova の「星の引力」は使わない（残響の動きを読みやすく保つ）
   starPull: 0,
+  // 満月の光（Nova の NP-18b）も使わない（難しさはループ数で決めている）
+  moonCharge: 0,
   // 星座の線は連鎖を運ばない（群れごとに別のループで落とす遊びを保つ）
   fuseSpeed: 0,
   loopSec: 10,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { hashNumbers } from '@engine/rng';
 import { presets, DEFAULT_PRESET } from './config';
 import { stages, type StageDef } from './stages';
-import { NovaSim, IN_LAUNCH } from './sim';
+import { MOON_L, NovaSim, IN_LAUNCH } from './sim';
 import { NovaBot } from './bot';
 
 const cfg = () => ({ ...presets[DEFAULT_PRESET] });
@@ -143,6 +143,24 @@ describe('NovaSim', () => {
     expect(Math.hypot(p.x - 3, p.y - 4)).toBeLessThan(0.5);
     const h = mk([{ kind: 'hole', x: 6.9, y: 10 }]);
     expect(h.wells.length).toBe(1);
+  });
+
+  it('NP-18b 満月で月に当てると、一番近い灯っていない星に光が飛んでチャージ', () => {
+    const stage: StageDef = { id: 't', name: 't', hint: '', slings: true, stars: [{ x: 3, y: 12 }, { x: 11, y: 4 }], links: [] };
+    const run = (moonCharge: number) => {
+      const sim = new NovaSim(stage, { ...cfg(), twist: 0, starPull: 0, moonCharge, slingMode: 1 });
+      // 左の月が満月になる時刻まで進める（左は周期の半分で満月）
+      while (sim.moonPhase('L') < 0.995) sim.step(0);
+      const b = sim.balls[0];
+      b.launched = true;
+      b.body.setPosition({ x: MOON_L.x, y: MOON_L.y - 1.2 });
+      b.body.setLinearVelocity({ x: 0, y: 6 });
+      let light = false;
+      for (let i = 0; i < 40; i++) { sim.step(0); for (const e of sim.events) if (e.t === 'moonlight') light = true; }
+      return { light, charge: sim.stars[0].charge };
+    };
+    expect(run(1)).toEqual({ light: true, charge: 1 });
+    expect(run(0).light).toBe(false);
   });
 
   it('NP-11b 彗星は星をすり抜けて触れた星を灯し、磁石は灯った星へボールを引く', () => {
