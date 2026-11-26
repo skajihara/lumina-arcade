@@ -42,9 +42,12 @@ function links(start: number, n: number, closed = false): [number, number][] {
 
 const base = { slings: true, rollovers: true } as const;
 
+/** 盤の上を丸い文字盤の形に（EL-10c）。上の方まで星がある面（鏡・星の雨・散開・残響の果て）は角の丸い四角のまま */
+const CLOCK = { name: '文字盤', outer: 'dome' } as const;
+
 export const stages: EchoStage[] = [
   {
-    id: 'echo-bridge', ...base,
+    id: 'echo-bridge', ...base, shape: CLOCK,
     name: '橋',
     hint: '10秒で全部は無理。今のループで片方の岸を燃やし、次のループの自分にもう片方を任せろ',
     stars: pts([...line(2.4, 6.0, 2.4, 9.6, 3), ...line(11.4, 6.0, 11.4, 9.6, 3), ...line(5.0, 7.8, 8.8, 7.8, 3)], 0.5),
@@ -52,7 +55,7 @@ export const stages: EchoStage[] = [
     hue: 0.47,
   },
   {
-    id: 'echo-clock', ...base, outlanes: true,
+    id: 'echo-clock', ...base, shape: CLOCK, outlanes: true,
     name: '時計',
     hint: '十二の時刻と、回る時計の針。針は毎ループ同じ時刻に同じ所 — 針に弾かせて時刻を打て',
     stars: pts(ring(6.9, 8.4, 4.4, 12), 0.42),
@@ -72,7 +75,7 @@ export const stages: EchoStage[] = [
     hue: 0.52,
   },
   {
-    id: 'echo-twin', ...base,
+    id: 'echo-twin', ...base, shape: CLOCK,
     extraLoops: 0,
     name: '二つの灯',
     hint: '二つの灯は離れている。残響の軌跡を見て、まだ燃えない方を狙え',
@@ -81,8 +84,8 @@ export const stages: EchoStage[] = [
     hue: 0.49,
   },
   {
-    id: 'echo-triad', ...base,
-    extraLoops: 1,
+    id: 'echo-triad', ...base, shape: CLOCK,
+    extraLoops: 0,
     name: '三つ星',
     hint: '三つの群れ。三人の自分で一つずつ',
     stars: pts([...ring(3.4, 10.4, 0.95, 3), ...ring(6.9, 5.6, 0.95, 3), ...ring(10.4, 10.4, 0.95, 3)], 0.5),
@@ -100,7 +103,7 @@ export const stages: EchoStage[] = [
     hue: 0.48,
   },
   {
-    id: 'echo-crossing', ...base, outlanes: true,
+    id: 'echo-crossing', ...base, shape: CLOCK, outlanes: true,
     extraLoops: 2,
     name: '交差点',
     hint: '軌道が交わる。残響とぶつかると過去が変わる — それを利用しろ',
@@ -123,8 +126,8 @@ export const stages: EchoStage[] = [
     hue: 0.5,
   },
   {
-    id: 'echo-drift', ...base, outlanes: true,
-    extraLoops: 2,
+    id: 'echo-drift', ...base, shape: CLOCK, outlanes: true,
+    extraLoops: 1,
     name: '流星群',
     hint: '漂う星は残響の道を変える。同じループでも毎回ちがう過去になる',
     stars: pts([...ring(3.8, 6.4, 1.1, 4), ...ring(10.0, 6.4, 1.1, 4), ...line(5.2, 11.6, 8.6, 11.6, 3)], 0.5, [9]),

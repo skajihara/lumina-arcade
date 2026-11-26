@@ -33,6 +33,8 @@ const STAGE_KEYS = [2, 7, -3, 4, -5, 0, 5, -2, 3, -4];
 /** 何ループ前の残響か（0=今）で色を変える：今は白、古いほど紫へ、淡く */
 const echoColor = (age: number) => (age === 0 ? 0xffffff : lerpColor(0x9fe8ff, 0x9a7dff, Math.min(1, (age - 1) / 4)));
 const echoAlpha = (age: number) => (age === 0 ? 1 : Math.max(0.35, 0.85 - age * 0.1));
+/** 残響の光の帯の長さ（記録の点の数） */
+const RIBBON_LEN = 14;
 const PATH_EVERY = 4;
 
 async function main() {
@@ -537,6 +539,19 @@ async function main() {
           g.moveTo(a.x * SCALE, a.y * SCALE).lineTo(b.x * SCALE, b.y * SCALE);
         }
         g.stroke({ width: 2, color: col, alpha: 0.45 });
+      }
+    });
+    // 残響の光の帯（EL-10c）：過去の自分は、通ってきた道に細く消えていく光の帯を引く（今の自分は Nova と同じ短い尾だけ）
+    paths.forEach((path, owner) => {
+      if (!path || owner >= cur) return;
+      const col = echoColor(cur - owner);
+      const n = RIBBON_LEN;
+      for (let k = 1; k < n; k++) {
+        const a = path[idxNow - k], b = path[idxNow - k + 1];
+        if (!a || !b) continue;
+        const f = 1 - k / n;
+        g.moveTo(a.x * SCALE, a.y * SCALE).lineTo(b.x * SCALE, b.y * SCALE);
+        g.stroke({ width: 2 + 10 * f, color: col, alpha: 0.05 + 0.22 * f * f, cap: 'round' });
       }
     });
     // 時計の針（EL-12）：盤面を回る光の棒。当たった直後は明るく
