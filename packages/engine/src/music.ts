@@ -52,6 +52,8 @@ export const STYLES: Record<string, MusicStyle> = {
   origami: { ...base, tempo: 74, timbre: 'koto', pattern: [0, -1, 1, 2, -1, 4, -1, 2, 3, -1, 2, 1, -1, 0, -1, -1], padBright: 1000, padWave: 'triangle' },
   // Starsand：ガラスのような音、さらさら流れる
   starsand: { ...base, tempo: 80, timbre: 'glass', pattern: [0, 1, 2, 4, 2, 1, 3, 5, 0, 2, 4, 6, 4, 2, 1, -1], padBright: 1300, arpOct: 1 },
+  // 時空の絵筆：ゆれる時間。鈴が行って戻る（逆再生のように上がって同じ道を下りる）、こだま強め
+  chrono: { ...base, tempo: 70, timbre: 'bell', pattern: [0, -1, 2, 4, 5, -1, 4, 2, 0, -1, 3, 5, 6, -1, 5, 3], padBright: 1200, padWave: 'triangle', echo: 0.5, arpOct: 1 },
 };
 
 export class Music {

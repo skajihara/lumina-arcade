@@ -14,6 +14,8 @@ import { injectBaseStyle, el, goTo, resetButton, touchButtons } from '@engine/hu
 import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { Save, clearStored } from '@engine/storage';
 import { createTuning } from '@engine/tuning';
+import { ruleCards } from '@engine/rules';
+import { chronoRules } from './rules';
 import { schema, presets, DEFAULT_PRESET, toChrono, type BrushConfig } from './config';
 import { ChronoSim, chronoStages, VIEW_W, VIEW_H, HZ, type Brush } from './sim';
 import { ChronoBot } from './bot';
@@ -118,13 +120,15 @@ async function main() {
     menu.innerHTML = `
       <h1>CHRONO BRUSH</h1>
       <h2>時 空 の 絵 筆</h2>
-      <p style="max-width:620px;line-height:1.8">空から星が降ってくる。夜空に<b style="color:#9fc0ff">時間の流れ</b>を塗って、星を星座の籠へ導こう。<br>
+      <div class="rulebox"></div>
+      <p style="max-width:620px;line-height:1.8;font-size:13px">空から星が降ってくる。夜空に<b style="color:#9fc0ff">時間の流れ</b>を塗って、星を星座の籠へ導こう。<br>
       <b style="color:#9fc0ff">青＝遅い時間</b>（星がふわりと浮く）　<b style="color:#ffb3b3">赤＝速い時間</b>（すぐ落ちる）　<b style="color:#d9b3ff">紫＝逆再生</b>（来た道を戻る）<br>
       風は世界の時間で吹く — <b>遅らせた星ほど風に運ばれる</b>。インクは限られている。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys"><b>ドラッグ</b>＝遅い（青）　<b>右ドラッグ</b>＝速い（赤）　<b>Shift＋ドラッグ</b>＝逆再生（紫）<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下のボタンで色を切り替えて、指でなぞる</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(chronoRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -157,6 +161,7 @@ async function main() {
       m.onclick = showTitle;
       row.append(c, r, m, launcherButton());
       menu.appendChild(settingsRow(tuning.gui, () => tuning.toggle()));
+      menu.appendChild(ruleCards(chronoRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
@@ -206,6 +211,7 @@ async function main() {
     if (key === 'bloom') ga.setBloom(cfg.bloom);
   });
   synth.setVolume(cfg.volume);
+  synth.setMusicStyle('chrono');
   ga.setBloom(cfg.bloom);
 
   const loop = new FixedLoop({
