@@ -333,6 +333,11 @@ export class ClawSim {
     }
   }
 
+  /** フリッパーの位置と角度（描画用） */
+  flipperPoses(): { side: 'L' | 'R'; x: number; y: number; angle: number; length: number }[] {
+    return this.flippers.map((f) => ({ side: f.side, x: f.body.getPosition().x, y: f.body.getPosition().y, angle: f.body.getAngle(), length: this.cfg.flipperLength }));
+  }
+
   /** 爪の状態（描画用） */
   get clawMode(): 'idle' | 'down' | 'up' {
     return this.clawState;

@@ -64,3 +64,23 @@ describe('Moon Claw', () => {
     expect(sim.phase).toBe('clear');
   });
 });
+
+describe('Moon Claw のステージとボット', () => {
+  it('どの面も：何もしないと失敗し、ボット（上手）ならクリアできる', async () => {
+    const { clawStages } = await import('./stages');
+    const { ClawBot } = await import('./bot');
+    for (const st of clawStages) {
+      const idle = new ClawSim(st, defaults);
+      while (idle.phase === 'play') idle.step(0);
+      expect(idle.phase, st.name).toBe('fail');
+      let clears = 0;
+      for (const seed of [1, 2, 3]) {
+        const sim = new ClawSim(st, defaults);
+        const bot = new ClawBot(0.9, seed);
+        while (sim.phase === 'play') { const a = bot.act(sim); sim.step(a.bits, a.x); }
+        if (sim.phase === 'clear') clears++;
+      }
+      expect(clears, st.name).toBeGreaterThanOrEqual(2);
+    }
+  }, 120_000);
+});
