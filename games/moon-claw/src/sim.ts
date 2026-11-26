@@ -46,11 +46,13 @@ export interface ClawConfig {
   timeLimit: number;
   /** 宝石箱の中で何秒落ち着いたら納まるか */
   settle: number;
+  /** 同じ種類を続けて納めるコンボの倍率の上限（MC-11a。1 で無し）：2つ目 ×2、3つ目 ×3 … */
+  comboMax: number;
 }
 
 export const defaults: ClawConfig = {
   gravity: 16, clawSpeed: 5.5, clawAccel: 14, fingerSpeed: 3.2, fingerTorque: 90, fingerFriction: 0.9,
-  timeLimit: 90, settle: 0.35,
+  timeLimit: 90, settle: 0.35, comboMax: 3,
 };
 
 export type GemKind = 'crystal' | 'pearl' | 'moonstone' | 'shard';
@@ -95,7 +97,7 @@ export type ClawEvent =
   | { t: 'grip'; x: number; y: number }
   | { t: 'drop'; id: number; x: number; y: number }
   | { t: 'clack'; x: number; y: number; speed: number }
-  | { t: 'home'; id: number; x: number; y: number; value: number; mult: number; total: number; combo: number }
+  | { t: 'home'; id: number; x: number; y: number; value: number; mult: number; total: number; combo: number; gain: number; bonus: number }
   | { t: 'clear' }
   | { t: 'fail' };
 
@@ -117,7 +119,8 @@ export class ClawSim {
   vel = { x: 0, y: 0 };
   /** 続けて納めた数（同じ種類が続くとコンボ） */
   combo = 0;
-  private lastKind: GemKind | null = null;
+  /** 最後に納めた宝石の種類（コンボ） */
+  lastKind: GemKind | null = null;
   /** 指に触れている宝石（ティックごとに数える） */
   private touching = new Map<number, number>();
   private wasHeld = new Set<number>();
@@ -293,10 +296,12 @@ export class ClawSim {
         this.combo = this.lastKind === g.kind ? this.combo + 1 : 1;
         this.lastKind = g.kind;
         const value = GEMS[g.kind].value;
-        const gain = value * box.mult;
+        // コンボ：同じ種類を続けて納めると、2つ目は ×2、3つ目は ×3（上限 comboMax）
+        const bonus = Math.max(1, Math.min(this.combo, Math.round(this.cfg.comboMax ?? 1)));
+        const gain = value * box.mult * bonus;
         this.score += gain;
         this.world.destroyBody(g.body);
-        this.events.push({ t: 'home', id: g.id, x: q.x, y: q.y, value, mult: box.mult, total: this.score, combo: this.combo });
+        this.events.push({ t: 'home', id: g.id, x: q.x, y: q.y, value, mult: box.mult, total: this.score, combo: this.combo, gain, bonus });
       }
       if (q.y > WORLD_H + 2) g.state = 'home';
     }
@@ -307,7 +312,8 @@ export class ClawSim {
       return;
     }
     const best = Math.max(...this.stage.boxes.map((b) => b.mult));
-    const left = this.gems.filter((g) => g.state === 'free').reduce((a, g) => a + GEMS[g.kind].value * best, 0);
+    // 残りの宝石で取れる点の上限（コンボも最大で数える）
+    const left = this.gems.filter((g) => g.state === 'free').reduce((a, g) => a + GEMS[g.kind].value * best * Math.max(1, Math.round(this.cfg.comboMax ?? 1)), 0);
     if (this.timeLeft <= 0 || this.score + left < this.stage.need) {
       this.phase = 'fail';
       this.events.push({ t: 'fail' });

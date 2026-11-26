@@ -16,6 +16,8 @@ export interface MoonConfig {
   gravity: number;
   /** 宝石箱の中で落ち着いたら納まるまで（秒） */
   settle: number;
+  /** 同じ種類を続けて納めるコンボの倍率の上限（1 で無し） */
+  comboMax: number;
   gameSpeed: number;
   shake: number;
   particles: number;
@@ -25,6 +27,7 @@ export interface MoonConfig {
 
 export const schema: Schema<MoonConfig> = {
   timeLimit: { label: '制限時間（秒）', min: 30, max: 300, step: 5, folder: 'ルール', restart: true },
+  comboMax: { label: 'コンボの倍率の上限（同じ種類を続けて納める。1で無し）', min: 1, max: 6, step: 1, folder: 'ルール' },
   settle: { label: '納まるまで落ち着く秒', min: 0.05, max: 2, step: 0.05, folder: 'ルール' },
   clawSpeed: { label: '爪の速さ', min: 1, max: 12, step: 0.5, folder: '爪' },
   clawAccel: { label: '爪の加速（小さいほど慣性が大きい）', min: 2, max: 80, step: 1, folder: '爪' },
@@ -48,6 +51,7 @@ const normal: MoonConfig = {
   fingerFriction: defaults.fingerFriction,
   gravity: defaults.gravity,
   settle: defaults.settle,
+  comboMax: defaults.comboMax,
   gameSpeed: 1,
   shake: 1,
   particles: 1,
@@ -67,6 +71,6 @@ export const DEFAULT_PRESET = 'ふつう';
 export function toClaw(c: MoonConfig): ClawConfig {
   return {
     ...defaults, timeLimit: c.timeLimit, clawSpeed: c.clawSpeed, clawAccel: c.clawAccel, fingerSpeed: c.fingerSpeed,
-    fingerTorque: c.fingerTorque, fingerFriction: c.fingerFriction, gravity: c.gravity, settle: c.settle,
+    fingerTorque: c.fingerTorque, fingerFriction: c.fingerFriction, gravity: c.gravity, settle: c.settle, comboMax: c.comboMax,
   };
 }
