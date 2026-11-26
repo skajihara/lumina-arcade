@@ -1,7 +1,8 @@
 /**
  * Blast Courier（爆風便）。NEW-06：描画・操作・タイトル・ポーズ・リザルト・自動プレイ。
  * 割れやすい灯の卵を、クリックした所の爆風だけで、雲海に浮かぶ島から島へ運び、星の巣へ届ける。
- * 押す（左クリック）・吸う（右クリック）・昇る・遅れ（1〜4 で選ぶ）。爆風が少ないほど★（爆風ゴルフ）。
+ * 押す・吸う・昇る・遅れ（1〜4・ボタン・ホイールで選ぶ）。爆風が少ないほど★（爆風ゴルフ）。
+ * BC-10：押す・遅れは「押す長さで強さ、ドラッグで向き」。構えている間、飛ぶ先の予測線と強さのゲージ。卵が飛んでいる間に構えると時間がゆっくりになる。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
 import { Graphics, Sprite } from 'pixi.js';
@@ -18,7 +19,7 @@ import { createTuning } from '@engine/tuning';
 import { ruleCards, introCard } from '@engine/rules';
 import { blastRules, blastIntros } from './rules';
 import { schema, presets, DEFAULT_PRESET, toCourier, type BlastConfig } from './config';
-import { CourierSim, HZ, WORLD_W, WORLD_H, type BlastKind } from './sim';
+import { CourierSim, HZ, WORLD_W, WORLD_H, type BlastKind, type CourierAction } from './sim';
 import { courierStages } from './stages';
 import { CourierBot } from './bot';
 
@@ -61,7 +62,10 @@ async function main() {
   const seaFront = new Graphics();
   const aimG = new Graphics();
   const particles = new Particles(1800);
-  ga.world.addChild(sky, field.container, seaBack, landG, nestG, fxBack, eggGlow, eggG, seaFront, particles.container, aimG);
+  // 卵の伸び縮み：外側を伸ばす向きへ回し、内側で戻す（卵の形は立ったまま、向きに沿って伸びる）
+  const eggWrap = new Graphics();
+  eggWrap.addChild(eggG);
+  ga.world.addChild(sky, field.container, seaBack, landG, nestG, fxBack, eggGlow, eggWrap, seaFront, particles.container, aimG);
 
   const hud = el('div', { class: 'hud' });
   const tl = el('div', { class: 'tl' });
@@ -83,6 +87,15 @@ async function main() {
   let bot = new CourierBot(0.85, 1);
   let kind: BlastKind = 'push';
   let mouse = { x: -100, y: -100, in: false };
+  /** 構え（押す・遅れ）：押した所・押した時刻（実時間） */
+  let charge: { sx: number; sy: number; t0: number; kind: BlastKind } | null = null;
+  /** 空中で構えた時のスロー（なめらかに） */
+  let slowK = 1;
+  /** 卵の伸び縮み：強さ（1→0）と向き。構えている間は縮む */
+  let stretch = 0, stretchAng = 0;
+  /** 予測線（毎フレームは重いので、間引いて計算） */
+  let predPts: { x: number; y: number }[] = [];
+  let predFrame = 0;
   let t = 0;
   let resultTimer = -1;
   /** 卵が割れた・巣に入った後の見た目 */
@@ -97,7 +110,7 @@ async function main() {
     for (const k of kinds()) {
       const b = el('button', { class: k === kind ? 'sel' : '' }, `<kbd>${KIND_KEY[k]}</kbd>${KIND_NAME[k]}`);
       b.style.color = KIND_CSS[k];
-      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); kind = k; updateKindBar(); });
+      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); kind = k; charge = null; updateKindBar(); });
       kindBar.appendChild(b);
     }
   };
@@ -109,6 +122,8 @@ async function main() {
     sim = new CourierSim(courierStages[i], toCourier(cfg));
     bot = new CourierBot(0.85, 1 + i);
     kind = 'push';
+    charge = null;
+    predPts = [];
     resultTimer = -1;
     shattered = false;
     respawnFade = 0;
@@ -173,12 +188,13 @@ async function main() {
       <h1>BLAST COURIER</h1>
       <h2>爆 風 便</h2>
       <div class="rulebox"></div>
-      <p style="max-width:640px;line-height:1.8;font-size:13px">割れやすい<b style="color:#ffe7b0">灯の卵</b>を、雲海に浮かぶ島から島へ運び、<b style="color:var(--gold)">星の巣</b>へ届けよう。卵には触れない — <b>クリックした所の爆風だけ</b>で動かす。<br>
-      近くで弾けるほど強く飛ぶが、強すぎる爆風や強いぶつかりで<b style="color:#ff9f9f">ひび</b>が入る。使った爆風が少ないほど★。</p>
+      <p style="max-width:640px;line-height:1.8;font-size:13px">割れやすい<b style="color:#ffe7b0">灯の卵</b>を、雲海に浮かぶ島から島へ運び、<b style="color:var(--gold)">星の巣</b>へ届けよう。卵には触れない — <b>爆風だけ</b>で動かす。<br>
+      向きと強さは自分で決める。でも強すぎる爆風や強いぶつかりで<b style="color:#ff9f9f">ひび</b>が入る。使った爆風が少ないほど★。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
-      <div class="keys"><b>左クリック</b>＝選んだ爆風　<b>右クリック</b>＝吸う　<kbd>1</kbd>押す <kbd>2</kbd>吸う <kbd>3</kbd>昇る <kbd>4</kbd>遅れ（面によって使えるものが違う）<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下のボタンで爆風を選んで、画面をタップ</div>`;
+      <div class="keys"><b>押す・遅れ</b>：押さえて<b>ドラッグで向き</b>、<b>押す長さで強さ</b>（卵の周りの輪。赤い所はひびが入る）。放すと撃つ。空中で構えると時間がゆっくりになる<br>
+      <b>吸う・昇る</b>：その場をクリック　爆風の切り替え：<kbd>1</kbd>押す <kbd>2</kbd>吸う <kbd>3</kbd>昇る <kbd>4</kbd>遅れ・<kbd>Q</kbd><kbd>E</kbd>・ホイール・下のボタン（面によって使えるものが違う）<br>
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：下のボタンで爆風を選んで、画面を長押し＋なぞって放す</div>`;
     menu.querySelector('.rulebox')!.replaceWith(ruleCards(blastRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
@@ -230,26 +246,61 @@ async function main() {
     () => (mode === 'play' ? '‖ ポーズ' : mode === 'pause' ? '▶ 続ける' : mode === 'result' ? '← ステージ選択' : '← 星図へ'),
   );
 
-  // ---- 入力 ----
-  const fire = (x: number, y: number, k: BlastKind) => {
-    if (mode !== 'play' || !kinds().includes(k)) return;
-    if (!sim.blast(x, y, k)) {
+  // ---- 入力（BC-10）----
+  // 押す・遅れ：押した所から構え、押す長さで強さ（chargeTime 秒で満ちる）、ドラッグで向き。放すと撃つ
+  // ドラッグしない時の向きは、押した所から卵へ（その場を叩いた向き）。吸う・昇るは押した所にすぐ
+  const fire = (a: CourierAction) => {
+    if (mode !== 'play' || !kinds().includes(a.k)) return false;
+    if (!sim.act(a)) {
       if (sim.cooldownLeft > 0) synth.tone(180, 0.08, { type: 'square', vol: 0.03 });
+      return false;
     }
+    return true;
+  };
+  const chargePower = () => (charge ? Math.min(1, (performance.now() - charge.t0) / 1000 / Math.max(0.05, cfg.chargeTime)) : 0);
+  /** 今の構えを操作にする */
+  const chargeAction = (): CourierAction | null => {
+    if (!charge) return null;
+    const e = sim.eggPos;
+    let ax = mouse.x - charge.sx, ay = mouse.y - charge.sy;
+    if (Math.hypot(ax, ay) < 0.35) { ax = e.x - charge.sx; ay = e.y - charge.sy; }
+    if (Math.hypot(ax, ay) < 1e-3) { ax = 0; ay = -1; }
+    const at = charge.kind === 'delay' ? { x: charge.sx, y: charge.sy } : e;
+    return { k: charge.kind, x: at.x, y: at.y, ax, ay, p: Math.max(cfg.minPower, chargePower()) };
+  };
+  const release = () => {
+    const a = chargeAction();
+    charge = null;
+    predPts = [];
+    if (a) fire(a);
+  };
+  const cycleKind = (d: number) => {
+    const ks = kinds();
+    kind = ks[(ks.indexOf(kind) + d + ks.length) % ks.length];
+    charge = null;
+    updateKindBar();
   };
   ga.app.canvas.addEventListener('pointermove', (e) => {
     const p = ga.toLogical(e.clientX, e.clientY);
     mouse = { x: p.x / S, y: p.y / S, in: true };
   });
-  ga.app.canvas.addEventListener('pointerleave', () => { mouse.in = false; });
+  ga.app.canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') mouse.in = false; });
   ga.app.canvas.addEventListener('pointerdown', (e) => {
     synth.unlock();
     if (mode !== 'play' || autoplay) return;
+    // 右ボタンは使わない（構えの取り消しだけ）
+    if (e.button === 2) { charge = null; predPts = []; return; }
     const p = ga.toLogical(e.clientX, e.clientY);
     mouse = { x: p.x / S, y: p.y / S, in: true };
-    const k: BlastKind = e.button === 2 && kinds().includes('pull') ? 'pull' : kind;
-    fire(p.x / S, p.y / S, k);
+    if (kind === 'push' || kind === 'delay') {
+      charge = { sx: mouse.x, sy: mouse.y, t0: performance.now(), kind };
+      ga.app.canvas.setPointerCapture?.(e.pointerId);
+      synth.tone(330, 0.08, { type: 'sine', vol: 0.03 });
+    } else fire({ k: kind, x: mouse.x, y: mouse.y });
   });
+  ga.app.canvas.addEventListener('pointerup', () => { if (charge) release(); });
+  ga.app.canvas.addEventListener('pointercancel', () => { charge = null; predPts = []; });
+  ga.app.canvas.addEventListener('wheel', (e) => { if (mode === 'play') { e.preventDefault(); cycleKind(e.deltaY > 0 ? 1 : -1); } }, { passive: false });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
     synth.unlock();
@@ -259,7 +310,9 @@ async function main() {
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
     if (e.code === 'KeyB' && e.shiftKey) autoplay = !autoplay;
     const map: Record<string, BlastKind> = { Digit1: 'push', Digit2: 'pull', Digit3: 'lift', Digit4: 'delay' };
-    if (map[e.code] && kinds().includes(map[e.code])) { kind = map[e.code]; updateKindBar(); }
+    if (map[e.code] && kinds().includes(map[e.code])) { kind = map[e.code]; charge = null; updateKindBar(); }
+    if (e.code === 'KeyQ') cycleKind(-1);
+    if (e.code === 'KeyE') cycleKind(1);
   });
   const tbar = touchButtons([{ label: '‖', onPress: () => togglePause() }], 'top');
   tuning.onChange((key) => {
@@ -309,7 +362,7 @@ async function main() {
       if (mode !== 'play' && mode !== 'result') return;
       if (mode === 'play' && autoplay) {
         const a = bot.act(sim);
-        if (a) fire(a.x, a.y, a.k);
+        if (a) fire(a);
       }
       sim.step();
       handleEvents();
@@ -320,7 +373,11 @@ async function main() {
       t += dt;
       field.update(t);
       particles.update(dt);
-      juice.update(dt, cfg.gameSpeed);
+      // 空中で構えている間はゆっくり（上昇気流のてっぺんで狙える）
+      const ev = sim.egg.getLinearVelocity();
+      const slowTarget = charge && mode === 'play' && Math.hypot(ev.x, ev.y) > 1.2 ? cfg.airSlow : 1;
+      slowK += (slowTarget - slowK) * Math.min(1, dt * 10);
+      juice.update(dt, cfg.gameSpeed * slowK);
       juice.shakeScale = cfg.shake;
       particles.multiplier = cfg.particles;
       ga.root.pivot.set(-juice.shakeX, -juice.shakeY);
@@ -345,11 +402,18 @@ async function main() {
       if (e.t === 'blast') {
         const col = KIND_COLOR[e.kind];
         if (e.kind === 'push') {
-          rings.push({ x: e.x, y: e.y, r: sim.cfg.blastR, age: 0, life: 0.45, color: col });
-          particles.emit(px(e.x), py(e.y), { count: 40, speed: [80, 380], life: [0.25, 0.7], size: [0.05, 0.16], color: [col, 0xffffff, 0xff9f6a] });
-          synth.boom(0.35 + Math.min(0.6, e.dv / 20), 2);
-          juice.shake(0.12 + e.dv * 0.025);
-          if (e.dv > 6) juice.hitstop(0.035);
+          // 卵のすぐ後ろで弾ける：衝撃の輪、後ろへ飛ぶ火花、強さに応じたヒットストップと揺れ、卵が伸びる
+          const bx = e.x - e.ax * 0.55, by = e.y - e.ay * 0.55;
+          const k = Math.min(1, e.dv / sim.cfg.blastForce);
+          rings.push({ x: bx, y: by, r: 0.9 + 1.6 * k, age: 0, life: 0.4, color: col });
+          rings.push({ x: bx, y: by, r: 0.5 + 0.8 * k, age: 0, life: 0.25, color: 0xffffff });
+          const back = Math.atan2(-e.ay, -e.ax);
+          particles.emit(px(bx), py(by), { count: Math.round(20 + 40 * k), speed: [80, 300 + 300 * k], angle: back, spread: 1.8, life: [0.2, 0.6], size: [0.05, 0.16], color: [col, 0xffffff, 0xff9f6a] });
+          synth.boom(0.3 + 0.6 * k, 2);
+          synth.tone(220 + 440 * k, 0.12, { type: 'triangle', vol: 0.05, slideTo: 110 });
+          juice.shake(0.1 + 0.35 * k);
+          juice.hitstop(0.02 + 0.06 * k);
+          stretch = 1; stretchAng = Math.atan2(e.ay, e.ax);
         } else if (e.kind === 'pull') {
           rings.push({ x: e.x, y: e.y, r: sim.cfg.blastR * 1.4, age: 0, life: 0.5, color: col, inward: true });
           synth.tone(880, 0.35, { type: 'sine', vol: 0.07, slideTo: 330 });
@@ -360,6 +424,7 @@ async function main() {
           synth.tone(520, 0.12, { type: 'square', vol: 0.03 });
         }
       } else if (e.t === 'boom') {
+        if (e.dv > 0) { stretch = 1; stretchAng = Math.atan2(e.ay, e.ax); }
         rings.push({ x: e.x, y: e.y, r: sim.cfg.blastR * 1.1, age: 0, life: 0.5, color: KIND_COLOR.delay });
         particles.emit(px(e.x), py(e.y), { count: 60, speed: [100, 460], life: [0.3, 0.8], size: [0.05, 0.18], color: [0xd9b3ff, 0xffffff, 0xff9fe0] });
         synth.boom(0.8, 4);
@@ -470,7 +535,7 @@ async function main() {
       const a = t * 0.8 + k * 1.26;
       nestG.circle(nx + Math.cos(a) * (nw + 6), ny - 22 + Math.sin(a) * 10, 1.8).fill({ color: 0xfff1c8, alpha: 0.5 + 0.5 * Math.sin(t * 3 + k) });
     }
-    // 卵：脈打つ光。ひびの数だけ赤い割れ目
+    // 卵：脈打つ光。ひびの数だけ赤い割れ目。撃った瞬間は飛ぶ向きへ伸び、構えている間は強さに応じて縮む
     eggG.clear();
     const e = sim.eggPos;
     const ex = px(e.x), ey = py(e.y);
@@ -481,50 +546,95 @@ async function main() {
     eggGlow.scale.set(0.3 + beat * 0.08);
     eggGlow.tint = sim.cracks >= sim.cfg.cracksMax - 1 && sim.cracks > 0 ? 0xffa08a : 0xffe7b0;
     eggGlow.alpha = alpha * 0.55;
+    const act = mode === 'play' && !autoplay ? chargeAction() : null;
+    stretch = Math.max(0, stretch - dt * 4);
+    let sAng = stretchAng, sx = 1, sy = 1;
+    if (stretch > 0) {
+      // 伸びて、少し縮み返す（減衰する振動）
+      const w = Math.sin((1 - stretch) * Math.PI * 2.2) * stretch;
+      sx = 1 + 0.38 * w; sy = 1 - 0.26 * w;
+    } else if (act && act.k === 'push') {
+      const k = act.p ?? 0;
+      sAng = Math.atan2(act.ay ?? 0, act.ax ?? 0);
+      sx = 1 - 0.18 * k; sy = 1 + 0.1 * k;
+    }
+    eggWrap.position.set(ex, ey);
+    eggWrap.rotation = sAng;
+    eggWrap.scale.set(sx, sy);
+    eggG.rotation = -sAng;
     if (!shattered) {
       const rx = sim.cfg.eggR * S, ry = sim.cfg.eggR * S * 1.25;
-      eggG.ellipse(ex, ey - 2, rx, ry).fill({ color: 0xffdf9a, alpha: 0.75 * alpha }).stroke({ width: 1.5, color: 0xfff6dc, alpha });
-      eggG.ellipse(ex - rx * 0.3, ey - ry * 0.45, rx * 0.25, ry * 0.18).fill({ color: 0xffffff, alpha: 0.8 * alpha });
+      eggG.ellipse(0, -2, rx, ry).fill({ color: 0xffdf9a, alpha: 0.75 * alpha }).stroke({ width: 1.5, color: 0xfff6dc, alpha });
+      eggG.ellipse(-rx * 0.3, -ry * 0.45, rx * 0.25, ry * 0.18).fill({ color: 0xffffff, alpha: 0.8 * alpha });
       for (let i = 0; i < sim.cracks; i++) {
-        const sx = ex - rx * 0.5 + i * rx * 0.5, sy = ey - ry * 0.6 + (i % 2) * ry * 0.3;
-        eggG.moveTo(sx, sy).lineTo(sx + 4, sy + 5).lineTo(sx - 1, sy + 9).lineTo(sx + 3, sy + 14).stroke({ width: 1.6, color: 0xd0405a, alpha });
+        const cx = -rx * 0.5 + i * rx * 0.5, cy = -ry * 0.6 + (i % 2) * ry * 0.3;
+        eggG.moveTo(cx, cy).lineTo(cx + 4, cy + 5).lineTo(cx - 1, cy + 9).lineTo(cx + 3, cy + 14).stroke({ width: 1.6, color: 0xd0405a, alpha });
       }
     }
-    // 狙いの矢印：今クリックしたら卵がどちらへどれだけ飛ぶか（強すぎて割れる時は赤）
+    // 狙い：カーソルの印。構えている間は、強さのゲージ（卵の周りの輪。赤い所はひびが入る強さ）・向きの矢印・飛ぶ先の予測線
     aimG.clear();
     if (mode === 'play' && !autoplay && mouse.in) {
       const col = KIND_COLOR[kind];
       const ready = sim.cooldownLeft <= 0;
       const mx = px(mouse.x), my = py(mouse.y);
-      if (kind === 'push' || kind === 'delay') aimG.circle(mx, my, px(sim.cfg.blastR)).stroke({ width: 1.5, color: col, alpha: ready ? 0.35 : 0.15 });
       if (kind === 'pull') aimG.circle(mx, my, px(sim.cfg.blastR * 1.4)).stroke({ width: 1.5, color: col, alpha: ready ? 0.3 : 0.12 });
       if (kind === 'lift') aimG.rect(mx - px(sim.cfg.liftW / 2), 0, px(sim.cfg.liftW), my).fill({ color: col, alpha: 0.06 });
-      aimG.circle(mx, my, 4).fill({ color: col, alpha: ready ? 0.9 : 0.35 });
-      // 待ち時間：カーソルの周りの欠けた輪
+      if (kind === 'delay' && !charge) aimG.circle(mx, my, px(sim.cfg.blastR)).stroke({ width: 1.5, color: col, alpha: ready ? 0.3 : 0.12 });
+      if (!charge) aimG.circle(mx, my, 4).fill({ color: col, alpha: ready ? 0.9 : 0.35 });
       if (!ready) aimG.moveTo(mx, my - 10).arc(mx, my, 10, -Math.PI / 2, -Math.PI / 2 + (1 - sim.cooldownLeft / Math.max(0.01, sim.cfg.cooldown)) * Math.PI * 2).stroke({ width: 2, color: col, alpha: 0.7 });
-      if (cfg.aim > 0 && (kind === 'push' || kind === 'delay' || kind === 'pull')) {
-        const dx = e.x - mouse.x, dy = e.y - mouse.y, d = Math.hypot(dx, dy);
-        const R = kind === 'pull' ? sim.cfg.blastR * 1.4 : sim.cfg.blastR;
-        if (d < R && d > 1e-3) {
-          const dv = kind === 'pull' ? sim.cfg.pullForce * (0.4 + 0.6 * (1 - d / R)) : sim.cfg.blastForce * (kind === 'delay' ? sim.cfg.delayMul : 1) * Math.sqrt(1 - d / R);
-          const sgn = kind === 'pull' ? -1 : 1;
-          const ux = (dx / d) * sgn, uy = (dy / d) * sgn;
-          const len = dv * 6;
-          const crack = kind !== 'pull' && dv > sim.cfg.blastCrack;
-          const c2 = crack ? 0xff6a6a : col;
-          aimG.moveTo(ex, ey).lineTo(ex + ux * len, ey + uy * len).stroke({ width: 3, color: c2, alpha: 0.85 });
-          aimG.moveTo(ex + ux * len, ey + uy * len).lineTo(ex + ux * len - (ux * 9 - uy * 6), ey + uy * len - (uy * 9 + ux * 6)).stroke({ width: 3, color: c2, alpha: 0.85 });
-          aimG.moveTo(ex + ux * len, ey + uy * len).lineTo(ex + ux * len - (ux * 9 + uy * 6), ey + uy * len - (uy * 9 - ux * 6)).stroke({ width: 3, color: c2, alpha: 0.85 });
-          if (crack) aimG.circle(ex, ey, sim.cfg.eggR * S + 7).stroke({ width: 2, color: 0xff6a6a, alpha: 0.5 + 0.4 * Math.sin(t * 16) });
+    }
+    if (act && charge) {
+      const col = KIND_COLOR[act.k];
+      const pw = act.p ?? 0;
+      const pCrack = sim.cfg.blastCrack / (sim.cfg.blastForce * (act.k === 'delay' ? sim.cfg.delayMul : 1));
+      const crack = pw > pCrack;
+      // ドラッグの線（押した所から今のカーソルへ）
+      const sx0 = px(charge.sx), sy0 = py(charge.sy);
+      aimG.circle(sx0, sy0, 5).stroke({ width: 1.5, color: col, alpha: 0.8 });
+      aimG.moveTo(sx0, sy0).lineTo(px(mouse.x), py(mouse.y)).stroke({ width: 1, color: col, alpha: 0.35 });
+      // 強さのゲージ：卵（遅れは置いた所）の周りの輪
+      const gx = act.k === 'delay' ? sx0 : ex, gy = act.k === 'delay' ? sy0 : ey;
+      const gr = sim.cfg.eggR * S + 16;
+      const a0 = -Math.PI / 2;
+      aimG.circle(gx, gy, gr).stroke({ width: 5, color: 0x0c1238, alpha: 0.55 });
+      if (pCrack < 1) aimG.moveTo(gx + Math.cos(a0 + pCrack * Math.PI * 2) * gr, gy + Math.sin(a0 + pCrack * Math.PI * 2) * gr).arc(gx, gy, gr, a0 + pCrack * Math.PI * 2, a0 + Math.PI * 2).stroke({ width: 5, color: 0xff6a6a, alpha: 0.28 });
+      aimG.moveTo(gx, gy - gr).arc(gx, gy, gr, a0, a0 + Math.max(0.02, pw) * Math.PI * 2).stroke({ width: 5, color: crack ? 0xff6a6a : col, alpha: 0.95 });
+      if (pw >= 1) aimG.circle(gx, gy, gr + 4 + 2 * Math.sin(t * 20)).stroke({ width: 1.5, color: crack ? 0xff6a6a : 0xffffff, alpha: 0.6 });
+      // 向きの矢印
+      const al = Math.hypot(act.ax ?? 0, act.ay ?? 0) || 1;
+      const ux = (act.ax ?? 0) / al, uy = (act.ay ?? 0) / al;
+      const len = gr + 10 + sim.shotDv(act.k, pw) * 4;
+      const tx = gx + ux * len, ty = gy + uy * len;
+      const c2 = crack ? 0xff6a6a : col;
+      aimG.moveTo(gx + ux * (gr + 6), gy + uy * (gr + 6)).lineTo(tx, ty).stroke({ width: 3, color: c2, alpha: 0.9 });
+      aimG.moveTo(tx, ty).lineTo(tx - (ux * 10 - uy * 7), ty - (uy * 10 + ux * 7)).stroke({ width: 3, color: c2, alpha: 0.9 });
+      aimG.moveTo(tx, ty).lineTo(tx - (ux * 10 + uy * 7), ty - (uy * 10 - ux * 7)).stroke({ width: 3, color: c2, alpha: 0.9 });
+      if (crack) aimG.circle(ex, ey, sim.cfg.eggR * S + 7).stroke({ width: 2, color: 0xff6a6a, alpha: 0.5 + 0.4 * Math.sin(t * 16) });
+      // 予測線：今撃ったら卵がどう飛ぶか（cfg.aim 秒ぶん。間引いて計算）
+      if (cfg.aim > 0 && (predFrame++ % 2 === 0 || predPts.length === 0)) {
+        const c = sim.clone();
+        c.lastBlastTick = -1e9;
+        predPts = [];
+        if (c.act(act)) {
+          const n = Math.round((cfg.aim + (act.k === 'delay' ? sim.cfg.delayTime : 0)) * HZ);
+          for (let i = 0; i < n && c.phase === 'play'; i++) {
+            c.step();
+            if (c.events.some((q) => q.t === 'ob')) break;
+            if (i % 5 === 0) predPts.push(c.eggPos);
+          }
         }
       }
+      predPts.forEach((q, i) => {
+        const f = 1 - i / Math.max(1, predPts.length);
+        aimG.circle(px(q.x), py(q.y), 1.5 + 1.8 * f).fill({ color: c2, alpha: 0.25 + 0.6 * f });
+      });
     }
     // 卵の小さな光の尾（飛んでいる時）
     const v = sim.egg.getLinearVelocity();
     if (!shattered && Math.hypot(v.x, v.y) > 4 && fxRandom() < 0.5) particles.emit(ex, ey, { count: 1, speed: [0, 20], life: [0.3, 0.6], size: [0.04, 0.09], color: 0xffe7b0 });
   };
 
-  const hook = installDebugHook('blast-courier', () => ({ mode, stage: stageIndex, phase: sim.phase, blasts: sim.blasts, cracks: sim.cracks, egg: sim.eggPos, time: +sim.time.toFixed(1) }));
+  const hook = installDebugHook('blast-courier', () => ({ mode, stage: stageIndex, phase: sim.phase, blasts: sim.blasts, cracks: sim.cracks, egg: sim.eggPos, time: +sim.time.toFixed(1), power: charge ? +chargePower().toFixed(2) : null, chargeTime: cfg.chargeTime }));
   hook.start = (i: number) => start(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
   if (params.has('stage') || autoplay) start(stageIndex);

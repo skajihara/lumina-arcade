@@ -18,7 +18,7 @@ it('blast-courier balance report', () => {
       const cells = [0.5, 0.9].map((skill) => [1, 2].map((seed) => {
         const sim = new CourierSim(st, toCourier({ ...presets[preset] }));
         const bot = new CourierBot(skill, seed);
-        while (sim.phase === 'play' && sim.tick < HZ * 90) { const a = bot.act(sim); if (a) sim.blast(a.x, a.y, a.k); sim.step(); }
+        while (sim.phase === 'play' && sim.tick < HZ * 90) { const a = bot.act(sim); if (a) sim.act(a); sim.step(); }
         if (sim.phase === 'clear') { clears++; if (sim.blasts <= st.par) three++; return `${sim.blasts}${sim.blasts <= st.par ? '★3' : sim.blasts <= st.par + 2 ? '★2' : '★1'}`; }
         return sim.phase === 'fail' ? (sim.cracks >= sim.cfg.cracksMax ? 'X' : 'B') : '—';
       }).join(' ・ '));
