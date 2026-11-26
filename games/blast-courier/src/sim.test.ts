@@ -112,6 +112,29 @@ describe('Blast Courier', () => {
     expect(s.phase).toBe('clear');
   });
 
+  it('巣（BC-11）：上からそっと落とすと、お椀の底へ転がって止まりクリア', () => {
+    const st: CourierStage = { ...plain, start: { x: 27.3, y: 9 } };
+    const s = new CourierSim(st, defaults);
+    for (let i = 0; i < HZ * 4 && s.phase === 'play'; i++) s.step();
+    expect(s.phase).toBe('clear');
+    expect(Math.abs(s.eggPos.x - 28)).toBeLessThan(0.6);
+  });
+
+  it('巣（BC-11）：速すぎると縁で跳ね出てこぼれる。ゆっくりなら入って止まる', () => {
+    const run = (vx: number) => {
+      const st: CourierStage = { ...plain, start: { x: 26, y: 10.2 } };
+      const s = new CourierSim(st, defaults);
+      s.egg.setLinearVelocity({ x: vx, y: 0 });
+      for (let i = 0; i < HZ * 4 && s.phase === 'play'; i++) s.step();
+      return s;
+    };
+    const fast = run(16);
+    expect(fast.phase).toBe('play');
+    expect(fast.eggPos.x).toBeGreaterThan(29.8);
+    const slow = run(3);
+    expect(slow.phase).toBe('clear');
+  });
+
   it('全ステージ：何もしないとクリアできず、先読みボットならクリアできる', () => {
     for (const st of courierStages) {
       const idle = new CourierSim(st, defaults);

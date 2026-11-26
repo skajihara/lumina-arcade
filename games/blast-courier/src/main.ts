@@ -19,7 +19,7 @@ import { createTuning } from '@engine/tuning';
 import { ruleCards, introCard } from '@engine/rules';
 import { blastRules, blastIntros } from './rules';
 import { schema, presets, DEFAULT_PRESET, toCourier, type BlastConfig } from './config';
-import { CourierSim, HZ, WORLD_W, WORLD_H, type BlastKind, type CourierAction } from './sim';
+import { CourierSim, HZ, WORLD_W, WORLD_H, nestCurve, type BlastKind, type CourierAction } from './sim';
 import { courierStages } from './stages';
 import { CourierBot } from './bot';
 
@@ -96,6 +96,8 @@ async function main() {
   /** 予測線（毎フレームは重いので、間引いて計算） */
   let predPts: { x: number; y: number }[] = [];
   let predFrame = 0;
+  /** 巣のたわみ（卵が入った・ぶつかった時に 1） */
+  let nestWobble = 0;
   let t = 0;
   let resultTimer = -1;
   /** 卵が割れた・巣に入った後の見た目 */
@@ -439,6 +441,11 @@ async function main() {
         particles.emit(px(e.x), py(e.y), { count: 18, speed: [40, 160], life: [0.2, 0.5], size: [0.03, 0.08], color: [0xfff1c8, 0xff8f8f] });
       } else if (e.t === 'bounce') {
         synth.tone(160 + e.speed * 12, 0.1, { type: 'sine', vol: Math.min(0.08, e.speed * 0.008) });
+        if (sim.inNest(e.x, e.y + 0.3)) {
+          // 巣に当たった：たわみ、枝の粒が舞う
+          nestWobble = Math.min(1, nestWobble + e.speed / 6);
+          particles.emit(px(e.x), py(e.y + 0.4), { count: Math.round(4 + e.speed * 2), speed: [20, 90], life: [0.3, 0.8], size: [0.03, 0.07], color: [0xffd98a, 0xbff0dc] });
+        }
       } else if (e.t === 'cloud') {
         particles.emit(px(e.x), py(e.y), { count: 20, speed: [20, 90], life: [0.5, 1.1], size: [0.08, 0.2], color: [0xe6ecff, 0xbfd0ff] });
         synth.noise(0.4, { vol: 0.04, from: 800, to: 300 });
@@ -449,6 +456,7 @@ async function main() {
         respawnFade = 1;
       } else if (e.t === 'nest') {
         synth.hbell(6, 0.08, 1.0);
+        nestWobble = Math.max(nestWobble, 0.6);
       } else if (e.t === 'clear') {
         // 届いた：スロー、金の光、巣から星が噴き上がる
         juice.slowmo(0.35, 1.0);
@@ -457,6 +465,7 @@ async function main() {
         const n = sim.stage.nest;
         for (let k = 0; k < 3; k++) particles.emit(px(n.x), py(n.y - 0.6), { count: 70, speed: [100, 520], life: [0.6, 1.6], size: [0.05, 0.2], color: [0xffd98a, 0xfff1c8, 0xbfe3ff] });
         rings.push({ x: n.x, y: n.y - 0.6, r: 5, age: 0, life: 0.9, color: 0xffe7a8 });
+        nestWobble = 1;
       } else if (e.t === 'fail') {
         if (e.why === 'broken') {
           shattered = true;
@@ -523,18 +532,39 @@ async function main() {
       const r = k.inward ? k.r * (1 - f) : k.r * (0.2 + 0.8 * Math.sqrt(f));
       fxBack.circle(px(k.x), py(k.y), px(r)).stroke({ width: 4 * (1 - f) + 1, color: k.color, alpha: 0.85 * (1 - f) });
     }
-    // 巣：金の枝で編んだ弧と、瞬く星
+    // 巣：当たり判定と同じ曲線のお椀（BC-11）。卵が入るとたわんで揺れ、縁の草がそよぐ。落ち着くまでの進みで金色に満ちる
     const n = st.nest;
     nestG.clear();
-    const nx = px(n.x), ny = py(n.y), nw = px(n.w / 2 + 0.3);
-    nestG.ellipse(nx, ny - 14, nw + 16, 26).fill({ color: 0xffd98a, alpha: 0.06 + 0.03 * Math.sin(t * 2) });
+    nestWobble = Math.max(0, nestWobble - dt * 1.6);
+    const sag = nestWobble * 0.14 * Math.sin(t * 22);
+    const curve = nestCurve(n, sim.cfg.nestRim, sag);
+    const flatC = curve.map((q) => [px(q.x), py(q.y)]).flat();
+    const nx = px(n.x), ny = py(n.y);
+    const prog = sim.nestProgress;
+    nestG.ellipse(nx, ny - py(sim.cfg.nestRim) * 0.5, px(n.w / 2 + 0.9), py(sim.cfg.nestRim) * 0.9).fill({ color: 0xffd98a, alpha: 0.05 + 0.03 * Math.sin(t * 2) + 0.2 * prog });
+    // お椀の中（うすく塗る）
+    nestG.poly(flatC).fill({ color: 0xffd98a, alpha: 0.07 + 0.18 * prog });
+    // 編んだ枝：少しずつずらした線を重ねる
     for (let k = 0; k < 4; k++) {
-      nestG.moveTo(nx - nw, ny - 33 + k * 3).quadraticCurveTo(nx, ny + 8 - k * 2, nx + nw, ny - 33 + k * 3).stroke({ width: 2, color: 0xffd98a, alpha: 0.5 + k * 0.1 });
+      nestG.moveTo(flatC[0], flatC[1] + k * 2);
+      for (let i = 2; i < flatC.length; i += 2) nestG.lineTo(flatC[i] + Math.sin(i * 1.7 + k) * 1.2, flatC[i + 1] + k * 2.2);
+      nestG.stroke({ width: k === 0 ? 2.6 : 1.6, color: k === 0 ? 0xfff1c8 : 0xffd98a, alpha: 0.85 - k * 0.15 });
+    }
+    // 縁の草：先が揺れる（卵が入ると大きく）
+    for (const side of [-1, 1]) {
+      const rx = nx + side * px(n.w / 2 + 0.55), ry = ny - py(sim.cfg.nestRim) - 2;
+      for (let b = 0; b < 4; b++) {
+        const sway = Math.sin(t * 2.2 + b * 1.3 + side) * (2 + 9 * nestWobble);
+        const bx = rx + side * b * 3;
+        nestG.moveTo(bx, ry).quadraticCurveTo(bx + side * 3, ry - 8, bx + side * 4 + sway, ry - 13 - b * 2).stroke({ width: 1.3, color: 0xbff0dc, alpha: 0.7 });
+      }
     }
     for (let k = 0; k < 5; k++) {
       const a = t * 0.8 + k * 1.26;
-      nestG.circle(nx + Math.cos(a) * (nw + 6), ny - 22 + Math.sin(a) * 10, 1.8).fill({ color: 0xfff1c8, alpha: 0.5 + 0.5 * Math.sin(t * 3 + k) });
+      nestG.circle(nx + Math.cos(a) * px(n.w / 2 + 0.7), ny - 22 + Math.sin(a) * 10, 1.8).fill({ color: 0xfff1c8, alpha: 0.5 + 0.5 * Math.sin(t * 3 + k) });
     }
+    // 落ち着くまでの進み：巣の上の小さな輪
+    if (prog > 0 && sim.phase === 'play') nestG.moveTo(nx, ny - py(sim.cfg.nestRim) - 26).arc(nx, ny - py(sim.cfg.nestRim) - 18, 8, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2).stroke({ width: 2.5, color: 0xffe7a8, alpha: 0.9 });
     // 卵：脈打つ光。ひびの数だけ赤い割れ目。撃った瞬間は飛ぶ向きへ伸び、構えている間は強さに応じて縮む
     eggG.clear();
     const e = sim.eggPos;
