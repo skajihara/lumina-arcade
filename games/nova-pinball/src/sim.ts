@@ -26,6 +26,7 @@ type Tag =
   | { kind: 'wall' }
   | { kind: 'flipper'; side: 'L' | 'R'; owner: number }
   | { kind: 'sling'; side: 'L' | 'R' }
+  | { kind: 'moon'; side: 'L' | 'R' }
   | { kind: 'roll'; id: number };
 
 export interface Ball {
@@ -123,6 +124,10 @@ const mirror = (p: { x: number; y: number }) => ({ x: +(13.8 - p.x).toFixed(3), 
 /** スリングショットの三角形（左）。キックするのは A→C の辺（中央向き） */
 export const SLING_L = [{ x: 2.25, y: 16.9 }, { x: 2.25, y: 19.25 }, { x: 3.75, y: 20.35 }];
 export const SLING_R = SLING_L.map(mirror);
+/** 月のバンパー（NP-18）：スリングショットの代わり。満ち欠けで弾く強さが変わる */
+export const MOON_L = { x: 2.85, y: 17.7 };
+export const MOON_R = mirror(MOON_L);
+export const MOON_R0 = 0.62;
 /** ロールオーバーの位置 */
 export const ROLLOVERS = [{ x: 5.5, y: 1.5 }, { x: 6.9, y: 1.3 }, { x: 8.3, y: 1.5 }];
 export const ROLL_R = 0.45;
@@ -251,7 +256,13 @@ export class NovaSim {
     for (const line of boardWalls(this.stage)) {
       ground.createFixture(new Chain(line, false), { friction: 0.1, restitution: 0.3 });
     }
-    if (this.stage.slings) {
+    if (this.stage.slings && this.moonMode) {
+      for (const [side, c] of [['L', MOON_L], ['R', MOON_R]] as const) {
+        const b = this.world.createBody({ type: 'static', position: c, userData: { kind: 'moon', side } as Tag });
+        b.createFixture(new Circle(MOON_R0), { friction: 0.05, restitution: 0.3 });
+      }
+    }
+    if (this.stage.slings && !this.moonMode) {
       for (const [side, tri] of [['L', SLING_L], ['R', SLING_R]] as const) {
         const b = this.world.createBody({ type: 'static', userData: { kind: 'sling', side } as Tag });
         b.createFixture(new Polygon(tri), { friction: 0.1, restitution: 0.4 });
@@ -555,6 +566,8 @@ export class NovaSim {
           this.events.push({ t: 'bump', x: sp.x, y: sp.y, by: this.ownerOf(x.id) });
         } else if (x.kind === 'ball' && y.kind === 'sling') {
           this.slingKick(bx, y.side, this.ownerOf(x.id));
+        } else if (x.kind === 'ball' && y.kind === 'moon') {
+          this.moonKick(bx, y.side, this.ownerOf(x.id));
         } else if (x.kind === 'ball' && y.kind === 'roll') {
           this.rollover(y.id);
         } else if (x.kind === 'star' && y.kind === 'star' && x.id < y.id) {
@@ -578,6 +591,37 @@ export class NovaSim {
   /** ボールの持ち主（イベントで「だれのボールか」を伝える） */
   private ownerOf(ballId: number): number {
     return this.balls.find((b) => b.id === ballId)?.owner ?? 0;
+  }
+
+  /** 月のバンパーを使うか（設定 slingMode 1） */
+  get moonMode(): boolean {
+    return Math.round(this.cfg.slingMode ?? 1) === 1;
+  }
+
+  /** 月の満ち具合（0 新月 → 1 満月）。左右で半周期ずらす */
+  moonPhase(side: 'L' | 'R'): number {
+    const period = Math.max(1, this.cfg.moonPeriod ?? 6);
+    const t = this.tick / HZ / period + (side === 'R' ? 0.5 : 0);
+    return 0.5 - 0.5 * Math.cos(t * Math.PI * 2);
+  }
+
+  /**
+   * 月のバンパー：当たると上向きに弾く（穴の方へは弾かない）。満月ほど強く、満月の時は少し得点
+   */
+  private moonKick(ball: Body, side: 'L' | 'R', by = 0): void {
+    const c = side === 'L' ? MOON_L : MOON_R;
+    const p = ball.getPosition();
+    // 外向きと「上」を混ぜる → いつも上半分へ飛ぶ
+    let dx = p.x - c.x, dy = p.y - c.y;
+    const d = Math.hypot(dx, dy) || 1;
+    dx = dx / d; dy = dy / d - 1.6;
+    const m = Math.hypot(dx, dy) || 1;
+    const full = this.moonPhase(side);
+    const sp = (this.cfg.moonKick ?? 16) * (0.45 + 0.55 * full);
+    ball.setLinearVelocity({ x: (dx / m) * sp, y: (dy / m) * sp });
+    ball.setAwake(true);
+    if (full > 0.85) this.score += 30;
+    this.events.push({ t: 'sling', side, x: c.x, y: c.y, by });
   }
 
   private slingKick(ball: Body, side: 'L' | 'R', by = 0): void {
@@ -800,6 +844,13 @@ export class NovaSim {
         fx += (ux - uy * swirl) * k;
         fy += (uy + ux * swirl) * k;
       }
+    }
+    // 盤面の下の方では引力を弱める（NP-17：星や爆発の引力がボールを穴の方へ引き込みすぎないように）
+    const y0 = BOARD_H * 0.7;
+    if (y > y0) {
+      const k = 1 + ((cfg.lowPull ?? 1) - 1) * Math.min(1, (y - y0) / (BOARD_H - 3 - y0));
+      fx *= k;
+      fy *= k;
     }
     return { x: fx, y: fy };
   }
