@@ -425,6 +425,14 @@ export class StopSim {
     this.events.push({ t: 'clear' });
   }
 
+  /** 巻き戻し用の写し（SW-09）：clone に時刻も写したもの。止めた瞬間に取っておき、戻す時にもう一度写して使う */
+  snapshot(): StopSim {
+    const c = this.clone();
+    c.tick = this.tick;
+    c.worldTick = this.worldTick;
+    return c;
+  }
+
   /**
    * 今の状態を写した別の世界を作る（予測線用）。
    * 位置・速度・角度・溜めた力・点火を写す。接触の内部状態は写らないので、厳密には少しずれる。

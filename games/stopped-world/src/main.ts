@@ -17,7 +17,7 @@ import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { schema, presets, DEFAULT_PRESET, type StopConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
-import { stoppedIntros } from './intro';
+import { rewindFrame, stoppedIntros } from './intro';
 import { stoppedRules } from './rules';
 import { randomPlan, runPlan, type Plan } from './bot';
 import { StopSim, HZ, WORLD_W, WORLD_H, CRACK_RATIO, slingPower, type Action, type Obj } from './sim';
@@ -86,6 +86,27 @@ async function main() {
   let autoplay = params.has('autoplay');
   let botRng = new Rng(1);
   let resultTimer = -1;
+  /** 巻き戻し（SW-09）：直前に止めた瞬間の写しと、残りの回数 */
+  let rewindSnap: StopSim | null = null;
+  let rewindsLeft = 0;
+  let rewindFx = 0;
+  /** 解き放ったあと、直前に止めた瞬間へ戻る（止めた直後の、力を置く前の状態に） */
+  const doRewind = () => {
+    if (mode !== 'play' || !sim || !rewindSnap || rewindsLeft <= 0 || sim.stopped || sim.phase === 'clear') return;
+    sim = rewindSnap.snapshot();
+    rewindsLeft--;
+    resultTimer = -1;
+    pending = [];
+    drag = null;
+    storedForce = 0;
+    rewindFx = 1;
+    juice.doFlash(0.6, 0xc9a3ff);
+    juice.shake(0.2 * cfg.shake);
+    synth.whoosh(1.4);
+    synth.arp([9, 7, 5, 3, 1], 0.05, 0.08);
+    synth.muffleMusic(true);
+    toast(rewindsLeft > 0 ? `巻き戻し — 止めた瞬間へ（あと${rewindsLeft}回）` : '巻き戻し — 止めた瞬間へ（もう戻せない）');
+  };
   let pending: Action[] = [];
   let drag: { id: number; x: number; y: number; ex: number; ey: number } | null = null;
   let flashColor = 0;
@@ -134,8 +155,10 @@ async function main() {
     botRng = new Rng(i + 7);
     botSearch = null;
     resultTimer = -1;
+    rewindSnap = null;
+    rewindsLeft = Math.max(0, Math.round(cfg.rewinds ?? 0));
     // このステージで初めて出てくる要素の図解（RULE-01c）。「壊すと時間が戻る」はひねり1の時だけ
-    { const it = stoppedIntros[stages[i].id]; introCard(it && (stages[i].id !== 'sw-fuse' || Math.round(cfg.twist) % 2 === 1) ? it.frame : null, it?.title); }
+    { const it = stages[i].id === 'sw-roll' && (cfg.rewinds ?? 0) > 0 ? { title: '巻き戻し', frame: rewindFrame } : stoppedIntros[stages[i].id]; introCard(it && (stages[i].id !== 'sw-fuse' || Math.round(cfg.twist) % 2 === 1) ? it.frame : null, it?.title); }
     mode = 'play';
     drawGround();
     toast(touchText(stages[i].hint, [['もう一度 Space で解放', '「解き放つ」で解放'], ['Space で時間を止め', '「時を止める」で時間を止め'], ['卵を引っぱって放す', '卵を指で引っぱって放す']]));
@@ -239,6 +262,7 @@ async function main() {
       e.preventDefault();
       pending.push(sim.stopped ? { t: 'resume' } : { t: 'stop' });
     }
+    if (e.code === 'KeyZ' || e.code === 'Backspace') { e.preventDefault(); doRewind(); }
     if (e.code === 'KeyP') togglePause();
     if (e.code === 'KeyR' && (mode === 'play' || mode === 'result' || mode === 'pause')) startStage(stageIndex);
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
@@ -357,6 +381,7 @@ async function main() {
     for (const e of sim.events) {
       switch (e.t) {
         case 'stop':
+          if (rewindsLeft > 0) rewindSnap = sim.snapshot();
           synth.muffleMusic(true);
           synth.tone(880, 0.5, { type: 'sine', vol: 0.12, slideTo: 220 });
           synth.chargeTone(-1);
@@ -426,6 +451,11 @@ async function main() {
         case 'fail':
           synth.tone(196, 1, { type: 'sine', vol: 0.15, slideTo: 60 });
           resultTimer = sim.tick + Math.round(HZ * 1.4);
+          // 巻き戻しが残っていれば、リザルトを少し待って知らせる
+          if (rewindsLeft > 0 && rewindSnap) {
+            resultTimer += Math.round(HZ * 2.2);
+            toast(touchText('⟲ Z で、止めた瞬間へ巻き戻せる', [['Z で', '「⟲ 巻き戻す」で']]));
+          }
           break;
         default:
           break;
@@ -715,6 +745,17 @@ async function main() {
       if (k >= 1 && f.amount > 0) { gaugeGlow = 1; f.amount = 0; synth.hbell(9, 0.06); }
     }
     refillFx = refillFx.filter((f) => f.age < 1.1);
+    // 巻き戻し：画面の真ん中から外へ、紫の輪が逆回りの時計の目盛りといっしょに広がる
+    if (rewindFx > 0) {
+      rewindFx = Math.max(0, rewindFx - dt * 1.5);
+      const r = (1 - rewindFx) * VIEW_W * 0.6;
+      const cx = VIEW_W / 2, cy = (WORLD_H * SCALE) / 2;
+      ag.circle(cx, cy, r).stroke({ width: 3 + rewindFx * 10, color: 0xc9a3ff, alpha: rewindFx * 0.7 });
+      for (let k = 0; k < 12; k++) {
+        const a2 = -rewindFx * 4 + (k * Math.PI) / 6;
+        ag.moveTo(cx + Math.cos(a2) * r * 0.82, cy + Math.sin(a2) * r * 0.82).lineTo(cx + Math.cos(a2) * r * 0.92, cy + Math.sin(a2) * r * 0.92).stroke({ width: 2, color: 0xe6d6ff, alpha: rewindFx * 0.6 });
+      }
+    }
     gaugeGlow = Math.max(0, gaugeGlow - dt * 2);
     if (stopped) {
       // 止まっている印：画面の縁
@@ -727,7 +768,7 @@ async function main() {
     const bar = Math.round((gauge / cfg.stopGauge) * 20);
     tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${st.goal === 'nest' ? '卵を巣へ' : '箱を全部壊す'}</div>`;
     const barCol = gaugeGlow > 0 ? `rgb(${Math.round(127 + 128 * gaugeGlow)},240,255)` : stopped ? '#fff' : 'var(--accent)';
-    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${sim.maxForces}</div>${sim.stage.stops ? `<div style="color:${sim.stopsLeft > 0 ? 'var(--gold)' : '#ff6b8a'}">止められる回数 ${'◆'.repeat(Math.max(0, sim.stopsLeft))}${'◇'.repeat(Math.min(sim.stopLimit, sim.stopsUsed))} あと${Math.max(0, sim.stopsLeft)}回</div>` : ''}${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}${stopped && pred.some((q) => q.kind === 'egg' && q.ends === 'gone') ? '<div style="color:#ff6b8a">✕ このままだと卵が割れる</div>' : ''}`;
+    tr.innerHTML = `<div class="gbar" style="font-family:monospace;letter-spacing:-1px;color:${barCol};text-shadow:0 0 ${Math.round(gaugeGlow * 14)}px #7ff0ff">${'█'.repeat(bar)}${'░'.repeat(20 - bar)}</div><div>時間停止 ${gauge.toFixed(1)} 秒　力 ${sim.forcesThisStop}/${sim.maxForces}</div>${sim.stage.stops ? `<div style="color:${sim.stopsLeft > 0 ? 'var(--gold)' : '#ff6b8a'}">止められる回数 ${'◆'.repeat(Math.max(0, sim.stopsLeft))}${'◇'.repeat(Math.min(sim.stopLimit, sim.stopsUsed))} あと${Math.max(0, sim.stopsLeft)}回</div>` : ''}${rewindsLeft > 0 && rewindSnap && !stopped && sim.phase !== 'clear' ? `<div style="color:#c9a3ff">${touchText('⟲ Z で止めた瞬間へ巻き戻す', [['Z で', 'ボタンで']])} あと${rewindsLeft}回</div>` : ''}${stopped ? '<div style="color:#fff">— 停止中 —</div>' : ''}${autoplay ? `<div style="color:var(--gold)">AUTO${botSearch && !botSearch.done ? `　計画を探索中 ${botSearch.tries}` : ''}</div>` : ''}${stopped && pred.some((q) => q.kind === 'egg' && q.ends === 'gone') ? '<div style="color:#ff6b8a">✕ このままだと卵が割れる</div>' : ''}`;
   };
 
   // 予測線：止めている間、「今戻したら最初の数秒どう動くか」を点線で見せる。
@@ -830,6 +871,11 @@ async function main() {
       label: '時を止める',
       onPress: () => { synth.unlock(); if (mode === 'play' && sim) pending.push(sim.stopped ? { t: 'resume' } : { t: 'stop' }); },
       state: () => ({ on: !!sim?.stopped, label: sim?.stopped ? '解き放つ' : '時を止める' }),
+    },
+    {
+      label: '⟲ 巻き戻す',
+      onPress: () => doRewind(),
+      state: () => ({ on: false, label: rewindsLeft > 0 && rewindSnap && !sim?.stopped ? `⟲ 巻き戻す ${rewindsLeft}` : '⟲' }),
     },
     { label: '‖', onPress: () => togglePause() },
   ], 'bottom', { landscape: true });

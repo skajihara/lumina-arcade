@@ -237,3 +237,29 @@ describe('SW-13 止められる回数', () => {
     expect(sim.forcesThisStop).toBe(2);
   });
 });
+
+describe('SW-09 巻き戻し', () => {
+  it('止めた瞬間の写しから、同じ操作でほぼ同じ結果になる', async () => {
+    const { presets, DEFAULT_PRESET } = await import('./config');
+    const { stages } = await import('./stages');
+    const { StopSim } = await import('./sim');
+    const sim = new StopSim(stages[0], { ...presets[DEFAULT_PRESET] });
+    for (let i = 0; i < 30; i++) sim.step();
+    sim.step([{ t: 'stop' }]);
+    const snap = sim.snapshot();
+    expect(snap.tick).toBe(sim.tick);
+    expect(snap.stopped).toBe(true);
+    const egg = sim.objs.find((o) => o.def.kind === 'egg') ?? sim.objs[0];
+    const run = (s: InstanceType<typeof StopSim>) => {
+      s.step([{ t: 'hit', id: egg.id, dx: 1, dy: -1, power: 1 }]);
+      s.step([{ t: 'resume' }]);
+      for (let i = 0; i < 120; i++) s.step();
+      const p = s.objs[egg.id].body.getPosition();
+      return [p.x, p.y];
+    };
+    const a = run(sim);
+    const b = run(snap.snapshot());
+    expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(0.05);
+  });
+});
+

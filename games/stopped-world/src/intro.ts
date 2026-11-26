@@ -97,6 +97,21 @@ const stops: RuleFrame = {
   },
 };
 
+/** SW-09：巻き戻し。解き放って失敗しても、止めた瞬間へ一度だけ戻れる */
+export const rewindFrame: RuleFrame = {
+  caption: '解き放ったあと「⟲」（キーは Z）で、<b style="color:#c3a6ff">止めた瞬間へ巻き戻せる</b>（1面に1回。失敗を見てから置き直せる）',
+  draw: (g, t) => {
+    const p = phase(t, 3.2);
+    const fwd = p < 0.55;
+    const k = fwd ? ease(seg(p, 0.05, 0.55)) : 1 - ease(seg(p, 0.6, 0.95));
+    const ex = lerp(24, 96, k), ey = 64 - Math.sin(k * Math.PI) * 40 + (k > 0.85 ? (k - 0.85) * 60 : 0);
+    nest(g, 112, 76);
+    if (fwd && p > 0.45) { glow(g, ex, ey, 9, '#ff6b8a', 0.7); label(g, '✕', ex, ey - 14, '#ff6b8a', 12); }
+    egg(g, ex, ey, '#fff6dc');
+    if (!fwd) { ring(g, 68, 48, 10 + seg(p, 0.55, 0.95) * 40, '#c3a6ff', 1 - seg(p, 0.55, 0.95), 2.5); label(g, '⟲', 68, 20, '#c3a6ff', 18); }
+  },
+};
+
 export const stoppedIntros: Record<string, { title: string; frame: RuleFrame }> = {
   'sw-boom': { title: '止まった爆発', frame: bomb },
   'sw-fuse': { title: '壊すと時間が戻る', frame: refill },
