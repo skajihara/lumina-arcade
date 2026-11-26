@@ -129,6 +129,38 @@ const warp: RuleFrame = {
   },
 };
 
+const comet: RuleFrame = {
+  caption: '彗星に触れると、2.5秒のあいだ星をすり抜け、触れた星すべてに1つずつ灯す',
+  draw: (g, t) => {
+    const p = phase(t, 2.8);
+    const stars = [[44, 30], [68, 44], [92, 58], [116, 72]];
+    const k = seg(p, 0.15, 0.85);
+    const bx = lerp(20, 128, k), by = lerp(16, 80, k);
+    stars.forEach(([x, y]) => {
+      const lit = bx > x;
+      glow(g, x, y, lit ? 9 : 5, lit ? GOLD : '#7fa8ff', lit ? 0.8 : 0.4);
+      ring(g, x, y, 6, lit ? GOLD : '#7fa8ff', 0.8, 1.5);
+    });
+    for (let i = 1; i <= 6; i++) glow(g, bx - i * 5, by - i * 3, 4 - i * 0.5, GOLD, 0.5 - i * 0.07);
+    glow(g, bx, by, 4, '#fff3d6');
+  },
+};
+
+const magnet: RuleFrame = {
+  caption: '磁石に触れると、3秒のあいだ、ボールが灯った星へ引き寄せられる',
+  draw: (g, t) => {
+    const p = phase(t, 3);
+    glow(g, 100, 30, 9, GOLD, 0.8);
+    ring(g, 100, 30, 7, GOLD, 0.9, 1.5);
+    const on = p > 0.3;
+    const k = ease(seg(p, 0.3, 0.9));
+    const bx = on ? lerp(36, 98, k) : lerp(20, 36, seg(p, 0, 0.3)), by = on ? lerp(80, 34, k) + Math.sin(k * Math.PI) * 14 : 84;
+    if (on && p < 0.9) for (let i = 0; i < 8; i++) { const f = (i / 8 + t) % 1; glow(g, lerp(bx, 100, f), lerp(by, 30, f), 1.5, i % 2 ? '#ff8fb0' : CYAN, 0.7); }
+    glow(g, bx, by, 3.5, '#ffffff');
+    label(g, 'U', 36, 64, '#ff8fb0', 14, on ? 0.4 : 1);
+  },
+};
+
 export const novaIntros: Record<string, { title: string; frame: RuleFrame }> = {
   arc: { title: '星の引力', frame: gravity },
   corona: { title: 'ロールオーバー', frame: rollover },
@@ -137,6 +169,8 @@ export const novaIntros: Record<string, { title: string; frame: RuleFrame }> = {
   gemini: { title: '分裂', frame: split },
   scorpius: { title: 'ブラックホール', frame: hole },
   orion: { title: 'ワームホール', frame: warp },
+  milkyway: { title: '彗星', frame: comet },
+  libra: { title: '磁石', frame: magnet },
   cygnus: { title: 'アウトレーンとキックバック', frame: kickback },
   dipper: { title: 'キックバックが消えている', frame: kickback },
   endless: { title: 'エンドレス', frame: endless },
