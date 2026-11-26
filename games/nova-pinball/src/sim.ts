@@ -29,6 +29,9 @@ type Tag =
   | { kind: 'moon'; side: 'L' | 'R' }
   | { kind: 'roll'; id: number };
 
+/** アイテムの種類（NP-11・NP-11b） */
+export type ItemKind = 'split' | 'hole' | 'warp' | 'comet' | 'magnet';
+
 export interface Ball {
   id: number;
   body: Body;
@@ -40,6 +43,9 @@ export interface Ball {
   kicked: number;
   /** 持ち主（Echo Loop では何ループ目のボールか。通常は 0） */
   owner: number;
+  /** 彗星（NP-11b）：このティックまで星をすり抜け、触れた星に1つずつチャージ */
+  cometUntil?: number;
+  cometHits?: Set<number>;
   /** 持ち主ごとの発射の溜め（ownerInputs を使う時だけ） */
   charge: number;
   prevLaunch: boolean;
@@ -103,7 +109,7 @@ export type SimEvent =
   | { t: 'wave'; n: number; from: number }
   | { t: 'kickback'; side: 'L' | 'R'; x: number; y: number }
   /** アイテムを使った（NP-11）。warp は出口 tx,ty も */
-  | { t: 'item'; kind: 'split' | 'hole' | 'warp'; x: number; y: number; tx?: number; ty?: number };
+  | { t: 'item'; kind: ItemKind; x: number; y: number; tx?: number; ty?: number };
 
 export type Phase = 'play' | 'clear' | 'gameover';
 
@@ -249,7 +255,7 @@ export class NovaSim {
   /** ひねり3：爆発の引力（重力井戸）。連鎖中は重なって渦を巻く */
   wells: { x: number; y: number; born: number; until: number; k?: number }[] = [];
   /** アイテム（NP-11）：readyAt のティックから使える */
-  items: { kind: 'split' | 'hole' | 'warp'; x: number; y: number; to?: { x: number; y: number }; readyAt: number }[] = [];
+  items: { kind: ItemKind; x: number; y: number; to?: { x: number; y: number }; readyAt: number }[] = [];
 
   constructor(public stage: StageDef, public cfg: NovaConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -276,6 +282,15 @@ export class NovaSim {
           if (ball && ball.owner !== fl.owner) c.setEnabled(false);
           return;
         }
+      }
+      // 彗星のボールは星をすり抜ける（当たりの判定は begin-contact で）
+      if (a && b && (a.kind === 'star' || b.kind === 'star')) {
+        const bl = a.kind === 'ball' ? a : b.kind === 'ball' ? b : null;
+        if (bl && bl.kind === 'ball') {
+          const ball = this.balls.find((x) => x.id === bl.id);
+          if (ball && (ball.cometUntil ?? -1) > this.tick) c.setEnabled(false);
+        }
+        return;
       }
       if (!this.ballCollide) return;
       if (a?.kind !== 'ball' || b?.kind !== 'ball') return;
@@ -575,6 +590,20 @@ export class NovaSim {
         if (x.kind === 'ball' && y.kind === 'star') {
           const s = this.stars[y.id];
           if (!s.alive) continue;
+          // 彗星：すり抜けながら、触れた星ごとに1回だけチャージ
+          const cb = this.balls.find((q) => q.id === x.id);
+          if (cb && (cb.cometUntil ?? -1) > this.tick) {
+            if (cb.cometHits?.has(s.id)) continue;
+            cb.cometHits?.add(s.id);
+            s.lastHit = this.tick;
+            s.lastOwner = cb.owner;
+            s.lastOwnerTick = this.tick;
+            s.decay = 0;
+            this.addCharge(s, 1);
+            const sp = by.getPosition();
+            this.events.push({ t: 'hit', star: s.id, charge: s.charge, x: sp.x, y: sp.y, by: cb.owner });
+            continue;
+          }
           // 共鳴（Echo Loop）：違う持ち主のボールが resonance 秒以内に同じ星へ当てると、すぐに大きく爆発する
           const owner = this.ownerOf(x.id);
           const res = (this.cfg.resonance as number | undefined) ?? 0;
@@ -908,9 +937,38 @@ export class NovaSim {
     return { x: fx, y: fy };
   }
 
+  /** 磁石（NP-11b）：このティックまで、ボールが灯った星（なければ一番近い星）へ引かれる */
+  magnetUntil = -1;
+
+  /** 磁石の引く先：灯った星のうち一番近いもの。灯った星がなければ一番近い星 */
+  magnetTarget(x: number, y: number): Star | null {
+    let best: Star | null = null, bd = 1e9, lit = false;
+    for (const s of this.stars) {
+      if (!s.alive) continue;
+      const q = s.body.getPosition();
+      const d = Math.hypot(q.x - x, q.y - y);
+      const on = s.charge > 0;
+      if ((on && !lit) || (on === lit && d < bd)) { best = s; bd = d; lit = on; }
+    }
+    return best;
+  }
+
   /** 引力の場をボールに効かせる（発射レーンのボールには効かない） */
   private applyWells(): void {
     this.wells = this.wells.filter((w) => w.until > this.tick);
+    if (this.magnetUntil > this.tick) {
+      for (const b of this.balls) {
+        if (this.inLane(b)) continue;
+        const p = b.body.getPosition();
+        const t = this.magnetTarget(p.x, p.y);
+        if (!t) break;
+        const q = t.body.getPosition();
+        const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1;
+        // 重力に勝つくらいの強さ。近いほど少し弱く（星の周りを回りやすく）
+        const k = 26 * Math.min(1, 0.45 + d / 6) * b.body.getMass();
+        b.body.applyForceToCenter({ x: (dx / d) * k, y: (dy / d) * k }, true);
+      }
+    }
     if (!this.wells.length && !(this.cfg.starPull > 0)) return;
     for (const b of this.balls) {
       if (this.inLane(b)) continue;
@@ -954,6 +1012,18 @@ export class NovaSim {
           this.wells.push({ x: it.x, y: it.y, born: this.tick, until: this.tick + HZ * 3, k: 1.6 });
           it.readyAt = this.tick + HZ * 10;
           this.events.push({ t: 'item', kind: 'hole', x: it.x, y: it.y });
+        } else if (it.kind === 'comet') {
+          // 彗星：2.5 秒のあいだ星をすり抜け、触れた星すべてに1つずつチャージ。少し速くなる
+          b.cometUntil = this.tick + Math.round(HZ * 2.5);
+          b.cometHits = new Set();
+          b.body.setLinearVelocity({ x: v.x * 1.25, y: v.y * 1.25 - 1 });
+          it.readyAt = this.tick + HZ * 10;
+          this.events.push({ t: 'item', kind: 'comet', x: it.x, y: it.y });
+        } else if (it.kind === 'magnet') {
+          // 磁石：3 秒のあいだ、ボールが灯った星へ引かれる
+          this.magnetUntil = this.tick + HZ * 3;
+          it.readyAt = this.tick + HZ * 10;
+          this.events.push({ t: 'item', kind: 'magnet', x: it.x, y: it.y });
         } else if (it.kind === 'warp' && it.to) {
           // ワームホール：出口から、同じ速さで（向きは保つ）飛び出す
           b.body.setPosition({ x: it.to.x, y: it.to.y });

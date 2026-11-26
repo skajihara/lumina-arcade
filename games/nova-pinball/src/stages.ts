@@ -25,16 +25,18 @@ export interface BumperDef {
  * - split：分裂。ボールが2つに分かれる（マルチボール）
  * - hole：小さなブラックホール。3秒のあいだ、強い引力の中心になる
  * - warp：ワームホール。入ると to の出口から、同じ速さで飛び出す
+ * - comet：彗星（NP-11b）。2.5 秒のあいだ星をすり抜け、触れた星すべてに1つずつチャージ
+ * - magnet：磁石（NP-11b）。3 秒のあいだ、ボールが灯った星へ引き寄せられる
  */
 export interface ItemDef {
-  kind: 'split' | 'hole' | 'warp';
+  kind: ItemKind;
   x: number;
   y: number;
   /** warp の出口 */
   to?: { x: number; y: number };
 }
 
-import type { BoardOpts, BoardShape } from './sim';
+import type { BoardOpts, BoardShape, ItemKind } from './sim';
 
 /** 盤面の形（NP-19）。左右の壁から内へ斜めに伸びる「漏斗」の壁 */
 const funnel = (y0: number, y1: number, inset: number): BoardShape['walls'] => [
@@ -240,7 +242,7 @@ export const stages: StageDef[] = [
     id: 'libra',
     slings: true, outlanes: true, rollovers: true,
     name: '天秤',
-    hint: '左右の皿を灯してから、てっぺんの大きな星で一気に傾けろ',
+    hint: '左右の皿を灯してから、てっぺんの大きな星で一気に傾けろ。磁石は灯った星へ引く',
     stars: [
       { x: 2.8, y: 9.2 }, { x: 3.6, y: 10.9 }, { x: 2.4, y: 11.2 },
       { x: 11.0, y: 9.2 }, { x: 10.2, y: 10.9 }, { x: 11.4, y: 11.2 },
@@ -248,6 +250,7 @@ export const stages: StageDef[] = [
     ],
     links: [[0, 1], [1, 2], [3, 4], [4, 5], [6, 0], [6, 3]],
     bumpers: [{ x: 6.9, y: 9.4, r: 0.7 }, { x: 4.7, y: 12.9, r: 0.45 }, { x: 9.1, y: 12.9, r: 0.45 }],
+    items: [{ kind: 'magnet', x: 6.9, y: 12.2 }],
     hue: 0.8,
   },
   {
@@ -255,10 +258,11 @@ export const stages: StageDef[] = [
     shape: SHAPES.banks,
     slings: true, outlanes: true, rollovers: true,
     name: '天の川',
-    hint: '長い川をひと筆で。全部灯してまとめて燃やせ',
+    hint: '長い川をひと筆で。彗星になれば川を貫いて全部灯せる',
     stars: milkyWay(),
     links: chainLinks(0, 13),
     bumpers: [{ x: 6.9, y: 16.2, r: 0.4 }],
+    items: [{ kind: 'comet', x: 6.9, y: 14.2 }],
     hue: 0.66,
   },
   {

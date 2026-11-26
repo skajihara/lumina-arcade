@@ -145,6 +145,32 @@ describe('NovaSim', () => {
     expect(h.wells.length).toBe(1);
   });
 
+  it('NP-11b 彗星は星をすり抜けて触れた星を灯し、磁石は灯った星へボールを引く', () => {
+    const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6.9, y: 7 }, { x: 6.9, y: 5 }], links: [], items: [{ kind: 'comet', x: 6.9, y: 10 }] };
+    const sim = new NovaSim(stage, { ...cfg(), twist: 0, starPull: 0 });
+    const b = sim.balls[0];
+    b.body.setPosition({ x: 6.9, y: 10 });
+    b.body.setLinearVelocity({ x: 0, y: -14 });
+    b.launched = true;
+    for (let i = 0; i < 70; i++) sim.step(0);
+    // 2つの星を貫いて上へ抜けた（跳ね返らない）、どちらにもチャージ
+    expect(b.body.getPosition().y).toBeLessThan(5);
+    expect(sim.stars.every((s) => !s.alive || s.charge >= 1)).toBe(true);
+
+    const ms: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 3, y: 6, charge: 1 }], links: [], items: [{ kind: 'magnet', x: 10, y: 12 }] };
+    const pull = (on: boolean) => {
+      const m = new NovaSim({ ...ms, items: on ? ms.items : [] }, { ...cfg(), twist: 0, starPull: 0 });
+      const mb = m.balls[0];
+      mb.body.setPosition({ x: 10, y: 12 });
+      mb.body.setLinearVelocity({ x: 0, y: 0 });
+      mb.launched = true;
+      for (let i = 0; i < 90; i++) m.step(0);
+      const p = mb.body.getPosition();
+      return Math.hypot(p.x - 3, p.y - 6);
+    };
+    expect(pull(true)).toBeLessThan(pull(false) - 2);
+  });
+
   it('チャージは時間で減る', () => {
     const stage: StageDef = { id: 't', name: 't', hint: '', stars: [{ x: 6, y: 8, charge: 2 }], links: [] };
     const c = cfg();

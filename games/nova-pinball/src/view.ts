@@ -261,6 +261,17 @@ export class NovaView {
           this.juice.shake(0.2 * this.cfg.shake);
           this.particles.emit(x, y, { count: 60, speed: [200, 420], life: [0.4, 0.9], size: [0.05, 0.14], color: [0xc9a3ff, 0x7ff0ff], drag: 3 });
           this.hud.toast('ブラックホール — 3秒、すべてを引き寄せる');
+        } else if (e.kind === 'comet') {
+          synth.noise(0.8, { vol: 0.12, from: 1800, to: 7000, q: 2 });
+          synth.arp([7, 9, 11, 14, 16], 0.035, 0.09);
+          this.juice.hitstop(0.05);
+          this.particles.emit(x, y, { count: 60, speed: [120, 480], life: [0.3, 0.9], size: [0.05, 0.18], color: [0xffd27f, 0xfff3d6, 0xffffff] });
+          this.hud.toast('彗星！ 星をすり抜けて、触れた星すべてを灯す');
+        } else if (e.kind === 'magnet') {
+          synth.tone(180, 0.9, { type: 'sawtooth', vol: 0.05, slideTo: 360 });
+          synth.tone(540, 0.6, { type: 'sine', vol: 0.06, slideTo: 720 });
+          this.particles.emit(x, y, { count: 40, speed: [60, 260], life: [0.3, 0.8], size: [0.05, 0.14], color: [0xff8fb0, 0x7ff0ff] });
+          this.hud.toast('磁石 — 3秒、灯った星へ引き寄せられる');
         } else {
           synth.tone(1200, 0.35, { type: 'sine', vol: 0.12, slideTo: 300 });
           synth.tone(300, 0.35, { type: 'sine', vol: 0.12, slideTo: 1200 });
@@ -578,18 +589,25 @@ export class NovaView {
         v.glow.alpha = style.alpha;
         v.core.scale.set(style.scale ?? 1);
       }
+      // 彗星：金色に燃え、長い尾
+      const comet = (b.cometUntil ?? -1) > this.sim.tick;
+      if (comet) {
+        v.glow.tint = 0xffd27f;
+        v.core.tint = 0xfff3d6;
+        if (fxRandom() < 0.5) this.particles.emit(x, y, { count: 1, speed: [10, 60], life: [0.3, 0.6], size: [0.05, 0.12], color: [0xffd27f, 0xffffff] });
+      } else if (!style) { v.glow.tint = 0xcfe6ff; v.core.tint = 0xffffff; }
       // 速いほど軌跡が長く、明るく、青白くなる
       const bv = b.body.getLinearVelocity();
       const sp = Math.min(1, Math.hypot(bv.x, bv.y) / 32);
-      const len = Math.round(6 + sp * (TRAIL_MAX - 6));
+      const len = comet ? TRAIL_MAX : Math.round(6 + sp * (TRAIL_MAX - 6));
       const tcol = lerpColor(0x7fa8ff, 0xe8fbff, sp);
       v.glow.scale.set(((BALL_R * SCALE * 5) / 128) * (1 + sp * 0.35) * (style?.scale ?? 1));
       v.trail.forEach((t, k) => {
         const tp = b.trail[k] ?? { x, y };
         t.x = tp.x; t.y = tp.y;
         t.visible = k < len;
-        if (!style) t.tint = tcol;
-        t.alpha = (0.25 + 0.25 * sp) * (1 - k / len) * (style?.alpha ?? 1);
+        if (!style) t.tint = comet ? 0xffd27f : tcol;
+        t.alpha = (comet ? 0.6 : 0.25 + 0.25 * sp) * (1 - k / len) * (style?.alpha ?? 1);
         if (style) t.tint = lerpColor(style.tint, tcol, 0.3);
         t.scale.set(((BALL_R * SCALE * 2.6) / 128) * (1 - k / (len * 1.3)) * (style?.scale ?? 1));
       });
@@ -707,6 +725,23 @@ export class NovaView {
       }
     }
     // アイテム（NP-11）：分裂＝金の二つの粒が回る、ブラックホール＝黒い円盤と回る降着円盤、ワームホール＝渦と出口への点線
+    // 磁石（NP-11b）：ボールから引かれている星へ、流れる光の点線
+    if (sim.magnetUntil > sim.tick) {
+      const left = (sim.magnetUntil - sim.tick) / 360;
+      for (const b of sim.balls) {
+        if (sim.inLane(b)) continue;
+        const p = b.body.getPosition();
+        const tg = sim.magnetTarget(p.x, p.y);
+        if (!tg) continue;
+        const q = tg.body.getPosition();
+        const n = 12;
+        for (let k = 0; k < n; k++) {
+          const f = (k / n + this.t * 1.2) % 1;
+          g.circle((p.x + (q.x - p.x) * f) * SCALE, (p.y + (q.y - p.y) * f) * SCALE, 2.2).fill({ color: k % 2 ? 0xff8fb0 : 0x7ff0ff, alpha: 0.75 * Math.min(1, left * 3) });
+        }
+        g.circle(q.x * SCALE, q.y * SCALE, tg.r * SCALE + 8 + 3 * Math.sin(this.t * 10)).stroke({ width: 2, color: 0xff8fb0, alpha: 0.7 * Math.min(1, left * 3) });
+      }
+    }
     for (const it of sim.items) {
       const ready = sim.tick >= it.readyAt;
       const x = it.x * SCALE, y = it.y * SCALE, R = 0.55 * SCALE;
@@ -721,6 +756,22 @@ export class NovaView {
           g.moveTo(x + Math.cos(a0) * R, y + Math.sin(a0) * R * 0.5).arc(x, y, R, a0, a0 + 1.4).stroke({ width: 2, color: 0xe6d6ff, alpha: 0.6 * a });
         }
         g.circle(x, y, R * 0.55).fill({ color: 0x000000, alpha: 0.95 }).stroke({ width: 1.5, color: 0xc9a3ff, alpha: a });
+      } else if (it.kind === 'comet') {
+        // 彗星：金の核と、回りながら流れる尾
+        const ang = this.t * 1.5;
+        for (let k = 1; k <= 5; k++) {
+          const tx = x - Math.cos(ang) * R * 0.35 * k, ty = y - Math.sin(ang) * R * 0.35 * k;
+          g.circle(tx, ty, 6 - k).fill({ color: 0xffd27f, alpha: (0.5 - k * 0.08) * a });
+        }
+        g.circle(x, y, R * 0.9).stroke({ width: 1.5, color: 0xffd27f, alpha: 0.6 * a });
+        g.circle(x, y, 6).fill({ color: 0xfff3d6, alpha: a });
+      } else if (it.kind === 'magnet') {
+        // 磁石：桃と水色の二つの弧（U 字）と、引く向きの小さな波
+        g.moveTo(x + R * 0.6, y).arc(x, y, R * 0.6, 0, Math.PI).stroke({ width: 6, color: 0xff8fb0, alpha: 0.85 * a, cap: 'round' });
+        g.moveTo(x - R * 0.6, y).lineTo(x - R * 0.6, y - R * 0.5).stroke({ width: 6, color: 0xff8fb0, alpha: 0.85 * a, cap: 'round' });
+        g.moveTo(x + R * 0.6, y).lineTo(x + R * 0.6, y - R * 0.5).stroke({ width: 6, color: 0x7ff0ff, alpha: 0.85 * a, cap: 'round' });
+        const f = (this.t * 0.9) % 1;
+        g.circle(x, y - R * 0.2, R * (0.9 + f * 0.6)).stroke({ width: 1.2, color: 0xffffff, alpha: 0.35 * (1 - f) * a });
       } else if (it.kind === 'warp' && it.to) {
         const tx = it.to.x * SCALE, ty = it.to.y * SCALE;
         for (let k = 0; k < 3; k++) {
