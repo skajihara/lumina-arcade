@@ -18,32 +18,32 @@ function runBot(stage: StageDef, loops: number, seed = 1) {
 
 describe('EchoSim', () => {
   it('同じ入力なら同じ結果になる（決定性）', () => {
-    const a = runBot(stages[3], 3, 4);
-    const b = runBot(stages[3], 3, 4);
+    const a = runBot(stages[11], 3, 4);
+    const b = runBot(stages[11], 3, 4);
     expect(a.loop).toBe(3);
     expect(hashNumbers(a.digest())).toBe(hashNumbers(b.digest()));
   });
 
   it('ループが終わると時間が巻き戻り、星が復活し、ボールが1つ増える', () => {
-    const es = new EchoSim(stages[0], cfg());
+    const es = new EchoSim(stages[11], cfg());
     const bot = new NovaBot(2, 0.85);
     let started = 0;
-    while (es.loop < 1) {
+    while (es.loop < 1 && es.phase === 'play') {
       es.step(bot.input(es.sim));
       for (const e of es.events) if (e.t === 'loopStart') started++;
     }
     expect(started).toBe(1);
     expect(es.sim.tick).toBe(0);
-    expect(es.sim.starsAlive()).toBe(stages[0].stars.length);
+    expect(es.sim.starsAlive()).toBe(stages[11].stars.length);
     expect(es.sim.balls.length).toBe(2);
     expect(es.history[0].length).toBe(es.loopTicks);
   });
 
   it('邪魔しなければ、残響は前のループと同じ動きをする', () => {
-    const es = new EchoSim(stages[0], cfg());
+    const es = new EchoSim(stages[11], cfg());
     const bot = new NovaBot(3, 0.85);
     const path0: number[] = [];
-    while (es.loop < 1) {
+    while (es.loop < 1 && es.phase === 'play') {
       es.step(bot.input(es.sim));
       if (es.loop === 0 && es.sim.tick % 60 === 0) {
         const b = es.sim.balls.find((x) => x.owner === 0);
@@ -52,7 +52,7 @@ describe('EchoSim', () => {
     }
     // 2ループ目：今のボールは発射せず、フリッパーも触らない
     const path1: number[] = [];
-    while (es.loop < 2) {
+    while (es.loop < 2 && es.phase === 'play') {
       es.step(0);
       if (es.loop === 1 && es.sim.tick % 60 === 0) {
         const b = es.sim.balls.find((x) => x.owner === 0);
@@ -108,7 +108,7 @@ describe('EL-11/12 残響の再生', () => {
       const es = new EchoSim(st, cfg());
       const bot = new NovaBot(1, 0.85);
       const p0: { x: number; y: number }[] = [];
-      while (es.loop === 0) {
+      while (es.loop === 0 && es.phase === 'play') {
         bot.owner = 0;
         es.step(bot.input(es.sim));
         const b = es.sim.balls.find((q) => q.owner === 0)!;
@@ -116,7 +116,7 @@ describe('EL-11/12 残響の再生', () => {
       }
       // 2ループ目：今のボールは発射だけして何もしない（最初の3秒）
       let maxd = 0;
-      while (es.sim.tick < 360) {
+      while (es.sim.tick < 360 && es.phase === 'play') {
         es.step(es.sim.tick > 30 && es.sim.tick < 100 ? 4 : 0);
         const b = es.sim.balls.find((q) => q.owner === 0)!;
         const q = p0[es.sim.tick];

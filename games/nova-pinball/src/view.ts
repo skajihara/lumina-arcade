@@ -604,7 +604,7 @@ export class NovaView {
     // 発射メーター
     const lm = this.launchMeter;
     lm.clear();
-    const lane = sim.balls.some((b) => sim.inLane(b));
+    const lane = sim.balls.some((b) => sim.canLaunch(b));
     if (lane) {
       const h = 3.2 * SCALE * sim.launchCharge;
       lm.rect(14.55 * SCALE - 4, 24.2 * SCALE - h, 5, h).fill({ color: lerpColor(0x7ff0ff, 0xffa3e0, sim.launchCharge) });

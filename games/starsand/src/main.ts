@@ -9,10 +9,10 @@ import { FixedLoop } from '@engine/loop';
 import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
-import { Save } from '@engine/storage';
+import { Save, clearStored } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons, touchText } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons, touchText, resetButton } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
@@ -195,6 +195,7 @@ async function main() {
       if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(52); startStage(i); };
       grid.appendChild(d);
     });
+    menu.appendChild(resetButton('starsand', '星砂', clearStored));
     document.body.appendChild(menu);
   };
 

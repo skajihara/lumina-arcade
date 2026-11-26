@@ -9,9 +9,9 @@ import { Input } from '@engine/input';
 import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
-import { Save } from '@engine/storage';
+import { Save, clearStored } from '@engine/storage';
 import { lerpColor } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
+import { injectBaseStyle, el, backLink, touchButtons, resetButton } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
@@ -237,6 +237,7 @@ async function main() {
       if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(); startStage(i); };
       grid.appendChild(d);
     });
+    menu.appendChild(resetButton('echo-loop', '残響ループ', clearStored));
     document.body.appendChild(menu);
   };
 
