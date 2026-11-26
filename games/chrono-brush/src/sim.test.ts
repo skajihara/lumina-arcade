@@ -47,6 +47,27 @@ describe('時空の絵筆', () => {
     expect(b.stars[0].x).toBeGreaterThan(a.stars[0].x + 30);
   });
 
+  it('風見の面：風は period 秒ごとに向きを変える', () => {
+    const st = chronoStages.find((s) => s.gust)!;
+    const sim = ChronoSim.of(st);
+    expect(sim.windNow(1)).toBeGreaterThan(0);
+    expect(sim.windNow(st.gust!.period + 1)).toBeLessThan(0);
+    expect(sim.windNow(st.gust!.period * 2 + 1)).toBeGreaterThan(0);
+  });
+
+  it('二つの籠の面：どちらの籠に入っても捕まえた', () => {
+    const st = chronoStages.find((s) => s.basket2)!;
+    const sim = ChronoSim.of(st);
+    const [a, b] = sim.basketXs(0);
+    expect(Math.abs(a - b)).toBeGreaterThan(100);
+    for (const x of [a, b]) {
+      const s = ChronoSim.of(st);
+      s.stars.push({ x, y: 600 - 41, vx: 0, vy: 300, alive: true, caught: false });
+      s.step();
+      expect(s.caught).toBe(1);
+    }
+  });
+
   it('全ステージ：何もしないとクリアできず、先読みボットならクリアできる', () => {
     for (const st of chronoStages) {
       const idle = ChronoSim.of(st);

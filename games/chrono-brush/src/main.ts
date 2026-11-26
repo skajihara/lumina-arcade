@@ -1,7 +1,7 @@
 /**
  * 時空の絵筆（Chrono Brush）。NEW-01a で実験枠から本編へ昇格（タイトル・難易度・ステージ選択・ポーズ・リザルト・★・保存・調整パネル）。
  * ドラッグで「遅い時間（青）」、右ドラッグで「速い時間（赤）」、Shift＋ドラッグで「逆再生（紫）」を塗り、降ってくる星を籠へ導く。
- * 風は世界の時間で吹くので、遅らせた星ほど風に運ばれる。6ステージ（数字キーか ?stage=N で選ぶ）。
+ * 風は世界の時間で吹くので、遅らせた星ほど風に運ばれる。12ステージ（ ?stage=N で選ぶ）。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
 import { Graphics, Sprite, Container } from 'pixi.js';
@@ -14,8 +14,8 @@ import { injectBaseStyle, el, goTo, resetButton, touchButtons } from '@engine/hu
 import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { Save, clearStored } from '@engine/storage';
 import { createTuning } from '@engine/tuning';
-import { ruleCards } from '@engine/rules';
-import { chronoRules } from './rules';
+import { ruleCards, introCard } from '@engine/rules';
+import { chronoRules, chronoIntros } from './rules';
 import { schema, presets, DEFAULT_PRESET, toChrono, type BrushConfig } from './config';
 import { ChronoSim, chronoStages, VIEW_W, VIEW_H, HZ, type Brush } from './sim';
 import { ChronoBot } from './bot';
@@ -67,12 +67,17 @@ async function main() {
     center.innerHTML = `<div style="color:var(--gold)">${chronoStages[i].hint}</div>`;
     setTimeout(() => { if (sim === cur) center.innerHTML = ''; }, 3500);
     const cur = sim;
+    // NEW-01d：その面で初めて出てくる要素のカード（谷底の籠は逆再生の使い方）
+    const nm = chronoStages[i].name;
+    const it = chronoIntros[nm === '谷底の籠' ? '逆再生' : nm];
+    introCard(it?.frame ?? null, it?.title);
   };
   const restart = () => start(stageIndex);
   /** 捕まえた所（星座の線の点） */
   let links: { x: number; y: number; age: number }[] = [];
   const linkG = new Graphics();
-  ga.world.addChild(linkG);
+  const windG = new Graphics();
+  ga.world.addChild(linkG, windG);
 
   /** ★：必要数で★1、残りの半分で★2、残りの 8 割で★3 */
   const starsOf = (caught: number) => {
@@ -287,11 +292,31 @@ async function main() {
         linkG.circle(lx(k), ly(k), 3.5 + 2 * Math.max(0, 1 - links[k].age)).fill({ color: 0xfff1c8, alpha: a });
         if (k > 0) linkG.moveTo(lx(k - 1), ly(k - 1)).lineTo(lx(k), ly(k)).stroke({ width: 1.5, color: 0xffd98a, alpha: 0.5 * a });
       }
-      // 籠
-      const bx = sim.basketX(), by = VIEW_H - 40, w = sim.cfg.basketW;
+      // 籠（二つある面も）
+      const by = VIEW_H - 40, w = sim.cfg.basketW;
       basketG.clear();
+      for (const bx of sim.basketXs()) {
       basketG.moveTo(bx - w / 2, by - 20).lineTo(bx - w / 2 + 12, by + 12).lineTo(bx + w / 2 - 12, by + 12).lineTo(bx + w / 2, by - 20).stroke({ width: 3, color: 0xffd98a, alpha: 0.85 });
       for (const [px, py] of [[bx - w / 2, by - 20], [bx - w / 2 + 12, by + 12], [bx + w / 2 - 12, by + 12], [bx + w / 2, by - 20]]) basketG.circle(px, py, 3.5).fill({ color: 0xffffff });
+      }
+      // 風向きを変える面：画面の上に風の流れ（光の筋）と矢印。向きが変わる直前は点滅して知らせる
+      windG.clear();
+      if (sim.stage?.gust) {
+        const wn = sim.windNow();
+        const dir = Math.sign(wn) || 1;
+        const str = Math.min(1, Math.abs(wn) / Math.max(1, Math.abs(sim.cfg.windBias)));
+        const g = sim.stage.gust;
+        const toTurn = g.period - (sim.time % g.period);
+        const blink = toTurn < 1.5 ? 0.5 + 0.5 * Math.sin(t * 18) : 1;
+        for (let k = 0; k < 14; k++) {
+          const yy = 130 + ((k * 97) % 360);
+          const xx = ((k * 211 + t * wn * 1.6) % (VIEW_W + 200) + VIEW_W + 200) % (VIEW_W + 200) - 100;
+          windG.moveTo(xx, yy).lineTo(xx - dir * 50 * str, yy).stroke({ width: 1.5, color: 0xbfd4ff, alpha: 0.18 * str });
+        }
+        const ax = VIEW_W / 2, ay = 36;
+        windG.moveTo(ax - 40 * dir, ay).lineTo(ax + 40 * dir, ay).stroke({ width: 3, color: 0xffd98a, alpha: 0.9 * blink * (0.3 + 0.7 * str) });
+        windG.moveTo(ax + 40 * dir, ay).lineTo(ax + 28 * dir, ay - 9).moveTo(ax + 40 * dir, ay).lineTo(ax + 28 * dir, ay + 9).stroke({ width: 3, color: 0xffd98a, alpha: 0.9 * blink * (0.3 + 0.7 * str) });
+      }
       // 星
       while (sprites.length < sim.stars.length) {
         const sp = new Sprite(glowTexture());
@@ -309,7 +334,7 @@ async function main() {
         sp.tint = r < 0 ? 0xd9b3ff : r < 1 ? 0x9fc0ff : r > 1 ? 0xffb3b3 : 0xfff3d6;
       });
       if (mode === 'menu') tl.innerHTML = '';
-      else tl.innerHTML = `<div>${stageIndex + 1}. ${chronoStages[stageIndex].name}</div><div class="big">籠 ${sim.caught} / ${chronoStages[stageIndex].need}<span style="font-size:14px;color:var(--dim)">（星 ${sim.cfg.stars}）</span></div><div style="font-size:13px;color:var(--dim)">インク ${'●'.repeat(Math.min(30, sim.ink))} ${sim.ink}<br>ドラッグ＝遅い（青）　右ドラッグ＝速い（赤）　Shift＋ドラッグ＝逆再生（紫）</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+      else tl.innerHTML = `<div>${stageIndex + 1}. ${chronoStages[stageIndex].name}</div><div class="big">籠 ${sim.caught} / ${chronoStages[stageIndex].need}<span style="font-size:14px;color:var(--dim)">（星 ${sim.cfg.stars}）</span></div><div style="font-size:13px;color:var(--dim)">インク ${'●'.repeat(Math.min(30, sim.ink))} ${sim.ink}<br>ドラッグ＝遅い（青）　右ドラッグ＝速い（赤）<br>Shift＋ドラッグ＝逆再生（紫）</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
       tbar.update();
       const tb = tbar.el.querySelectorAll('button')[1];
       if (tb) tb.textContent = brushName[touchBrush];
