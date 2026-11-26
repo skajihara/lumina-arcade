@@ -10,14 +10,15 @@ import { FixedLoop } from '@engine/loop';
 import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { Particles } from '@engine/particles';
+import { fxRandom } from '@engine/rng';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
 import { injectBaseStyle, el, goTo, resetButton, touchButtons } from '@engine/hud';
 import { Input } from '@engine/input';
 import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { Save, clearStored } from '@engine/storage';
 import { createTuning } from '@engine/tuning';
-import { ruleCards } from '@engine/rules';
-import { moonRules } from './rules';
+import { ruleCards, introCard } from '@engine/rules';
+import { moonRules, moonIntros } from './rules';
 import { schema, presets, DEFAULT_PRESET, toClaw, type MoonConfig } from './config';
 import { ClawSim, HZ, WORLD_W, WORLD_H, SHELF_Y, HOLE_X0, HOLE_X1, RAIL_Y, PIVOT_L, PIVOT_R, IN_DROP, IN_OPEN, DT } from './sim';
 import { clawStages } from './stages';
@@ -100,6 +101,9 @@ async function main() {
     sprites.clear();
     popups.length = 0;
     buildBoard();
+    bumpAge.length = 0;
+    const it = moonIntros[clawStages[i].id];
+    introCard(it?.frame ?? null, it?.title);
     center.innerHTML = `<div style="color:var(--gold);max-width:380px;margin:0 auto">${clawStages[i].hint}</div>`;
     const cur = sim;
     setTimeout(() => { if (sim === cur) center.innerHTML = ''; }, 4000);
@@ -283,10 +287,17 @@ async function main() {
     // 下の段の斜面
     glowLine(0, 18.5, PIVOT_L.x - 0.1, PIVOT_L.y - 0.3);
     glowLine(WORLD_W, 18.5, PIVOT_R.x + 0.1, PIVOT_R.y - 0.3);
-    // 柱
+    // 柱（月のバンパーは draw で毎フレーム描く）
     for (const p of st.posts ?? []) {
+      if (p.kick) continue;
       boardG.circle(px(p.x), py(p.y), p.r * S + 5).fill({ color: 0x8fa6ff, alpha: 0.12 });
       boardG.circle(px(p.x), py(p.y), p.r * S).fill({ color: 0x1a2260, alpha: 0.9 }).stroke({ width: 2, color: 0xb9c6ff, alpha: 0.9 });
+    }
+    // 棚の仕切り（低い壁）
+    for (const f of st.fences ?? []) {
+      boardG.moveTo(px(f.x), py(SHELF_Y)).lineTo(px(f.x), py(SHELF_Y - f.h)).stroke({ width: 8, color: 0xb9c6ff, alpha: 0.15 });
+      boardG.moveTo(px(f.x), py(SHELF_Y)).lineTo(px(f.x), py(SHELF_Y - f.h)).stroke({ width: 3, color: 0xb9c6ff, alpha: 0.9 });
+      boardG.circle(px(f.x), py(SHELF_Y - f.h), 3).fill({ color: 0xffffff });
     }
     // 巣穴の倍率の文字
     goalText.removeChildren().forEach((c) => c.destroy());
@@ -391,6 +402,15 @@ async function main() {
         particles.emit(px(e.x), py(e.y), { count: 50 + 20 * e.mult, speed: [60, 330], life: [0.4, 1.1], size: [0.05, 0.18], color: [0xffd98a, 0xfff1c8, 0xbfe3ff] });
         shock.push({ x: px(e.x), y: py(e.y), r: 40, age: 0 });
         popups.push({ x: px(e.x), y: py(e.y) - 18, text: `+${e.mult}`, age: 0, color: 0xffe7a8 });
+      } else if (e.t === 'bump') {
+        const i = (clawStages[stageIndex].posts ?? []).findIndex((p) => p.x === e.x && p.y === e.y);
+        if (i >= 0) bumpAge[i] = 0;
+        synth.tone(fxRandom(520, 600), 0.12, { type: 'triangle', vol: 0.07, slideTo: 880 });
+        particles.emit(px(e.x), py(e.y), { count: 12, speed: [60, 200], life: [0.2, 0.4], size: [0.04, 0.1], color: [0xdde8ff, 0xffffff] });
+      } else if (e.t === 'lost' && e.faded) {
+        // 光が尽きて消える：小さく散る
+        particles.emit(px(e.x), py(e.y), { count: 16, speed: [10, 60], life: [0.4, 0.9], size: [0.03, 0.08], color: [0x8fa6ff, 0x4a5aa8] });
+        synth.tone(260, 0.5, { type: 'sine', vol: 0.05, slideTo: 130 });
       } else if (e.t === 'lost') {
         synth.tone(180, 0.4, { type: 'sine', vol: 0.07, slideTo: 80 });
       } else if (e.t === 'flip') {
@@ -406,20 +426,36 @@ async function main() {
   };
 
   const shock: { x: number; y: number; r: number; age: number }[] = [];
+  const bumpAge: number[] = [];
   const popTexts: Text[] = [];
   const draw = (dt: number) => {
     const st = clawStages[stageIndex];
     // 巣穴：金の輪がゆっくり脈打つ
     goalG.clear();
-    for (const g of st.goals) {
+    st.goals.forEach((g, gi) => {
       const pulseK = 0.5 + 0.5 * Math.sin(t * 2.4 + g.x);
-      goalG.circle(px(g.x), py(g.y), g.r * S + 8 + pulseK * 4).fill({ color: 0xffd98a, alpha: 0.06 + 0.04 * pulseK });
-      goalG.circle(px(g.x), py(g.y), g.r * S).fill({ color: 0x2a1e08, alpha: 0.55 }).stroke({ width: 2.5, color: 0xffd98a, alpha: 0.75 + 0.25 * pulseK });
+      const gx = sim.goalX(g);
+      goalText.children[gi]?.position.set(px(gx), py(g.y));
+      // 揺れる巣穴は、行き来する範囲を淡い線で
+      if (g.move) goalG.moveTo(px(g.x - g.move.amp), py(g.y)).lineTo(px(g.x + g.move.amp), py(g.y)).stroke({ width: 1, color: 0xffd98a, alpha: 0.2 });
+      goalG.circle(px(gx), py(g.y), g.r * S + 8 + pulseK * 4).fill({ color: 0xffd98a, alpha: 0.06 + 0.04 * pulseK });
+      goalG.circle(px(gx), py(g.y), g.r * S).fill({ color: 0x2a1e08, alpha: 0.55 }).stroke({ width: 2.5, color: 0xffd98a, alpha: 0.75 + 0.25 * pulseK });
       for (let k = 0; k < 6; k++) {
         const a = t * 0.9 + (k * Math.PI) / 3;
-        goalG.circle(px(g.x) + Math.cos(a) * (g.r * S + 4), py(g.y) + Math.sin(a) * (g.r * S + 4), 1.6).fill({ color: 0xfff1c8, alpha: 0.8 });
+        goalG.circle(px(gx) + Math.cos(a) * (g.r * S + 4), py(g.y) + Math.sin(a) * (g.r * S + 4), 1.6).fill({ color: 0xfff1c8, alpha: 0.8 });
       }
-    }
+    });
+    // 月のバンパー：満月の円盤。当たると明るく膨らむ
+    (st.posts ?? []).forEach((p, i) => {
+      if (!p.kick) return;
+      const hot = Math.max(0, 1 - (bumpAge[i] ?? 9) / 0.25);
+      const r = p.r * S * (1 + hot * 0.18);
+      goalG.circle(px(p.x), py(p.y), r + 7).fill({ color: 0xbfe3ff, alpha: 0.1 + hot * 0.3 });
+      goalG.circle(px(p.x), py(p.y), r).fill({ color: 0xdde8ff, alpha: 0.35 + hot * 0.5 }).stroke({ width: 2.5, color: 0xffffff, alpha: 0.9 });
+      goalG.circle(px(p.x) - r * 0.3, py(p.y) - r * 0.2, r * 0.22).fill({ color: 0x8fa6ff, alpha: 0.35 });
+      goalG.circle(px(p.x) + r * 0.25, py(p.y) + r * 0.3, r * 0.15).fill({ color: 0x8fa6ff, alpha: 0.3 });
+      bumpAge[i] = (bumpAge[i] ?? 9) + dt;
+    });
     // フリッパー
     flipG.clear();
     for (const f of sim.flipperPoses()) {
@@ -446,7 +482,9 @@ async function main() {
       sp.position.set(px(p.x), py(p.y));
       const tw = 0.9 + 0.1 * Math.sin(t * 5 + s.id);
       sp.scale.set((sim.cfg.spiritR * S * 2.1) / 64 * tw * (s.bomb ? 1.2 : 1));
-      sp.alpha = s.bomb ? 1 : 0.85;
+      // 下の段の精霊は、光の残りが少ないほど暗く、最後の 2 割は点滅
+      const life = sim.lifeOf(s);
+      sp.alpha = (s.bomb ? 1 : 0.85) * (life < 0.2 ? 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t * 22)) : 0.45 + 0.55 * life);
       sp.tint = s.bomb ? 0xff5a5a : s.state === 'held' ? 0xffe7a8 : s.state === 'ball' ? 0xd8f0ff : 0xa9cfff;
     }
     // 月の爪：レールから吊り下がる糸、三日月の頭、2本の爪（開き具合）

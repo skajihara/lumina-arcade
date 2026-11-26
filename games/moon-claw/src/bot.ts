@@ -10,6 +10,7 @@ export class ClawBot {
   private rng: Rng;
   private target: number | null = null;
   private hold = { L: 0, R: 0 };
+  private miss = { L: 0, R: 0 };
   private wait = 0;
   constructor(public skill = 0.8, seed = 7) {
     this.rng = new Rng(seed);
@@ -62,7 +63,12 @@ export class ClawBot {
         const v = s.body.getLinearVelocity();
         return p.x > x0 && p.x < x1 && p.y > pv.y - 1.4 + off && p.y < pv.y + 0.4 && v.y > -2;
       });
-      if (ball && this.hold[side] <= 0) this.hold[side] = 18;
+      // 下手なほど、来た球に反応しそこねる（その球が通り過ぎるまで）
+      if (ball && this.hold[side] <= 0 && this.miss[side] <= 0) {
+        if (this.rng.next() < (1 - this.skill) * 0.7) this.miss[side] = 40;
+        else this.hold[side] = 18;
+      }
+      if (this.miss[side] > 0) this.miss[side]--;
       if (this.hold[side] > 0) {
         this.hold[side]--;
         if (this.hold[side] > 4) bits |= side === 'L' ? IN_LEFT : IN_RIGHT;
