@@ -12,6 +12,8 @@ export interface StarDef {
   charge?: number;
   /** 色（ひねりA 用。省略時は番号順に 0,1,2） */
   color?: number;
+  /** 回る星（NP-13b）：中心 (cx, cy) の周りを period 秒で1周する（負なら時計回りの逆）。半径は置いた所までの距離 */
+  orbit?: { cx: number; cy: number; period: number };
 }
 
 export interface BumperDef {
@@ -287,6 +289,22 @@ export const stages: StageDef[] = [
     bumpers: [{ x: 10.4, y: 11.2, r: 0.5 }, { x: 3.9, y: 4.6, r: 0.4 }],
     items: [{ kind: 'warp', x: 6.9, y: 13.4, to: { x: 3.9, y: 6.6 } }],
     hue: 0.62,
+  },
+  {
+    id: 'orbit',
+    shape: SHAPES.dome,
+    slings: true, outlanes: true, rollovers: true,
+    name: '回る星座',
+    hint: '何を考える面？ — 星は回っている。内の輪と外の輪は逆向き。狙う星が来る瞬間を待って打て',
+    stars: [
+      // 内の輪：6つ、9 秒で1周（左回り）
+      ...[0, 1, 2, 3, 4, 5].map((k) => ({ x: +(6.9 + 2.5 * Math.cos((k * Math.PI) / 3)).toFixed(2), y: +(8.2 + 2.5 * Math.sin((k * Math.PI) / 3)).toFixed(2), r: 0.45, orbit: { cx: 6.9, cy: 8.2, period: 9 } })),
+      // 外の輪：4つ、14 秒で1周（逆回り）
+      ...[0, 1, 2, 3].map((k) => ({ x: +(6.9 + 4.3 * Math.cos(Math.PI / 4 + (k * Math.PI) / 2)).toFixed(2), y: +(8.2 + 4.3 * Math.sin(Math.PI / 4 + (k * Math.PI) / 2)).toFixed(2), r: 0.45, orbit: { cx: 6.9, cy: 8.2, period: -14 } })),
+    ],
+    links: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0], [6, 7], [7, 8], [8, 9], [9, 6]],
+    bumpers: [{ x: 6.9, y: 8.2, r: 0.7 }],
+    hue: 0.7,
   },
   {
     id: 'cygnus',

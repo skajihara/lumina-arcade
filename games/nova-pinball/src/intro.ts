@@ -161,6 +161,19 @@ const magnet: RuleFrame = {
   },
 };
 
+/** 回る星（NP-13b）：内の輪と外の輪が逆向きに回る */
+const orbit: RuleFrame = {
+  caption: '星が回っている。内の輪と外の輪は逆向き。狙う星が来る瞬間を待って打つ',
+  draw: (g, t) => {
+    const cx = 70, cy = 46;
+    ring(g, cx, cy, 18, BLUE, 0.25, 1);
+    ring(g, cx, cy, 34, BLUE, 0.2, 1);
+    glow(g, cx, cy, 6, '#c9a3ff', 0.8);
+    for (let k = 0; k < 6; k++) { const a = t * 1.4 + (k * Math.PI) / 3; starShape(g, cx + Math.cos(a) * 18, cy + Math.sin(a) * 18, 5, '#dfe6ff'); }
+    for (let k = 0; k < 4; k++) { const a = -t * 0.9 + Math.PI / 4 + (k * Math.PI) / 2; starShape(g, cx + Math.cos(a) * 34, cy + Math.sin(a) * 34, 5, GOLD); }
+  },
+};
+
 export const novaIntros: Record<string, { title: string; frame: RuleFrame }> = {
   arc: { title: '星の引力', frame: gravity },
   corona: { title: 'ロールオーバー', frame: rollover },
@@ -169,6 +182,7 @@ export const novaIntros: Record<string, { title: string; frame: RuleFrame }> = {
   gemini: { title: '分裂', frame: split },
   scorpius: { title: 'ブラックホール', frame: hole },
   vault: { title: 'ワームホール', frame: warp },
+  orbit: { title: '回る星', frame: orbit },
   orion: { title: 'ワームホール', frame: warp },
   lyra: { title: '彗星', frame: comet },
   leo: { title: '磁石', frame: magnet },
