@@ -133,7 +133,8 @@ async function main() {
       view.container.removeChild(noteText);
       view.destroy();
     }
-    view = new NovaView(es.sim, juice, cfg, hudApi);
+    // EL-10b：Nova とはっきり違う空。水色〜青緑の夜明け前の空と、青緑の星雲
+    view = new NovaView(es.sim, juice, cfg, hudApi, { top: '#06303a', bottom: '#020a10', nebula: ['#1a7a86', '#1b5a8f', '#2a9a8a'] });
     const cur = es.loop;
     // 今の自分は大きく白く、残響は色付きで半透明・少し小さく（EL-11：区別がつくように）
     view.ballStyle = (b) => (b.owner === cur ? { tint: 0xffffff, alpha: 1, scale: 1.3 } : { tint: echoColor(cur - b.owner), alpha: echoAlpha(cur - b.owner) * 0.7, scale: 0.85 });

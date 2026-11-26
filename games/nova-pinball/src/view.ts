@@ -87,10 +87,13 @@ export class NovaView {
   /** カメラ：ズーム倍率と注視点（論理座標） */
   private cam = { zoom: 1, x: VIEW_W / 2, y: VIEW_H / 2, t: -1, peak: 1, hold: 0, dur: 0 };
 
-  constructor(private sim: NovaSim, private juice: Juice, private cfg: NovaConfig, private hud: { chain(n: number): void; toast(msg: string): void }) {
+  /** sky：空の色を作品ごとに変える（EL-10b：Echo は水色〜青緑の空） */
+  constructor(private sim: NovaSim, private juice: Juice, private cfg: NovaConfig, private hud: { chain(n: number): void; toast(msg: string): void }, sky?: { top: string; bottom: string; nebula: string[] }) {
     this.hue = sim.stage.hue ?? 0.62;
     this.palette = [hsl(this.hue, 0.9, 0.7), hsl(this.hue + 0.08, 0.95, 0.75), hsl(this.hue - 0.1, 0.9, 0.8), 0xffffff, 0xffe1a8];
-    this.sky = new Sprite(skyTexture(VIEW_W, VIEW_H, '#' + hsl(this.hue, 0.6, 0.08).toString(16).padStart(6, '0'), '#02030a'));
+    this.sky = new Sprite(sky
+      ? skyTexture(VIEW_W, VIEW_H, sky.top, sky.bottom, sky.nebula)
+      : skyTexture(VIEW_W, VIEW_H, '#' + hsl(this.hue, 0.6, 0.08).toString(16).padStart(6, '0'), '#02030a'));
     this.sky.width = VIEW_W;
     this.sky.height = VIEW_H;
     this.field = makeStarfield(VIEW_W, VIEW_H, 180, 11 + sim.stage.id.length);
