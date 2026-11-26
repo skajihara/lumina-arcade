@@ -168,6 +168,7 @@ export const novaIntros: Record<string, { title: string; frame: RuleFrame }> = {
   drift: { title: '漂う星', frame: loose },
   gemini: { title: '分裂', frame: split },
   scorpius: { title: 'ブラックホール', frame: hole },
+  vault: { title: 'ワームホール', frame: warp },
   orion: { title: 'ワームホール', frame: warp },
   lyra: { title: '彗星', frame: comet },
   leo: { title: '磁石', frame: magnet },
