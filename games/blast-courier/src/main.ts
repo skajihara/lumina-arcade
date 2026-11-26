@@ -15,8 +15,8 @@ import { injectBaseStyle, el, goTo, resetButton, touchButtons } from '@engine/hu
 import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { Save, clearStored } from '@engine/storage';
 import { createTuning } from '@engine/tuning';
-import { ruleCards } from '@engine/rules';
-import { blastRules } from './rules';
+import { ruleCards, introCard } from '@engine/rules';
+import { blastRules, blastIntros } from './rules';
 import { schema, presets, DEFAULT_PRESET, toCourier, type BlastConfig } from './config';
 import { CourierSim, HZ, WORLD_W, WORLD_H, type BlastKind } from './sim';
 import { courierStages } from './stages';
@@ -44,6 +44,10 @@ async function main() {
   `);
   const ga = await createGameApp(VIEW_W, VIEW_H);
   const juice = new Juice();
+  // 盤面の外（縦長の画面の上下）へ雲海の光がはみ出さないよう、論理画面で切り抜く
+  const worldMask = new Graphics().rect(0, 0, VIEW_W, VIEW_H).fill({ color: 0xffffff });
+  ga.root.addChild(worldMask);
+  ga.world.mask = worldMask;
   const sky = new Sprite(skyTexture(VIEW_W, VIEW_H, '#0c1238', '#24183f', ['#1e2a6a', '#2a2060', '#163a6a']));
   const field = makeStarfield(VIEW_W, VIEW_H, 150, 91);
   const seaBack = new Graphics();
@@ -111,6 +115,8 @@ async function main() {
     rings.length = 0;
     drawLand();
     updateKindBar();
+    const it = blastIntros[courierStages[i].id];
+    introCard(it?.frame ?? null, it?.title);
     center.innerHTML = `<div style="color:var(--gold);max-width:520px;margin:0 auto">${courierStages[i].hint}</div>`;
     const cur = sim;
     setTimeout(() => { if (sim === cur) center.innerHTML = ''; }, 4500);
