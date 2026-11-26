@@ -1,5 +1,5 @@
 /**
- * 実験：時空の絵筆（Chrono Brush）のシミュレーション（描画なし）。
+ * 時空の絵筆（Chrono Brush）のシミュレーション（描画なし）。NEW-01a で実験枠から本編へ。
  * 空から星が降ってくる。下では星座の籠が左右に揺れている。
  * 時間の流れを塗る：青＝遅い（×slow）、赤＝速い（×fast）、紫＝逆再生（来た道を戻る）。塗った円の中では、星の時間がその速さで進む。
  * 星は風で斜めに流れて降る。風は世界の時間で吹くので、星の時間を遅らせる（逆再生する）ほど横へ運ばれ、速めるほど真下に近く落ちる。
@@ -16,7 +16,7 @@ const DT = 1 / HZ;
 export type Brush = 'slow' | 'fast' | 'rewind';
 export interface Zone { x: number; y: number; r: number; k: Brush; age: number }
 export interface Star { x: number; y: number; vx: number; vy: number; alive: boolean; caught: boolean }
-export interface ChronoConfig { windBias: number; spawnMin: number; spawnMax: number; gravity: number; slow: number; fast: number; rewind: number; ink: number; stars: number; interval: number; basketSpeed: number; basketW: number; wind: number; zoneLife: number }
+export interface ChronoConfig { inkScale?: number; windBias: number; spawnMin: number; spawnMax: number; gravity: number; slow: number; fast: number; rewind: number; ink: number; stars: number; interval: number; basketSpeed: number; basketW: number; wind: number; zoneLife: number }
 
 /** windBias：風の向きと強さ（＋で右へ）。spawnMin/Max：星が出る横の範囲。wind：星が横に流れる速さの幅（斜めに降る）。zoneLife：塗った時間が消えるまでの秒（0 で消えない） */
 export const defaults: ChronoConfig = { windBias: 0, spawnMin: 120, spawnMax: 880, gravity: 420, slow: 0.25, fast: 2.2, rewind: -0.6, ink: 14, stars: 12, interval: 1.1, basketSpeed: 0.55, basketW: 120, wind: 150, zoneLife: 7 };
@@ -68,7 +68,8 @@ export class ChronoSim {
       seed = stage.seed;
     }
     this.rng = new Rng(seed);
-    this.ink = this.cfg.ink;
+    // 難易度でインクの量を増減（inkScale）
+    this.ink = Math.max(1, Math.round(this.cfg.ink * (cfg.inkScale ?? 1)));
   }
 
   /** ステージから作る */
