@@ -248,9 +248,13 @@ export class NovaBot {
   }
 
   /** シャドウ盤面で「今このフリッパーを弾いたら」のボールの軌跡を先読みする */
+  private shadowOf: unknown = null;
+
   predict(sim: NovaSim, side: Side, ball: Ball, release = 0, field = false): { x: number; y: number }[] {
     this.stats.predictions++;
-    if (!this.shadow) this.shadow = new NovaSim({ ...SHADOW_STAGE, outlanes: sim.stage.outlanes, slings: sim.stage.slings }, { ...sim.cfg });
+    // 盤面（形・アウトレーン）がステージで違うので、ステージが変わったら作り直す
+    if (this.shadowOf !== sim.stage) { this.shadow = null; this.shadowOf = sim.stage; }
+    if (!this.shadow) this.shadow = new NovaSim({ ...SHADOW_STAGE, outlanes: sim.stage.outlanes, slings: sim.stage.slings, shape: sim.stage.shape }, { ...sim.cfg });
     const sh = this.shadow;
     sh.cfg = sim.cfg;
     const mine = sim.flippers.filter((f) => f.owner === this.owner);

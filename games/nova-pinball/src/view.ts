@@ -5,7 +5,7 @@ import { Particles } from '@engine/particles';
 import { fxRandom } from '@engine/rng';
 import { synth } from '@engine/audio';
 import type { Juice } from '@engine/juice';
-import { BALL_R, BOARD_H, BOARD_W, boardWalls, type Ball, SLING_L, SLING_R, MOON_L, MOON_R, MOON_R0, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
+import { BALL_R, BOARD_H, BOARD_W, boardWalls, islandPoints, type Ball, SLING_L, SLING_R, MOON_L, MOON_R, MOON_R0, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
 import type { NovaConfig } from './config';
 
 export const SCALE = 40; // 1メートル = 40px
@@ -129,6 +129,11 @@ export class NovaView {
         for (const p of line.slice(1)) g.lineTo(p.x * SCALE, p.y * SCALE);
         g.stroke({ width: w, color: col, alpha: a, cap: 'round', join: 'round' });
       }
+    }
+    // 島（入れない柱）：中を少し塗る
+    for (const i of this.sim.stage.shape?.islands ?? []) {
+      const pts = islandPoints(i).flatMap((p) => [p.x * SCALE, p.y * SCALE]);
+      g.poly(pts).fill({ color: col, alpha: 0.1 });
     }
     // 発射レーンの目印
     for (let y = 21; y < 24; y += 0.7) g.circle(13.8 * SCALE, y * SCALE, 2).fill({ color: col, alpha: 0.4 });

@@ -116,6 +116,25 @@ export interface BoardOpts {
   rollovers?: boolean;
   /** キックバックを最初は消しておく（ロールオーバーを揃えると点く） */
   noKickbackStart?: boolean;
+  /** 盤面の形（NP-19）：中の壁（折れ線）と、入れない島（閉じた多角形） */
+  shape?: BoardShape;
+}
+
+export interface BoardShape {
+  /** 形の名前（タイトルやヒントに出す） */
+  name: string;
+  walls?: { x: number; y: number }[][];
+  islands?: { x: number; y: number; r: number; n?: number; rot?: number }[];
+}
+
+/** 島の多角形（閉じた点の列。最後の点は最初の点と同じ） */
+export function islandPoints(i: { x: number; y: number; r: number; n?: number; rot?: number }): { x: number; y: number }[] {
+  const n = i.n ?? 6, out: { x: number; y: number }[] = [];
+  for (let k = 0; k <= n; k++) {
+    const a = (i.rot ?? -Math.PI / 2) + ((k % n) / n) * Math.PI * 2;
+    out.push({ x: +(i.x + i.r * Math.cos(a)).toFixed(3), y: +(i.y + i.r * Math.sin(a)).toFixed(3) });
+  }
+  return out;
 }
 
 /** 左右対称の鏡像（盤面の中心 x=6.9） */
@@ -158,6 +177,9 @@ export function boardWalls(opts: BoardOpts = {}): { x: number; y: number }[][] {
     : [{ x: 0.6, y: 19.0 }, end];
   const rightSlope = leftSlope.map(mirror);
   const walls = [outer, leftSlope, rightSlope];
+  // 盤面の形（NP-19）
+  for (const w of opts.shape?.walls ?? []) walls.push(w);
+  for (const i of opts.shape?.islands ?? []) walls.push(islandPoints(i));
   if (opts.outlanes) {
     // 右のアウトレーンは発射レーンの壁の内側。壁の下端をドレインまで伸ばす
     walls.push([{ x: FIELD_RIGHT, y: 24.4 }, { x: FIELD_RIGHT, y: 25.6 }]);
@@ -254,7 +276,9 @@ export class NovaSim {
   private buildBoard(): void {
     const ground = this.world.createBody({ type: 'static', userData: { kind: 'wall' } as Tag });
     for (const line of boardWalls(this.stage)) {
-      ground.createFixture(new Chain(line, false), { friction: 0.1, restitution: 0.3 });
+      const a = line[0], z = line[line.length - 1];
+      const closed = line.length > 3 && Math.hypot(a.x - z.x, a.y - z.y) < 1e-6;
+      ground.createFixture(new Chain(closed ? line.slice(0, -1) : line, closed), { friction: 0.1, restitution: 0.3 });
     }
     if (this.stage.slings && this.moonMode) {
       for (const [side, c] of [['L', MOON_L], ['R', MOON_R]] as const) {

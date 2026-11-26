@@ -34,7 +34,27 @@ export interface ItemDef {
   to?: { x: number; y: number };
 }
 
-import type { BoardOpts } from './sim';
+import type { BoardOpts, BoardShape } from './sim';
+
+/** 盤面の形（NP-19）。左右の壁から内へ斜めに伸びる「漏斗」の壁 */
+const funnel = (y0: number, y1: number, inset: number): BoardShape['walls'] => [
+  [{ x: 0.6, y: y0 }, { x: 0.6 + inset, y: y1 }],
+  [{ x: 13.2, y: y0 }, { x: 13.2 - inset, y: y1 }],
+];
+const SHAPES: Record<string, BoardShape> = {
+  /** 真ん中に入れない島 */
+  island: { name: '島', islands: [{ x: 6.9, y: 12.6, r: 0.95 }] },
+  /** 左右の壁が中ほどで内へ寄る漏斗 */
+  funnel: { name: '漏斗', walls: funnel(9.6, 14.2, 1.7) },
+  /** 左だけに張り出した岬（左右非対称） */
+  cape: { name: '岬', walls: [[{ x: 0.6, y: 6.2 }, { x: 3.4, y: 8.8 }, { x: 3.4, y: 9.4 }]] },
+  /** 双子の間の仕切り */
+  divider: { name: '仕切り', walls: [[{ x: 6.9, y: 5.4 }, { x: 6.9, y: 9.4 }]] },
+  /** 天の川の両岸の小島 */
+  banks: { name: '岸の島', islands: [{ x: 3.6, y: 11.6, r: 0.75, n: 5 }, { x: 11.4, y: 5.6, r: 0.6, n: 5 }] },
+  /** 漏斗（深い） */
+  funnelDeep: { name: '深い漏斗', walls: funnel(8.4, 13.6, 2.2) },
+};
 
 export interface StageDef extends BoardOpts {
   id: string;
@@ -92,6 +112,7 @@ function milkyWay(): StarDef[] {
 export const stages: StageDef[] = [
   {
     id: 'arc',
+    shape: SHAPES.island,
     rollovers: true,
     name: 'はじまりの弧',
     hint: '星に3回当てると爆発。1回当てた星は灯ったまま残り、近くの爆発で連鎖する',
@@ -104,6 +125,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'corona',
+    shape: SHAPES.funnel,
     slings: true, rollovers: true,
     name: '冠',
     hint: '灯した星だけが連鎖する。全部灯してから点火すれば星座が完成',
@@ -113,6 +135,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'spiral',
+    shape: SHAPES.cape,
     slings: true, rollovers: true,
     name: '渦',
     hint: '中心から外へ。灰色の惑星は爆発しないが、よく弾く',
@@ -135,6 +158,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'gemini',
+    shape: SHAPES.divider,
     slings: true, rollovers: true,
     name: 'ふたご座',
     hint: '離れた星座は別々に点火。灯りより上のチャージは時間で減る',
@@ -177,6 +201,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'orion',
+    shape: SHAPES.funnelDeep,
     slings: true, outlanes: true, rollovers: true,
     name: 'オリオン',
     hint: '漂う星を橋にして、肩から足まで一気に繋げ',
@@ -220,6 +245,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'milkyway',
+    shape: SHAPES.banks,
     slings: true, outlanes: true, rollovers: true,
     name: '天の川',
     hint: '長い川をひと筆で。全部灯してまとめて燃やせ',
