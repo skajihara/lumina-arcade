@@ -45,6 +45,11 @@ export const chronoStages: ChronoStage[] = [
   { name: '虚空', hint: '黒い虚空は星を飲む。遅らせて風でよけるか、急がせて手前で落とせ', seed: 5, basket: { kind: 'still', x: 500 }, voids: [{ x: 430, y: 330, r: 55 }], cfg: { stars: 10, windBias: 70, wind: 20, spawnMin: 150, spawnMax: 480, ink: 10 }, need: 8 },
   { name: '跳ぶ籠', hint: '籠は3秒ごとに跳ぶ。次の場所を読んで待たせろ', seed: 9, basket: { kind: 'jump' }, cfg: { stars: 10, wind: 120, ink: 16 }, need: 4 },
   { name: '流星群', hint: '星が次々と降る。三色を使い分けろ', seed: 13, basket: { kind: 'fast' }, voids: [{ x: 500, y: 280, r: 70 }], cfg: { stars: 16, interval: 0.7, wind: 160, ink: 22 }, need: 8 },
+  // NEW-01b：後半の4面
+  { name: '逆風', hint: '風は左へ。右で生まれた星を遅らせて、左端の籠まで運ばせろ', seed: 21, basket: { kind: 'still', x: 190 }, cfg: { stars: 10, windBias: -95, wind: 25, spawnMin: 520, spawnMax: 860, ink: 15 }, need: 5 },
+  { name: '二つの虚空', hint: '虚空が二つ。星の通り道を読んで、虚空の間をすり抜けさせろ', seed: 23, basket: { kind: 'sine' }, voids: [{ x: 340, y: 320, r: 62 }, { x: 660, y: 320, r: 62 }], cfg: { stars: 12, wind: 70, ink: 18 }, need: 5 },
+  { name: '谷底の籠', hint: '籠の真上に虚空。逆再生（紫）で星を戻し、風で回り込ませろ', seed: 27, basket: { kind: 'still', x: 520 }, voids: [{ x: 470, y: 330, r: 60 }], cfg: { stars: 10, windBias: 40, wind: 30, spawnMin: 260, spawnMax: 700, ink: 16 }, need: 3 },
+  { name: '時の嵐', hint: '強い風、速い籠、二つの虚空。全部の時間を使え', seed: 31, basket: { kind: 'fast' }, voids: [{ x: 300, y: 250, r: 55 }, { x: 720, y: 330, r: 60 }], cfg: { stars: 18, interval: 0.65, wind: 190, ink: 26 }, need: 8 },
 ];
 
 export class ChronoSim {
