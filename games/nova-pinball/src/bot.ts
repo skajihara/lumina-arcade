@@ -123,7 +123,10 @@ export class NovaBot {
     if (this.rng.next() > 0.25 + 0.75 * this.skill) return false;
     const path = this.predict(sim, side, ball);
     const target = this.firstStar(sim, path);
-    const val = target >= 0 ? this.value(sim, target) + (this.bias?.(target) ?? 0) : 0;
+    let val = target >= 0 ? this.value(sim, target) + (this.bias?.(target) ?? 0) : 0;
+    // ワームホール（NP-13）：道がワームホールを通り、出口の近くに生きた星があるなら良い狙い
+    const warp = this.warpOnPath(sim, path);
+    if (warp > val) val = warp;
     // ボールがまだ十分フリッパーの上にある間は、良い狙いだけを待つ。端に近づくほど妥協する
     const urgency = Math.min(1, Math.max(0, dx / L));
     const need = 2.6 - 2.0 * urgency;
@@ -307,6 +310,17 @@ export class NovaBot {
       if (y > 20) break;
     }
     return path;
+  }
+
+  /** 道の上の使えるワームホールの値（出口の 3.2 m 以内に生きた星が多いほど高い。なければ 0） */
+  private warpOnPath(sim: NovaSim, path: { x: number; y: number }[]): number {
+    for (const it of sim.items) {
+      if (it.kind !== 'warp' || !it.to || sim.tick < it.readyAt) continue;
+      if (!path.some((p) => Math.hypot(p.x - it.x, p.y - it.y) < 0.75)) continue;
+      const near = sim.stars.filter((s) => s.alive && Math.hypot(s.body.getPosition().x - it.to!.x, s.body.getPosition().y - it.to!.y) < 3.2).length;
+      if (near > 0) return 1.6 + 0.5 * near;
+    }
+    return 0;
   }
 
   firstStar(sim: NovaSim, path: { x: number; y: number }[]): number {
