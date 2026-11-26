@@ -180,7 +180,7 @@ async function main() {
     drawStatic();
     buildShards(true);
     synth.setKey(i % 5);
-    toast(touchText(stages[i].hint, [['クリックしている間だけ引き寄せる', '指を置いた所へ動き、着いたら離すまで引き寄せる'], ['Space（右クリック）', '下の「解放」ボタン']]));
+    toast(touchText(stages[i].hint, [['クリックしている間だけ引き寄せる', '指を置くと指の下へ動き、離すまで引き寄せる'], ['Space（右クリック）', '下の「解放」ボタン']]));
   };
 
   /** 星評価：クリアで★1、かけらを1つも失わずに★2、さらに1回の投げで2つ以上を連鎖して★3 */
@@ -239,7 +239,7 @@ async function main() {
       <h1>EVENT HORIZON</h1>
       <h2>事 象 の 地 平 ク レ ー ン</h2>
       <div class="rulebox"></div>
-      <p style="font-size:13px">地平のそばでは時間が遅れる。星座の穴には近づけない — 輪ごと運んで投げ入れろ。</p>
+      <p style="font-size:13px">地平のそばでは時間が遅れる。星座の穴の上（点線の輪の中）では引力が切れる — 輪ごと運んで投げ入れろ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
       <div class="keys">マウスで動かす　<b>クリックしている間</b> 引き寄せる　<kbd>Space</kbd>／右クリック 解放<br>
@@ -309,9 +309,13 @@ async function main() {
     setPointer(e.clientX, e.clientY);
     if (e.button === 2) burstQueued = true;
     else if (e.pointerType === 'touch') { touchArm = true; pullDown = false; }
+    // 引く操作：押している間だけ（標準）／クリックで切り替え（調整パネル）
+    else if (cfg.pullToggle > 0) pullDown = !pullDown;
     else pullDown = true;
   });
-  window.addEventListener('pointerup', (e) => { if (e.button !== 2) { pullDown = false; touchArm = false; } });
+  window.addEventListener('pointerup', (e) => { if (e.button !== 2 && !(cfg.pullToggle > 0 && e.pointerType !== 'touch')) { pullDown = false; touchArm = false; } });
+  // ダブルクリックでも解放（右クリック・Space と同じ）
+  ga.app.canvas.addEventListener('dblclick', () => { if (mode === 'play') burstQueued = true; });
   window.addEventListener('pointercancel', () => { pullDown = false; touchArm = false; });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   // タッチ：2本目の指で解放
@@ -421,6 +425,7 @@ async function main() {
     }
   };
 
+  let overTold = false;
   const readInput = (s: HorizonSim): HorizonInput => {
     if (autoplay && bot) return bot.input(s);
     // キーボードでも動かせる（矢印・WASD）
@@ -438,6 +443,10 @@ async function main() {
     if (pullDown || keys.has('ShiftLeft') || keys.has('KeyZ')) bits |= IN_PULL;
     if (burstQueued) bits |= IN_BURST;
     burstQueued = false;
+    if ((bits & IN_PULL) && !overTold && s.overGoal()) {
+      overTold = true;
+      toast('穴の上（点線の輪の中）では引力が切れる — 運んできて、ここで手放せ');
+    }
     return { x: pointer.x / SCALE, y: pointer.y / SCALE, bits };
   };
 
@@ -485,7 +494,7 @@ async function main() {
     lens.radius = (90 + cfg.horizon * 120 + (pulling ? 40 : 0)) * ga.scale;
     lens.strength = whiteHole > 0 ? 0.45 * whiteHole : pulling ? -0.75 : -0.45;
 
-    // 星座の穴：暗い穴の縁を小さな星が回る。寄せつけない範囲は淡い点線
+    // 星座の穴：暗い穴の縁を小さな星が回る。引力が切れる範囲は淡い点線（ブラックホールが入ると明るく）
     const gg = goalG;
     gg.clear();
     s.stage.goals.forEach((g, i) => {
@@ -497,7 +506,8 @@ async function main() {
         const a0 = (k / n) * Math.PI * 2 + t * 0.1, a1 = ((k + 1) / n) * Math.PI * 2 + t * 0.1;
         gg.moveTo(x + Math.cos(a0) * guard, y + Math.sin(a0) * guard).lineTo(x + Math.cos(a1) * guard, y + Math.sin(a1) * guard);
       }
-      gg.stroke({ width: 1.2, color: 0xffd98a, alpha: 0.18 });
+      const inside = Math.hypot(s.bh.x - g.x, s.bh.y - g.y) < g.r + cfg.goalGuard;
+      gg.stroke({ width: inside ? 2 : 1.2, color: 0xffd98a, alpha: inside ? 0.55 : 0.18 });
       // ひねり2：かけらの入った穴は重力を持つ — 外から縁へ縮んでいく輪
       if (s.goalGravity && s.goalFilled[i] && cfg.goalPull > 0) {
         const reach = (g.r + cfg.goalPullR) * SCALE;

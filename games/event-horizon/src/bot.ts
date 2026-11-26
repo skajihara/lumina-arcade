@@ -9,7 +9,7 @@
  * skill（0..1）が低いほど：円がぶれ、先読みの頻度が下がり、投げる判断が遅れる。
  */
 import { Rng } from '@engine/rng';
-import { HorizonSim, IN_BURST, IN_PULL, WORLD_H, WORLD_W, type HorizonInput, type Shard } from './sim';
+import { HorizonSim, DT, IN_BURST, IN_PULL, WORLD_H, WORLD_W, type HorizonInput, type Shard } from './sim';
 
 type Mode = 'gather' | 'carry' | 'wait';
 
@@ -149,8 +149,37 @@ export class HorizonBot {
       const d = Math.hypot(dx, dy);
       // 運んでいる時は、目標の手前でゆっくり減速する（急に止まると輪からこぼれる）
       const sp = this.mode === 'carry' ? Math.min(speed, 0.6 + d * 2.2) : speed;
-      const step = sp * dt * 1.5;
-      return d <= step ? { x: gx, y: gy, bits } : { x: sim.bh.x + (dx / d) * step, y: sim.bh.y + (dy / d) * step, bits };
+      // 前の「最高速度で追いかける」動きと同じにする（時間の遅れの間は遅く）。人はカーソルにぴったり付くが、ボットの手つきは変えない
+      const step = Math.min(sp * dt * 1.5, sim.cfg.bhSpeed * DT * sim.timeScale);
+      // 前の動きと同じに：画面の中へ収めてから、最高速度で近づく
+      const tx = Math.min(WORLD_W - 0.3, Math.max(0.3, gx)), ty = Math.min(WORLD_H - 0.3, Math.max(0.3, gy));
+      const ddx = tx - sim.bh.x, ddy = ty - sim.bh.y, dd = Math.hypot(ddx, ddy);
+      const out = dd <= step ? { x: tx, y: ty, bits } : { x: sim.bh.x + (ddx / dd) * step, y: sim.bh.y + (ddy / dd) * step, bits };
+      // 穴の上では引力が切れるので、運んでいる間は穴の周りを回り込む（穴の上を通らない）
+      for (const g of sim.stage.goals) {
+        const ex = out.x - g.x, ey = out.y - g.y;
+        const ed = Math.hypot(ex, ey);
+        const min = g.r + sim.cfg.goalGuard + 1e-9;
+        if (ed < min && ed > 1e-4 && (() => { const x = g.x + ex * (min / ed), y = g.y + ey * (min / ed); return x >= 0.3 && x <= WORLD_W - 0.3 && y >= 0.3 && y <= WORLD_H - 0.3; })()) {
+          out.x = g.x + ex * (min / ed);
+          out.y = g.y + ey * (min / ed);
+        } else if (ed < min) {
+          // 円周上で、行きたい所に一番近く、画面の中に収まる点へ
+          const a0 = Math.atan2(ey, ex);
+          let bx = out.x, by = out.y, bd = Infinity;
+          for (let k = 0; k < 36; k++) {
+            const a = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 18);
+            const x = g.x + Math.cos(a) * min, y = g.y + Math.sin(a) * min;
+            if (x < 0.3 || x > WORLD_W - 0.3 || y < 0.3 || y > WORLD_H - 0.3) continue;
+            const dd = Math.hypot(x - out.x, y - out.y);
+            if (dd < bd) { bd = dd; bx = x; by = y; }
+            if (bd < Infinity && k > 1) break;
+          }
+          out.x = bx;
+          out.y = by;
+        }
+      }
+      return out;
     };
 
     if (this.mode === 'wait') {

@@ -40,16 +40,21 @@ describe('HorizonSim', () => {
     expect(new HorizonSim(mk(7), { ...presets['ふつう'] }).need).toBe(7);
   });
 
-  it('ブラックホールは最高速度でしか動けない', () => {
+  it('ブラックホールはカーソルの真下に付く（follow 0 なら最高速度で追いかける）', () => {
     const sim = new HorizonSim(stage, cfg());
     sim.step({ x: 19, y: 3, bits: 0 });
-    expect(sim.bh.x).toBeCloseTo(10 + cfg().bhSpeed / 120, 5);
+    expect(sim.bh.x).toBeCloseTo(19, 5);
+    const slow = new HorizonSim(stage, { ...cfg(), follow: 0 });
+    slow.step({ x: 19, y: 3, bits: 0 });
+    expect(slow.bh.x).toBeCloseTo(10 + cfg().bhSpeed / 120, 5);
   });
 
-  it('星座の穴はブラックホールを寄せつけない', () => {
-    const { sim } = run(stage, 240, () => ({ x: 17, y: 3, bits: 0 }));
+  it('ブラックホールは星座の穴にも重ねられる。穴の上では引力が切れる', () => {
     const g = stage.goals[0];
-    expect(Math.hypot(sim.bh.x - g.x, sim.bh.y - g.y)).toBeGreaterThanOrEqual(g.r + cfg().goalGuard - 1e-6);
+    const { sim } = run(stage, 240, () => ({ x: g.x, y: g.y, bits: IN_PULL }));
+    expect(Math.hypot(sim.bh.x - g.x, sim.bh.y - g.y)).toBeLessThan(1e-6);
+    expect(sim.overGoal()).toBe(true);
+    expect(sim.pulling).toBe(false);
   });
 
   it('引くと近くのかけらが浮き上がる。引かなければ浮かない', () => {

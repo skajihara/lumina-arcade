@@ -87,7 +87,7 @@ test.describe('スマホの画面ボタン', () => {
 
 test.describe('Event Horizon のタッチ', () => {
   test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
-  test('指を置くと、着くまでは引かずに動き、着いたら離すまで引き寄せる', async ({ page }) => {
+  test('指を置くと、ブラックホールが指の下へ移り、離すまで引き寄せる', async ({ page }) => {
     await page.goto(pathToFileURL(resolve(playDir, 'event-horizon.html')).href + '?stage=0');
     await waitReady(page);
     await page.waitForTimeout(500);
@@ -100,9 +100,6 @@ test.describe('Event Horizon のタッチ', () => {
     }, [type, x, y] as const);
     const s0 = await state();
     await fire('pointerdown', 740, 330);
-    await page.waitForTimeout(60);
-    const s1 = await state();
-    expect(s1.pulling).toBe(false); // 遠いので、まだ引かない
     await expect.poll(async () => (await state()).pulling, { timeout: 5000 }).toBe(true);
     const s2 = await state();
     await page.screenshot({ path: resolve(shots, 'event-horizon-phone-landscape.png') });

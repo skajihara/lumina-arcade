@@ -5,7 +5,7 @@
  * - 近づきすぎて事象の地平の内側に入ったかけらは吸い込まれて消える。速すぎても遅すぎてもだめ — 周回させる
  * - 地平の近くにかけらがある間は、世界の時間が遅れる（全体がスローになる → 解放の瞬間を狙いやすい）
  * - 解放（ホワイトホール）：周りのかけらをまとめて外へ弾き飛ばす。その後しばらく引力が消える
- * - かけらを星座の穴（ゴール）へ入れる。続けて入ると連鎖。穴はブラックホールを寄せつけないので、投げ入れるしかない
+ * - かけらを星座の穴（ゴール）へ入れる。続けて入ると連鎖。穴の上ではブラックホールの引力が切れるので、投げ入れるしかない
  *
  * 入力はティックごとの { x, y, bits }（ブラックホールの目標位置と、引く・解放のボタン）。
  * 同じ入力の列なら同じ結果になる（決定的）。
@@ -215,6 +215,11 @@ export class HorizonSim {
     return best;
   }
 
+  /** ブラックホールが星座の穴の上（引力が切れる範囲）にいるか */
+  overGoal(): boolean {
+    return this.stage.goals.some((g) => Math.hypot(this.bh.x - g.x, this.bh.y - g.y) < g.r + this.cfg.goalGuard);
+  }
+
   /** 1ティック進める */
   step(input: HorizonInput = { x: this.bh.x, y: this.bh.y, bits: 0 }): void {
     this.events = [];
@@ -227,26 +232,16 @@ export class HorizonSim {
     const ty = Math.min(WORLD_H - 0.3, Math.max(0.3, input.y));
     const dx = tx - this.bh.x, dy = ty - this.bh.y;
     const d = Math.hypot(dx, dy);
-    // 時間の遅れは世界全体のスロー（ブラックホールも同じ速さで遅くなる → 人間には考える時間が増える）
-    const maxStep = cfg.bhSpeed * DT * this.timeScale;
+    // ブラックホールは何とも物理的に干渉しない（EH-08）：壁・穴・かけらを素通りして、カーソルの真下にぴったり付く。
+    // follow 0 の時だけ昔の「最高速度」で追いかける（時間の遅れの間は同じだけ遅くなる）
     const ox = this.bh.x, oy = this.bh.y;
+    const maxStep = cfg.follow > 0 ? Infinity : cfg.bhSpeed * DT * this.timeScale;
     if (d > maxStep) {
       this.bh.x += (dx / d) * maxStep;
       this.bh.y += (dy / d) * maxStep;
     } else {
       this.bh.x = tx;
       this.bh.y = ty;
-    }
-    // 星座の穴はブラックホールを寄せつけない
-    for (const g of this.stage.goals) {
-      const gx = this.bh.x - g.x, gy = this.bh.y - g.y;
-      const gd = Math.hypot(gx, gy);
-      const min = g.r + cfg.goalGuard;
-      if (gd < min) {
-        const k = gd > 1e-4 ? min / gd : 0;
-        this.bh.x = k ? g.x + gx * k : g.x + min;
-        this.bh.y = k ? g.y + gy * k : g.y;
-      }
     }
     this.cooldown = Math.max(0, this.cooldown - DT);
     // 世界の時間で測った速度
@@ -263,7 +258,8 @@ export class HorizonSim {
 
     // 引力：遠くは 1/r²、輪（ringR）の近くまで来たら輪に乗せて回す。
     // 速さはブラックホールに対する相対速度で測る → 動かすと輪ごと運べる。速く動かしすぎると輪からこぼれたり、内へ突っ込んで吸い込まれる
-    this.pulling = (input.bits & IN_PULL) !== 0 && this.cooldown <= 0;
+    // 星座の穴の上（縁から goalGuard の内）では引力が働かない：近くまで運んで、そこで手放す＝投げ入れる
+    this.pulling = (input.bits & IN_PULL) !== 0 && this.cooldown <= 0 && !this.overGoal();
     if (this.pulling) {
       const diskR = cfg.ringR * 1.8;
       for (const s of this.shards) {
