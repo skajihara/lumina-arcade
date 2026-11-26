@@ -55,16 +55,21 @@ export interface ClawConfig {
   flipperTorque: number;
   /** 制限時間（秒） */
   timeLimit: number;
+  /** 下の段の精霊が光っていられる秒（過ぎると消える。0 で消えない）。NEW-04 */
+  ballLife: number;
 }
 
 export const defaults: ClawConfig = {
   gravity: 16, clawSpeed: 5, clawDown: 4, clawUp: 3.2, grabR: 0.9, grabMax: 3, grip: 7,
   spiritR: 0.32, restitution: 0.35, bombSpeed: 4, bombR: 2.4, bombForce: 9,
-  flipperLength: 1.9, flipperSpeed: 22, flipperTorque: 2400, timeLimit: 90,
+  flipperLength: 1.9, flipperSpeed: 22, flipperTorque: 2400, timeLimit: 90, ballLife: 7,
 };
 
 export interface SpiritDef { x: number; y: number; bomb?: boolean }
-export interface GoalDef { x: number; y: number; r: number; mult: number }
+/** 巣穴。move があると左右に揺れる（amp m、speed は 1 秒あたりのラジアン） */
+export interface GoalDef { x: number; y: number; r: number; mult: number; move?: { amp: number; speed: number; phase?: number } }
+/** 柱。kick があると「月のバンパー」：当たった精霊を kick m/s で弾き返す */
+export interface PostDef { x: number; y: number; r: number; kick?: number }
 
 export interface ClawStage {
   id: string;
@@ -75,7 +80,11 @@ export interface ClawStage {
   /** クリアに要る点（巣穴の倍率の合計） */
   need: number;
   /** 下の段の柱（入れない丸） */
-  posts?: { x: number; y: number; r: number }[];
+  posts?: PostDef[];
+  /** 制限時間の倍率（難易度の制限時間に掛ける） */
+  timeScale?: number;
+  /** 棚の上の低い壁（山を仕切る。爪はその上を越えられる）：x と高さ */
+  fences?: { x: number; h: number }[];
   cfg?: Partial<ClawConfig>;
 }
 
@@ -87,6 +96,8 @@ export interface Spirit {
   state: 'pile' | 'held' | 'ball' | 'home' | 'lost';
   /** 爪の中での位置（爪の中心から） */
   off: { x: number; y: number };
+  /** 下の段へ落ちた時刻（ティック） */
+  fellAt: number;
 }
 
 export type ClawEvent =
@@ -96,8 +107,9 @@ export type ClawEvent =
   | { t: 'fall'; id: number; x: number; y: number }
   | { t: 'boom'; id: number; x: number; y: number; r: number }
   | { t: 'home'; id: number; x: number; y: number; mult: number; total: number }
-  | { t: 'lost'; id: number; x: number; y: number }
+  | { t: 'lost'; id: number; x: number; y: number; faded?: boolean }
   | { t: 'flip'; side: 'L' | 'R' }
+  | { t: 'bump'; x: number; y: number }
   | { t: 'clear' }
   | { t: 'fail' };
 
@@ -116,10 +128,12 @@ export class ClawSim {
   private clawState: 'idle' | 'down' | 'up' = 'idle';
   private flippers: { side: 'L' | 'R'; body: Body; joint: RevoluteJoint }[] = [];
   private hits: { a: Spirit; b: Spirit | null; speed: number }[] = [];
+  private bumps: { s: Spirit; i: number }[] = [];
   private prevBits = 0;
 
   constructor(public stage: ClawStage, cfg: ClawConfig = defaults) {
     this.cfg = { ...cfg, ...stage.cfg };
+    this.cfg.timeLimit *= stage.timeScale ?? 1;
     this.world = new World({ gravity: { x: 0, y: this.cfg.gravity } });
     const ground = this.world.createBody({ type: 'static', userData: { kind: 'wall' } as Tag });
     const edge = (a: { x: number; y: number }, b: { x: number; y: number }) => ground.createFixture(new Edge(a, b), { friction: 0.3, restitution: 0.3 });
@@ -134,7 +148,11 @@ export class ClawSim {
     // 下の段：フリッパーへ向かう斜面（間はドレイン）
     edge({ x: 0, y: 18.5 }, { x: PIVOT_L.x - 0.1, y: PIVOT_L.y - 0.3 });
     edge({ x: WORLD_W, y: 18.5 }, { x: PIVOT_R.x + 0.1, y: PIVOT_R.y - 0.3 });
-    for (const p of stage.posts ?? []) ground.createFixture(new Circle({ x: p.x, y: p.y }, p.r), { friction: 0.1, restitution: 0.5 });
+    (stage.posts ?? []).forEach((p, i) => {
+      const f = ground.createFixture(new Circle({ x: p.x, y: p.y }, p.r), { friction: 0.1, restitution: 0.5 });
+      if (p.kick) f.setUserData({ bumper: i });
+    });
+    for (const f of stage.fences ?? []) edge({ x: f.x, y: SHELF_Y }, { x: f.x, y: SHELF_Y - f.h });
     // フリッパー
     for (const [side, pivot] of [['L', PIVOT_L], ['R', PIVOT_R]] as const) {
       const s = side === 'L' ? 1 : -1;
@@ -152,7 +170,7 @@ export class ClawSim {
     stage.spirits.forEach((d, id) => {
       const body = this.world.createBody({ type: 'dynamic', position: { x: d.x, y: d.y }, bullet: true, linearDamping: 0.05, angularDamping: 0.5, userData: { kind: 'spirit', id } as Tag });
       body.createFixture(new Circle(this.cfg.spiritR), { density: d.bomb ? 1.6 : 1, friction: 0.35, restitution: this.cfg.restitution });
-      this.spirits.push({ id, body, bomb: !!d.bomb, state: 'pile', off: { x: 0, y: 0 } });
+      this.spirits.push({ id, body, bomb: !!d.bomb, state: 'pile', off: { x: 0, y: 0 }, fellAt: 0 });
     });
     this.world.on('begin-contact', (c: Contact) => this.onContact(c));
   }
@@ -177,6 +195,10 @@ export class ClawSim {
     const b = ub?.kind === 'spirit' ? this.spirits[ub.id] : null;
     const va = c.getFixtureA().getBody().getLinearVelocity(), vb = c.getFixtureB().getBody().getLinearVelocity();
     const speed = Math.hypot(va.x - vb.x, va.y - vb.y);
+    // 月のバンパー
+    const fa = c.getFixtureA().getUserData() as { bumper?: number } | null, fb = c.getFixtureB().getUserData() as { bumper?: number } | null;
+    const bi = fa?.bumper ?? fb?.bumper;
+    if (bi !== undefined && (a || b)) this.bumps.push({ s: (a ?? b)!, i: bi });
     if (a) this.hits.push({ a, b, speed });
     if (b) this.hits.push({ a: b, b: a, speed });
   }
@@ -293,29 +315,41 @@ export class ClawSim {
     // 爆弾：強くぶつかると爆発
     for (const h of this.hits) if (h.a.bomb && (h.a.state === 'pile' || h.a.state === 'ball') && h.speed > this.cfg.bombSpeed) this.explode(h.a);
     this.hits = [];
+    for (const { s, i } of this.bumps) {
+      if (s.state !== 'ball' && s.state !== 'pile') continue;
+      const post = this.stage.posts![i];
+      const p = s.body.getPosition();
+      const dx = p.x - post.x, dy = p.y - post.y, d = Math.hypot(dx, dy) || 1;
+      s.body.setLinearVelocity({ x: (dx / d) * post.kick!, y: (dy / d) * post.kick! });
+      this.events.push({ t: 'bump', x: post.x, y: post.y });
+    }
+    this.bumps = [];
     for (const s of this.spirits) {
       if (s.state === 'held' || s.state === 'home' || s.state === 'lost') continue;
       const p = s.body.getPosition();
       // 落とし口を通って下の段へ
       if (s.state === 'pile' && p.y > SHELF_Y + 0.4) {
         s.state = 'ball';
+        s.fellAt = this.tick;
         this.events.push({ t: 'fall', id: s.id, x: p.x, y: p.y });
       }
       // 巣穴
       if (s.state === 'ball') {
-        const g = this.stage.goals.find((q) => Math.hypot(p.x - q.x, p.y - q.y) < q.r);
+        const g = this.stage.goals.find((q) => { const gx = this.goalX(q); return Math.hypot(p.x - gx, p.y - q.y) < q.r; });
         if (g) {
           s.state = 'home';
           this.score += g.mult;
           this.world.destroyBody(s.body);
-          this.events.push({ t: 'home', id: s.id, x: g.x, y: g.y, mult: g.mult, total: this.score });
+          this.events.push({ t: 'home', id: s.id, x: this.goalX(g), y: g.y, mult: g.mult, total: this.score });
           continue;
         }
       }
-      if (p.y > WORLD_H + 1 || p.x < -1 || p.x > WORLD_W + 1) {
+      // 光が尽きた精霊は消える
+      const faded = s.state === 'ball' && this.cfg.ballLife > 0 && this.tick - s.fellAt > this.cfg.ballLife * HZ;
+      if (faded || p.y > WORLD_H + 1 || p.x < -1 || p.x > WORLD_W + 1) {
         s.state = 'lost';
         this.world.destroyBody(s.body);
-        this.events.push({ t: 'lost', id: s.id, x: p.x, y: p.y });
+        this.events.push({ t: 'lost', id: s.id, x: p.x, y: p.y, faded });
       }
     }
     if (this.phase !== 'play') return;
@@ -331,6 +365,17 @@ export class ClawSim {
       this.phase = 'fail';
       this.events.push({ t: 'fail' });
     }
+  }
+
+  /** 下の段の精霊の残りの光 0..1（描画用） */
+  lifeOf(s: Spirit): number {
+    if (s.state !== 'ball' || this.cfg.ballLife <= 0) return 1;
+    return Math.max(0, 1 - (this.tick - s.fellAt) / (this.cfg.ballLife * HZ));
+  }
+
+  /** 巣穴の今の x（揺れる巣穴） */
+  goalX(g: GoalDef, at = this.time): number {
+    return g.move ? g.x + Math.sin(at * g.move.speed + (g.move.phase ?? 0)) * g.move.amp : g.x;
   }
 
   /** フリッパーの位置と角度（描画用） */

@@ -44,7 +44,7 @@ export const moonRules: RuleFrame[] = [
     },
   },
   {
-    caption: '落ちた精霊は下の段の球になる。Z と / のフリッパーで打ち上げ、金の巣穴へ',
+    caption: '落ちた精霊は下の段の球。Z と / のフリッパーで金の巣穴へ。光は数秒で尽きるので、早めに狙おう',
     draw: (g, t) => {
       const p = phase(t, 2.6);
       line(g, 20, 70, 50, 84, DIM, 0.9, 2);
@@ -78,3 +78,89 @@ export const moonRules: RuleFrame[] = [
     },
   },
 ];
+
+/** NEW-04：その面で初めて出てくる要素の「NEW」カード */
+export const moonIntros: Record<string, { title: string; frame: RuleFrame }> = {
+  'mc-3': {
+    title: '月のバンパー',
+    frame: {
+      caption: '白い満月の円盤は、当たった精霊を強く弾き返す。跳ね返りで巣穴を狙える',
+      draw: (g, t) => {
+        const p = phase(t, 2.4);
+        g.save(); g.fillStyle = 'rgba(221,232,255,.55)'; g.beginPath(); g.arc(64, 54, 12 + (p > 0.4 && p < 0.5 ? 3 : 0), 0, Math.PI * 2); g.fill(); g.restore();
+        ring(g, 64, 54, 12, '#ffffff', 0.9, 2);
+        ring(g, 110, 22, 9, GOLD, 0.9, 2);
+        label(g, '×2', 104, 26, GOLD, 9);
+        const k = seg(p, 0, 0.45), k2 = seg(p, 0.45, 1);
+        const x = p < 0.45 ? lerp(30, 52, k) : lerp(52, 110, k2);
+        const y = p < 0.45 ? lerp(10, 46, k * k) : lerp(46, 22, Math.sqrt(k2));
+        glow(g, x, y, 3, SPIRIT, p < 0.97 ? 1 : 0);
+      },
+    },
+  },
+  'mc-4': {
+    title: '爆弾精霊',
+    frame: {
+      caption: '赤い棘の精霊は、強くぶつかると弾ける。掴んで山の上で放すと、山が崩れて落とし口へ雪崩れる',
+      draw: (g, t) => {
+        const p = phase(t, 3);
+        g.save(); g.strokeStyle = '#6f78c9'; g.lineWidth = 2; g.beginPath(); g.moveTo(4, 70); g.lineTo(60, 70); g.moveTo(80, 70); g.lineTo(132, 70); g.stroke(); g.restore();
+        if (p < 0.4) { glow(g, 40, lerp(10, 58, seg(p, 0, 0.35) ** 2), 4, RED); ring(g, 40, lerp(10, 58, seg(p, 0, 0.35) ** 2), 6, RED, 0.9, 1.5); }
+        else ring(g, 40, 62, seg(p, 0.35, 0.5) * 26, RED, 1 - seg(p, 0.5, 0.8), 2);
+        for (let i = 0; i < 5; i++) {
+          const k = seg(p, 0.42, 1);
+          const x = lerp(24 + i * 8, 70 + (i - 2) * 3, k);
+          const y = k < 0.5 ? lerp(64, 50 - i * 2, k * 2) : lerp(50 - i * 2, 96, (k - 0.5) * 2);
+          glow(g, x, p < 0.42 ? 64 : y, 3, SPIRIT);
+        }
+      },
+    },
+  },
+  'mc-5': {
+    title: '揺れる巣穴',
+    frame: {
+      caption: '巣穴が左右に行き来する。淡い線が通り道。来る時に合わせて弾こう',
+      draw: (g, t) => {
+        const x = 68 + Math.sin(t * 1.6) * 40;
+        line(g, 28, 34, 108, 34, GOLD, 0.25, 1);
+        ring(g, x, 34, 9, GOLD, 0.9, 2);
+        label(g, '×2', x - 6, 38, GOLD, 9);
+        line(g, 40, 84, 60, 92, '#e6ecff', 0.9, 3);
+        line(g, 96, 84, 76, 92, '#e6ecff', 0.9, 3);
+      },
+    },
+  },
+  'mc-6': {
+    title: '棚の仕切り',
+    frame: {
+      caption: '棚の低い壁が山を分ける。爪はその上を越えられる。遠い山は急いで、でもこぼさずに',
+      draw: (g, t) => {
+        const p = phase(t, 3);
+        shelf(g, 70);
+        line(g, 20, 70, 20, 58, '#b9c6ff', 0.9, 2);
+        for (let i = 0; i < 2; i++) glow(g, 8 + i * 6, 64, 3, SPIRIT, i === 0 && p > 0.3 ? 0 : 1);
+        const k = seg(p, 0.3, 0.85);
+        claw(g, lerp(8, 70, k), 26, p > 0.88 ? 1 : 0);
+        if (p > 0.3) glow(g, lerp(8, 70, k), p > 0.88 ? lerp(36, 90, seg(p, 0.88, 1)) : 36, 3, GOLD);
+      },
+    },
+  },
+  'mc-8': {
+    title: '高い巣穴',
+    frame: {
+      caption: '×3 の巣穴は棚のすぐ下。フリッパーの先の方で弾くと、高く遠くへ飛ぶ',
+      draw: (g, t) => {
+        const p = phase(t, 2.4);
+        g.save(); g.strokeStyle = '#6f78c9'; g.lineWidth = 2; g.beginPath(); g.moveTo(4, 12); g.lineTo(132, 12); g.stroke(); g.restore();
+        ring(g, 30, 24, 9, GOLD, 0.9, 2);
+        label(g, '×3', 24, 28, GOLD, 9);
+        const up = p > 0.35 && p < 0.5;
+        line(g, 90, 84, 72, up ? 74 : 92, '#e6ecff', 0.95, 3);
+        const k = seg(p, 0, 0.35), k2 = seg(p, 0.38, 0.95);
+        const x = p < 0.38 ? 74 : lerp(74, 30, k2);
+        const y = p < 0.38 ? lerp(40, 82, k * k) : lerp(82, 24, 1 - (1 - k2) ** 2);
+        glow(g, x, y, 3, SPIRIT, p < 0.96 ? 1 : 0);
+      },
+    },
+  },
+};
