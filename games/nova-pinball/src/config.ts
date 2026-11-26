@@ -7,6 +7,13 @@ export interface NovaConfig {
   flipperSpeed: number;
   flipperTorque: number;
   flipperLength: number;
+  /** 下の左右のしかけ（NP-18）：0 スリングショット（前）／1 月のバンパー */
+  slingMode: number;
+  /** 月のバンパー：満月の時の弾く速さ・満ち欠けの周期（秒） */
+  moonKick: number;
+  moonPeriod: number;
+  /** 盤面の下の方（下 3 割）で引力を何倍にするか（NP-17。1 で弱めない） */
+  lowPull: number;
   ballRestitution: number;
   popKick: number;
   slingKick: number;
@@ -52,6 +59,10 @@ export const schema: Schema<NovaConfig> = {
   flipperSpeed: { label: 'フリッパー速度', min: 8, max: 40, step: 0.5, folder: '盤面' },
   flipperTorque: { label: 'フリッパーの力', min: 200, max: 6000, step: 50, folder: '盤面' },
   flipperLength: { label: 'フリッパーの長さ', min: 1.6, max: 2.8, step: 0.05, folder: '盤面', restart: true },
+  slingMode: { label: '下の左右（0スリングショット／1月のバンパー）', min: 0, max: 1, step: 1, folder: '盤面', restart: true },
+  moonKick: { label: '月のバンパー：満月の時の強さ', min: 4, max: 30, step: 0.5, folder: '盤面' },
+  moonPeriod: { label: '月の満ち欠けの周期（秒）', min: 1, max: 20, step: 0.5, folder: '盤面' },
+  lowPull: { label: '盤面の下の方の引力（倍）', min: 0, max: 1, step: 0.05, folder: '盤面' },
   ballRestitution: { label: 'ボールの弾み', min: 0, max: 0.95, step: 0.01, folder: '盤面' },
   popKick: { label: '星に当たった時の弾き', min: 0, max: 12, step: 0.1, folder: '盤面' },
   slingKick: { label: 'スリングショットの弾き', min: 0, max: 20, step: 0.5, folder: '盤面' },
@@ -91,7 +102,11 @@ const normal: NovaConfig = {
   gravity: 21,
   flipperSpeed: 24,
   flipperTorque: 2600,
-  flipperLength: 2.0,
+  flipperLength: 2.2,
+  lowPull: 0.4,
+  slingMode: 1,
+  moonKick: 16,
+  moonPeriod: 6,
   ballRestitution: 0.45,
   popKick: 4.5,
   slingKick: 9,
@@ -128,9 +143,9 @@ const normal: NovaConfig = {
 };
 
 export const presets: Record<string, NovaConfig> = {
-  やさしい: { ...normal, gravity: 17, balls: 5, ballSave: 8, decayTime: 10, blastRadius: 3.0, flipperLength: 2.3, gameSpeed: 0.9 },
+  やさしい: { ...normal, gravity: 17, balls: 5, ballSave: 8, decayTime: 10, blastRadius: 3.0, flipperLength: 2.35, gameSpeed: 0.9 },
   ふつう: normal,
-  むずかしい: { ...normal, gravity: 22, balls: 3, ballSave: 0, decayTime: 4.5, decayFloor: 0, blastRadius: 2.4 },
+  むずかしい: { ...normal, flipperLength: 2.1, gravity: 22, balls: 3, ballSave: 0, decayTime: 4.5, decayFloor: 0, blastRadius: 2.4 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';

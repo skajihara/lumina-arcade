@@ -7,7 +7,8 @@ import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
 import { Save, clearStored } from '@engine/storage';
-import { injectBaseStyle, el, backLink, touchButtons, resetButton } from '@engine/hud';
+import { injectBaseStyle, el, touchButtons, resetButton, goTo } from '@engine/hud';
+import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { schema, presets, DEFAULT_PRESET, type NovaConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
@@ -58,7 +59,15 @@ async function main() {
   center.append(chainEl, toastEl);
   hud.append(tl, tr, center);
   document.body.appendChild(hud);
-  backLink();
+  // UX-01：左上の戻る・Esc・ブラウザの戻る。プレイ中はポーズ、ポーズは続ける、リザルトはステージ選択、タイトルは星図へ
+  installNav(
+    () => {
+      if (mode === 'play' || mode === 'pause') togglePause();
+      else if (mode === 'result' || mode === 'replay') showTitle();
+      else goTo('./index.html');
+    },
+    () => (mode === 'play' ? '‖ ポーズ' : mode === 'pause' ? '▶ 続ける' : mode === 'result' || mode === 'replay' ? '← ステージ選択' : '← 星図へ'),
+  );
   let toastTimer = 0;
   const hudApi = {
     chain(n: number) {
@@ -228,6 +237,7 @@ async function main() {
     const mb = el('button', { class: 'btn' }, 'ステージ選択');
     mb.onclick = () => showTitle();
     row.append(mb);
+    row.append(launcherButton());
     document.body.appendChild(menu);
     (row.firstElementChild as HTMLElement)?.focus();
   };
@@ -286,7 +296,8 @@ async function main() {
       r.onclick = () => startStage(stageIndex);
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
-      row.append(c, r, m);
+      row.append(c, r, m, launcherButton());
+      menu.appendChild(settingsRow(tuning.gui, () => tuning.toggle()));
       menu.appendChild(ruleCards(novaRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
@@ -297,8 +308,8 @@ async function main() {
 
   window.addEventListener('keydown', (e) => {
     synth.unlock();
-    if ((e.code === 'KeyP' || e.code === 'Escape') && mode === 'replay') { showTitle(); return; }
-    if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+    if (e.code === 'KeyP' && mode === 'replay') { showTitle(); return; }
+    if (e.code === 'KeyP') togglePause();
     if (e.code === 'KeyR' && (mode === 'play' || mode === 'result' || mode === 'pause')) startStage(stageIndex);
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
     if (e.code === 'KeyB' && e.shiftKey) autoplay = !autoplay;

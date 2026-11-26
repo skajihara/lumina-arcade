@@ -5,7 +5,7 @@ import { Particles } from '@engine/particles';
 import { fxRandom } from '@engine/rng';
 import { synth } from '@engine/audio';
 import type { Juice } from '@engine/juice';
-import { BALL_R, BOARD_H, BOARD_W, boardWalls, type Ball, SLING_L, SLING_R, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
+import { BALL_R, BOARD_H, BOARD_W, boardWalls, type Ball, SLING_L, SLING_R, MOON_L, MOON_R, MOON_R0, ROLLOVERS, ROLL_R, PIVOT_L, PIVOT_R, type NovaSim, type SimEvent } from './sim';
 import type { NovaConfig } from './config';
 
 export const SCALE = 40; // 1メートル = 40px
@@ -626,7 +626,25 @@ export class NovaView {
     const sim = this.sim;
     g.clear();
     const col = hsl(this.hue, 0.7, 0.72);
-    if (sim.stage.slings) {
+    if (sim.stage.slings && sim.moonMode) {
+      // 月のバンパー：満ち欠け（光っている側が満ちていく）、満月の近くは金の暈。当たると白く光る
+      for (const [side, c] of [['L', MOON_L], ['R', MOON_R]] as const) {
+        const f = (this.slingFlash[side] = Math.max(0, this.slingFlash[side] - dt * 4));
+        const full = sim.moonPhase(side);
+        const x = c.x * SCALE, y = c.y * SCALE, R = MOON_R0 * SCALE;
+        if (full > 0.75) g.circle(x, y, R + 8 + 6 * (full - 0.75) * 4).fill({ color: 0xffe1a8, alpha: 0.08 + 0.12 * (full - 0.75) * 4 });
+        g.circle(x, y, R).fill({ color: 0x10142e, alpha: 0.95 });
+        // 光っている部分：半円の縁と、明暗の境目（楕円）で囲む。k=1 新月 → k=-1 満月
+        const k = 1 - 2 * full, sx = side === 'L' ? 1 : -1;
+        const pts: number[] = [];
+        for (let i = 0; i <= 16; i++) { const a = -Math.PI / 2 + (i / 16) * Math.PI; pts.push(x + sx * R * Math.cos(a), y + R * Math.sin(a)); }
+        for (let i = 16; i >= 0; i--) { const a = -Math.PI / 2 + (i / 16) * Math.PI; pts.push(x + sx * k * R * Math.cos(a), y + R * Math.sin(a)); }
+        if (full > 0.02) g.poly(pts).fill({ color: lerpColor(0xd8dcff, 0xfff1c8, full), alpha: 0.95 });
+        g.circle(x, y, R).stroke({ width: 2 + f * 4, color: f > 0.1 ? 0xffffff : lerpColor(col, 0xffe1a8, full), alpha: 0.75 + 0.25 * f });
+        if (f > 0) g.circle(x, y, R + f * 14).stroke({ width: 2, color: 0xffffff, alpha: f * 0.6 });
+      }
+    }
+    if (sim.stage.slings && !sim.moonMode) {
       for (const [side, tri] of [['L', SLING_L], ['R', SLING_R]] as const) {
         const f = (this.slingFlash[side] = Math.max(0, this.slingFlash[side] - dt * 4));
         const pts = tri.flatMap((p) => [p.x * SCALE, p.y * SCALE]);

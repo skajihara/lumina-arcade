@@ -22,7 +22,7 @@ const CSS = `
 @media (max-width:520px) { .rule { width:42vw; } .rule canvas { width:42vw; height:calc(42vw * .7); } }
 @keyframes ic-in { from { opacity:0; transform:translate(-50%, -18px) scale(.96) } to { opacity:1; transform:translate(-50%, 0) } }
 .intro-card { position:fixed; left:50%; top:max(58px, 7vh); transform:translateX(-50%); z-index:14; display:flex; align-items:center; gap:12px;
-  padding:10px 16px 10px 10px; border-radius:16px; max-width:min(520px, calc(100vw - 24px)); box-sizing:border-box; cursor:pointer;
+  padding:10px 16px 10px 10px; border-radius:16px; width:max-content; max-width:min(520px, calc(100vw - 24px)); box-sizing:border-box; cursor:pointer;
   background:linear-gradient(160deg, rgba(70,80,190,.5), rgba(14,18,56,.82) 60%, rgba(40,26,96,.75)); border:1px solid rgba(255,217,138,.55);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 0 26px rgba(255,217,138,.25), 0 12px 30px rgba(2,3,20,.6); backdrop-filter:blur(8px);
   animation:ic-in .6s cubic-bezier(.2,.8,.2,1) both; transition:opacity .45s, transform .45s; }

@@ -44,6 +44,8 @@ const base = (p: NovaConfig): EchoConfig => ({
   ballSave: 0,
   balls: 1,
   twist: 0,
+  // フリッパーは Nova の NP-17（長く）の前の長さのまま（Echo の難しさはループ数で決めている）
+  flipperLength: 2.0,
   // Nova の「星の引力」は使わない（残響の動きを読みやすく保つ）
   starPull: 0,
   // 星座の線は連鎖を運ばない（群れごとに別のループで落とす遊びを保つ）
@@ -61,7 +63,7 @@ const base = (p: NovaConfig): EchoConfig => ({
 });
 
 export const presets: Record<string, EchoConfig> = {
-  やさしい: { ...base(novaPresets['やさしい']), maxLoops: 7, loopSec: 11 },
+  やさしい: { ...base(novaPresets['やさしい']), flipperLength: 2.3, maxLoops: 7, loopSec: 11 },
   ふつう: base(novaPresets['ふつう']),
   むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 5, loopSec: 9.5, blastRadius: 2.6 },
 };

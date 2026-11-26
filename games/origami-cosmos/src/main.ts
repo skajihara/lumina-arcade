@@ -11,7 +11,8 @@ import { createTuning } from '@engine/tuning';
 import { Save, clearStored } from '@engine/storage';
 import { Particles } from '@engine/particles';
 import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
-import { injectBaseStyle, el, backLink, touchButtons, touchText, resetButton } from '@engine/hud';
+import { injectBaseStyle, el, touchButtons, touchText, resetButton, goTo } from '@engine/hud';
+import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { schema, presets, DEFAULT_PRESET, type OrigamiConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
@@ -70,7 +71,15 @@ async function main() {
   hintEl.style.cssText = 'position:absolute;left:50%;bottom:34px;transform:translateX(-50%);font-size:15px;color:var(--dim);letter-spacing:.06em;text-align:center;text-shadow:0 0 8px #000;width:90%';
   hud.append(tl, tr, center, hintEl);
   document.body.appendChild(hud);
-  backLink();
+  // UX-01：左上の戻る・Esc・ブラウザの戻る。プレイ中はポーズ、ポーズは続ける、リザルトはステージ選択、タイトルは星図へ
+  installNav(
+    () => {
+      if (mode === 'play' || mode === 'pause') togglePause();
+      else if (mode === 'result') showTitle();
+      else goTo('./index.html');
+    },
+    () => (mode === 'play' ? '‖ ポーズ' : mode === 'pause' ? '▶ 続ける' : mode === 'result' ? '← ステージ選択' : '← 星図へ'),
+  );
   let toastTimer = 0;
   const toast = (msg: string, sec = 3) => {
     toastEl.textContent = msg;
@@ -206,6 +215,7 @@ async function main() {
     const mb = el('button', { class: 'btn' }, '問題を選ぶ');
     mb.onclick = () => showTitle();
     row.append(rb, mb);
+    row.append(launcherButton());
     document.body.appendChild(menu);
     (row.firstElementChild as HTMLElement)?.focus();
   };
@@ -255,7 +265,8 @@ async function main() {
       r.onclick = () => startStage(stageIndex);
       const m = el('button', { class: 'btn' }, '問題を選ぶ');
       m.onclick = showTitle;
-      row.append(c, r, m);
+      row.append(c, r, m, launcherButton());
+      menu.appendChild(settingsRow(tuning.gui, () => tuning.toggle()));
       menu.appendChild(ruleCards(origamiRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
@@ -344,7 +355,7 @@ async function main() {
 
   window.addEventListener('keydown', (e) => {
     synth.unlock();
-    if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+    if (e.code === 'KeyP') togglePause();
     if (e.code === 'KeyR' && (mode === 'play' || mode === 'result' || mode === 'pause')) startStage(stageIndex);
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
     if ((e.code === 'KeyZ' || e.code === 'Backspace') && mode === 'play') undoFold();

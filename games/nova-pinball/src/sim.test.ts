@@ -201,8 +201,28 @@ describe('NovaSim', () => {
       const { ev } = drop(12.7, 15, 0, c);
       expect(ev).toContain('drain');
     });
-    it('スリングショットが弾く', () => {
-      expect(drop(3.0, 14, 3).ev).toContain('sling');
+    it('スリングショットが弾く（slingMode 0）', () => {
+      expect(drop(3.0, 14, 3, { ...cfg(), slingMode: 0 }).ev).toContain('sling');
+    });
+    it('NP-18 月のバンパーは上へ弾く（穴の方へは弾かない）。満月ほど強い', () => {
+      const hit = (tick: number) => {
+        const sim = new NovaSim(gStage, cfg());
+        sim.tick = tick;
+        const b = sim.balls[0].body;
+        b.setPosition({ x: 2.85, y: 16.3 });
+        b.setLinearVelocity({ x: 0.5, y: 6 });
+        for (let i = 0; i < 40; i++) {
+          sim.step(0);
+          if (sim.events.some((e) => e.t === 'sling')) return b.getLinearVelocity();
+        }
+        return null;
+      };
+      const P = cfg().moonPeriod * 120;
+      const full = hit(Math.round(P / 2)), newMoon = hit(0);
+      expect(full).not.toBeNull();
+      expect(full!.y).toBeLessThan(0);
+      expect(newMoon!.y).toBeLessThan(0);
+      expect(Math.hypot(full!.x, full!.y)).toBeGreaterThan(Math.hypot(newMoon!.x, newMoon!.y) * 1.5);
     });
     it('ロールオーバーを3つ灯すとボールセーブが点く', () => {
       const sim = new NovaSim(gStage, cfg());
