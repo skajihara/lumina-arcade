@@ -23,13 +23,20 @@ export const defaults: ChronoConfig = { windBias: 0, spawnMin: 120, spawnMax: 88
 
 export type ChronoEvent = { t: 'catch'; x: number; y: number; n: number } | { t: 'miss'; x: number; y: number } | { t: 'void'; x: number; y: number } | { t: 'end' };
 
+/** 籠の動き：sine＝左右にゆっくり／still＝止まっている（x）／fast＝速く揺れる／jump＝数秒ごとに瞬間移動。phase は揺れのずれ（ラジアン） */
+export interface BasketDef { kind: 'sine' | 'still' | 'fast' | 'jump'; x?: number; amp?: number; speed?: number; phase?: number }
+
 /** ステージ：籠の動き・風・星を飲む「虚空」・インク・クリアに要る数 */
 export interface ChronoStage {
   name: string;
   hint: string;
   seed: number;
   /** 籠の動き：sine＝左右にゆっくり／still＝止まっている（x）／fast＝速く揺れる／jump＝数秒ごとに瞬間移動 */
-  basket: { kind: 'sine' | 'still' | 'fast' | 'jump'; x?: number; amp?: number; speed?: number };
+  basket: BasketDef;
+  /** NEW-01d：二つ目の籠（どちらに入れてもよい） */
+  basket2?: BasketDef;
+  /** NEW-01d：風が途中で向きを変える。period 秒ごとに、windBias の向きが反対になる（turn 秒かけてなめらかに） */
+  gust?: { period: number; turn?: number };
   /** 星を飲み込む虚空（入ると消える） */
   voids?: { x: number; y: number; r: number }[];
   /** 上書きする設定（風・インク・星の数・間隔など） */
@@ -49,6 +56,9 @@ export const chronoStages: ChronoStage[] = [
   { name: '逆風', hint: '風は左へ。右で生まれた星を遅らせて、左端の籠まで運ばせろ', seed: 21, basket: { kind: 'still', x: 190 }, cfg: { stars: 10, windBias: -95, wind: 25, spawnMin: 520, spawnMax: 860, ink: 15 }, need: 5 },
   { name: '二つの虚空', hint: '虚空が二つ。星の通り道を読んで、虚空の間をすり抜けさせろ', seed: 23, basket: { kind: 'sine' }, voids: [{ x: 340, y: 320, r: 62 }, { x: 660, y: 320, r: 62 }], cfg: { stars: 12, wind: 70, ink: 18 }, need: 5 },
   { name: '谷底の籠', hint: '籠の真上に虚空。逆再生（紫）で星を戻し、風で回り込ませろ', seed: 27, basket: { kind: 'still', x: 520 }, voids: [{ x: 470, y: 330, r: 60 }], cfg: { stars: 10, windBias: 40, wind: 30, spawnMin: 260, spawnMax: 700, ink: 16 }, need: 3 },
+  // NEW-01d：風が向きを変える面・籠が二つの面
+  { name: '風見', hint: '風は5秒ごとに向きを変える。画面の上の矢印を見て、どちらへ運ばせるか決めろ', seed: 41, basket: { kind: 'still', x: 500 }, gust: { period: 5, turn: 1.2 }, cfg: { stars: 12, windBias: 95, wind: 20, spawnMin: 160, spawnMax: 840, ink: 18 }, need: 6 },
+  { name: '二つの籠', hint: '籠が二つ、反対向きに揺れる。近い方へ導けばいい', seed: 43, basket: { kind: 'sine', x: 300, amp: 200, speed: 0.6 }, basket2: { kind: 'sine', x: 700, amp: 200, speed: 0.6, phase: Math.PI }, voids: [{ x: 500, y: 300, r: 60 }], cfg: { stars: 14, wind: 110, ink: 18 }, need: 7 },
   { name: '時の嵐', hint: '強い風、速い籠、二つの虚空。全部の時間を使え', seed: 31, basket: { kind: 'fast' }, voids: [{ x: 300, y: 250, r: 55 }, { x: 720, y: 330, r: 60 }], cfg: { stars: 18, interval: 0.65, wind: 190, ink: 26 }, need: 8 },
 ];
 
@@ -105,19 +115,52 @@ export class ChronoSim {
 
   get time(): number { return this.tick / HZ; }
 
-  /** 籠の中心（左右にゆっくり揺れる） */
+  /** 籠の中心（左右にゆっくり揺れる）。二つ目の籠は basketXs で */
   basketX(at = this.time): number {
-    const b = this.stage?.basket ?? { kind: 'sine' as const };
+    return this.basketOf(this.stage?.basket ?? { kind: 'sine' }, at);
+  }
+
+  /** すべての籠の中心 */
+  basketXs(at = this.time): number[] {
+    const b2 = this.stage?.basket2;
+    return b2 ? [this.basketX(at), this.basketOf(b2, at)] : [this.basketX(at)];
+  }
+
+  /** x に一番近い籠までの距離 */
+  basketDist(x: number, at = this.time): number {
+    return Math.min(...this.basketXs(at).map((b) => Math.abs(b - x)));
+  }
+
+  /** 今の風（＋で右へ）。gust のある面では period 秒ごとに向きが変わる */
+  windAt(at = this.time): number {
+    const g = this.stage?.gust;
+    if (!g) return 0;
+    // 基本の windBias は星の vx に入っているので、ここでは「反対向きになった分」を足す
+    const turn = g.turn ?? 1.2;
+    const p = at % (g.period * 2);
+    // 0..period は元の向き、period..2period は反対向き（境目は turn 秒でなめらかに）
+    const ramp = (x: number) => Math.min(1, Math.max(0, x / turn));
+    const k = p < g.period ? ramp(p - (g.period - turn)) : 1 - ramp(p - (g.period * 2 - turn));
+    return -2 * this.cfg.windBias * k;
+  }
+
+  /** 今吹いている風の向きと強さ（表示用） */
+  windNow(at = this.time): number {
+    return this.cfg.windBias + this.windAt(at);
+  }
+
+  private basketOf(b: BasketDef, at: number): number {
     const amp = b.amp ?? VIEW_W * 0.36;
     const sp = b.speed ?? this.cfg.basketSpeed;
+    const ph = b.phase ?? 0;
     if (b.kind === 'still') return b.x ?? VIEW_W / 2;
-    if (b.kind === 'fast') return VIEW_W / 2 + Math.sin(at * 1.6 * 2) * amp * 0.9;
+    if (b.kind === 'fast') return (b.x ?? VIEW_W / 2) + Math.sin(at * 1.6 * 2 + ph) * amp * 0.9;
     if (b.kind === 'jump') {
       // 3秒ごとに、決まった順の5か所へ跳ぶ
       const spots = [0.5, 0.18, 0.78, 0.35, 0.65];
       return VIEW_W * spots[Math.floor(at / 3) % spots.length];
     }
-    return VIEW_W / 2 + Math.sin(at * sp * 2) * amp;
+    return (b.x ?? VIEW_W / 2) + Math.sin(at * sp * 2 + ph) * amp;
   }
 
   paint(x: number, y: number, k: Brush): boolean {
@@ -154,14 +197,15 @@ export class ChronoSim {
       for (const z of this.zones) z.age += DT;
       this.zones = this.zones.filter((z) => z.age < this.cfg.zoneLife);
     }
-    const bx = this.basketX();
+    const bxs = this.basketXs();
+    const wind = this.windAt();
     const by = VIEW_H - 40;
     for (const s of this.stars) {
       if (!s.alive) continue;
       const dt = DT * this.rate(s.x, s.y);
       s.vy += this.cfg.gravity * dt;
       // 風（横の流れ）は世界の時間で進む：星の時間を遅らせるほど、落ちる間に風で遠くへ運ばれる（＝曲げられる）
-      s.x += s.vx * DT;
+      s.x += (s.vx + wind) * DT;
       s.y += s.vy * dt;
       if (s.x < 10 || s.x > VIEW_W - 10) { s.vx = -s.vx; s.x = Math.min(VIEW_W - 10, Math.max(10, s.x)); }
       if (this.stage?.voids?.some((v) => Math.hypot(v.x - s.x, v.y - s.y) < v.r)) {
@@ -170,7 +214,7 @@ export class ChronoSim {
         this.events.push({ t: 'void', x: s.x, y: s.y });
         continue;
       }
-      if (s.y >= by && s.y - s.vy * dt < by && Math.abs(s.x - bx) < this.cfg.basketW / 2) {
+      if (s.y >= by && s.y - s.vy * dt < by && bxs.some((bx) => Math.abs(s.x - bx) < this.cfg.basketW / 2)) {
         s.alive = false;
         s.caught = true;
         this.caught++;

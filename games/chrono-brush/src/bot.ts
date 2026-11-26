@@ -18,7 +18,7 @@ function look(sim: ChronoSim, horizon: number, id: number): { got: boolean; caug
     const s = c.stars[id];
     if (i % 12 === 0 && s.alive) path.push({ x: s.x, y: s.y });
     // 籠の高さを過ぎた時、籠からどれだけ離れていたか
-    if (!s.alive && !s.caught && miss === 0) miss = Math.abs(s.x - c.basketX()) + 1;
+    if (!s.alive && !s.caught && miss === 0) miss = c.basketDist(s.x) + 1;
   }
   const s = c.stars[id];
   if (s.alive) miss = 300; // まだ落ちていない（待たせすぎ）
