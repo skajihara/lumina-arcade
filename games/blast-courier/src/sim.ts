@@ -12,7 +12,7 @@
  *
  * 動くのは卵だけ（島・巣は動かない、動く島は時間の関数）なので、状態の写し（ボットの先読み）は卵の状態だけで作れる。
  */
-import { World, Circle, Polygon, Edge, type Body, type Contact } from 'planck';
+import { World, Circle, Polygon, Edge, Chain, type Body, type Contact } from 'planck';
 
 export const HZ = 120;
 export const DT = 1 / HZ;
@@ -51,6 +51,35 @@ export interface CourierConfig {
   cracksMax: number;
   /** 巣の中で何秒止まればクリアか */
   nestHold: number;
+  /** 巣の縁の高さ（m） */
+  nestRim: number;
+  /** 巣の中の勢いの減り方（毎秒。大きいほど早く落ち着く） */
+  nestDamp: number;
+}
+
+/** 巣の形のつくり（見た目と当たり判定で同じものを使う） */
+export interface NestShape { x: number; y: number; w: number }
+
+/**
+ * 巣のお椀の曲線（BC-11）。左の縁の外 → 底 → 右の縁の外 の順の点。
+ * 底は平たく（|u|^2.4）、縁は高さ rim まで上がり、外へ丸く反り返る（勢いよく当たった卵が外へこぼれる）
+ */
+export function nestCurve(n: NestShape, rim: number, sag = 0): Pt[] {
+  const hw = n.w / 2 + 0.4;
+  const pts: Pt[] = [];
+  const N = 18;
+  for (let i = 0; i <= N; i++) {
+    const u = -1 + (2 * i) / N;
+    const a = Math.abs(u);
+    pts.push({ x: n.x + u * hw, y: n.y - rim * a ** 2.4 + sag * (1 - a * a) });
+  }
+  // 縁の丸い反り：外へ少し出て、少し下がる
+  const lip = (sgn: number): Pt[] => [
+    { x: n.x + sgn * (hw + 0.13), y: n.y - rim - 0.07 },
+    { x: n.x + sgn * (hw + 0.27), y: n.y - rim + 0.02 },
+    { x: n.x + sgn * (hw + 0.34), y: n.y - rim + 0.16 },
+  ];
+  return [...lip(-1).reverse(), ...pts, ...lip(1)];
 }
 
 export const defaults: CourierConfig = {
@@ -58,7 +87,7 @@ export const defaults: CourierConfig = {
   blastR: 3.2, blastForce: 14, pullForce: 6,
   liftW: 1.6, liftTime: 1.4, liftAccel: 2.1,
   delayTime: 1.0, delayMul: 1.3,
-  cooldown: 0.15, minPower: 0.12, blastCrack: 11, crackSpeed: 9, cracksMax: 3, nestHold: 0.6,
+  cooldown: 0.15, minPower: 0.12, blastCrack: 11, crackSpeed: 9, cracksMax: 3, nestHold: 0.6, nestRim: 1.25, nestDamp: 2.5,
 };
 
 export interface Pt { x: number; y: number }
@@ -156,12 +185,9 @@ export class CourierSim {
         }
       }
     }
-    // 巣：U の字（左の縁・底・右の縁）
-    const n = stage.nest;
+    // 巣：見た目と同じ曲線のお椀（BC-11）。弾まず、よく止まる
     const nest = this.world.createBody({ type: 'static', userData: { kind: 'land' } as Tag });
-    nest.createFixture(new Edge({ x: n.x - n.w / 2 - 0.3, y: n.y - 1.1 }, { x: n.x - n.w / 2, y: n.y }), { friction: 0.8, restitution: 0.05 });
-    nest.createFixture(new Edge({ x: n.x - n.w / 2, y: n.y }, { x: n.x + n.w / 2, y: n.y }), { friction: 0.9, restitution: 0.05 });
-    nest.createFixture(new Edge({ x: n.x + n.w / 2, y: n.y }, { x: n.x + n.w / 2 + 0.3, y: n.y - 1.1 }), { friction: 0.8, restitution: 0.05 });
+    nest.createFixture(new Chain(nestCurve(stage.nest, this.cfg.nestRim), false), { friction: 0.9, restitution: 0.02 });
     for (const th of stage.thorns ?? []) {
       const tb = this.world.createBody({ type: 'static', userData: { kind: 'thorn' } as Tag });
       tb.createFixture(new Polygon(th.pts), { friction: 0.2 });
@@ -365,15 +391,31 @@ export class CourierSim {
       if (this.blasts > this.stage.maxBlasts) this.fail('blasts');
       return;
     }
-    // 巣の中で止まればクリア
-    const n = this.stage.nest;
-    const inNest = Math.abs(p.x - n.x) < n.w / 2 + 0.1 && p.y > n.y - 1.2 && p.y < n.y + 0.1;
+    // 巣の中：勢いが減っていき（弾まず転がらず）、止まればクリア
+    const inNest = this.inNest(p.x, p.y);
+    if (inNest) {
+      const k = Math.max(0, 1 - cfg.nestDamp * DT);
+      this.egg.setLinearVelocity({ x: v.x * k, y: v.y < 0 ? v.y : v.y * k });
+      this.egg.setAngularVelocity(this.egg.getAngularVelocity() * k);
+    }
     this.nestTicks = inNest && Math.hypot(v.x, v.y) < 0.8 ? this.nestTicks + 1 : 0;
     if (this.nestTicks === 1) this.events.push({ t: 'nest', x: p.x, y: p.y });
     if (this.nestTicks > cfg.nestHold * HZ) {
       this.phase = 'clear';
       this.events.push({ t: 'clear' });
     }
+  }
+
+  /** 卵の真ん中が巣のお椀の中か（縁の高さより下、縁の内側） */
+  inNest(x: number, y: number): boolean {
+    const n = this.stage.nest;
+    const hw = n.w / 2 + 0.4;
+    return Math.abs(x - n.x) < hw - 0.15 && y > n.y - this.cfg.nestRim + 0.1 && y < n.y + 0.1;
+  }
+
+  /** 巣で落ち着くまでの進み（0〜1） */
+  get nestProgress(): number {
+    return Math.min(1, this.nestTicks / (this.cfg.nestHold * HZ));
   }
 
   /** 卵の状態（先読み用） */
