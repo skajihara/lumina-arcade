@@ -1,8 +1,6 @@
 /**
- * Moon Claw（月の爪クレーン）。NEW-03：描画・操作・タイトル・ポーズ・リザルト・ボット・仮の3面。
- * 上の段：月の爪（クレーン）で精霊の山から掴み、ゆっくり運んで落とし口で放す。
- * 下の段：落ちた精霊はピンボールの球。フリッパーで打ち上げて、金の巣穴（倍率）へ。
- * 「慎重（クレーン）→ 暴れる（ピンボール）」の緩急。爆弾精霊で山を崩すとマルチボール。
+ * Moon Claw（月の爪クレーン）。MC-10 で作り直した：ピンボールの段をやめ、物理の爪で宝石を運んで宝石箱に納める。
+ * 爪の頭は ←→↑↓ かマウスのドラッグで動かし、指は Z（開く）／X（閉じる）を押している間だけ動く（放すとそこで止まる）。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
 import { Graphics, Sprite, Container, Text } from 'pixi.js';
@@ -20,17 +18,17 @@ import { createTuning } from '@engine/tuning';
 import { ruleCards, introCard } from '@engine/rules';
 import { moonRules, moonIntros } from './rules';
 import { schema, presets, DEFAULT_PRESET, toClaw, type MoonConfig } from './config';
-import { ClawSim, HZ, WORLD_W, WORLD_H, SHELF_Y, HOLE_X0, HOLE_X1, RAIL_Y, PIVOT_L, PIVOT_R, IN_DROP, IN_OPEN, DT } from './sim';
+import { ClawSim, HZ, WORLD_W, WORLD_H, FLOOR_Y, RAIL_Y, FINGER_L, GEMS, IN_OPEN, IN_CLOSE } from './sim';
 import { clawStages } from './stages';
 import { ClawBot } from './bot';
 
 const params = new URLSearchParams(location.search);
-/** 1 m を何ピクセルで描くか。盤（14×24 m）を真ん中に置き、左右の余白に HUD */
-const S = 30;
+/** 1 m を何ピクセルで描くか。部屋（22×14 m）を下寄りに置き、上の余白に HUD */
+const S = 33;
 const VIEW_W = 760;
-const VIEW_H = 740;
+const VIEW_H = 640;
 const OX = (VIEW_W - WORLD_W * S) / 2;
-const OY = 10;
+const OY = VIEW_H - WORLD_H * S - 8;
 const px = (x: number) => OX + x * S;
 const py = (y: number) => OY + y * S;
 
@@ -44,11 +42,11 @@ async function main() {
   const goalG = new Graphics();
   const goalText = new Container();
   const clawG = new Graphics();
-  const flipG = new Graphics();
+  const gemG = new Graphics();
   const spiritLayer = new Container();
   const particles = new Particles(1800);
   const fxG = new Graphics();
-  ga.world.addChild(sky, field.container, boardG, goalG, goalText, flipG, spiritLayer, clawG, particles.container, fxG);
+  ga.world.addChild(sky, field.container, boardG, goalG, goalText, spiritLayer, gemG, clawG, particles.container, fxG);
 
   const hud = el('div', { class: 'hud' });
   const tl = el('div', { class: 'tl' });
@@ -59,12 +57,14 @@ async function main() {
   const tuning = createTuning<MoonConfig>('moon-claw', schema, presets, DEFAULT_PRESET);
   const cfg = tuning.config;
   const save = new Save<{ cleared: Record<string, number> }>('moon-claw', { cleared: {} });
-  // 登録順がビットになる：left=1(IN_LEFT), right=2(IN_RIGHT), drop=4(IN_DROP), open=8(IN_OPEN)
+  // 登録順がビットになる：left=1, right=2, up=4, down=8, open=16, close=32
   const input = new Input({
-    left: { keys: ['KeyZ', 'ShiftLeft'], touch: { x0: 0, y0: 0.62, x1: 0.5, y1: 1 } },
-    right: { keys: ['Slash', 'ShiftRight'], touch: { x0: 0.5, y0: 0.62, x1: 1, y1: 1 } },
-    drop: { keys: ['ArrowDown', 'KeyS', 'Space'] },
-    open: { keys: ['ArrowUp', 'KeyW', 'Enter'] },
+    left: { keys: ['ArrowLeft', 'KeyA'] },
+    right: { keys: ['ArrowRight', 'KeyD'] },
+    up: { keys: ['ArrowUp', 'KeyW'] },
+    down: { keys: ['ArrowDown', 'KeyS'] },
+    open: { keys: ['KeyZ', 'Space'] },
+    close: { keys: ['KeyX', 'ShiftLeft', 'ShiftRight'] },
   });
 
   let stageIndex = Math.min(clawStages.length - 1, Math.max(0, Number(params.get('stage') ?? 0) || 0));
@@ -75,16 +75,13 @@ async function main() {
   let autoplay = params.has('autoplay');
   let bot = new ClawBot(0.85, 1);
   let t = 0;
-  /** 爪の目標の x（マウス・キー・タッチ） */
-  let targetX = WORLD_W / 2;
-  /** マウス・タッチで押している入力（キーボードの Input に重ねる） */
+  /** マウス・タッチで引いている時の、爪の頭の目標（引いていない時は null＝キー） */
+  let target: { x: number; y: number } | null = null;
+  /** マウスのボタンで押している開閉（左＝閉じる、右＝開く）。タッチのボタンは押してから少しの間 */
   let mouseBits = 0;
-  /** 1ティックだけ送る入力（開く） */
-  let pulse = 0;
-  /** スマホの「下ろす」：押したら、爪が上がり始めるまで下ろし続ける */
-  let dropLatch = false;
+  let touchBits = 0;
+  let touchUntil = 0;
   let resultTimer = -1;
-  let recentFalls: number[] = [];
   const sprites = new Map<number, Sprite>();
   const popups: { x: number; y: number; text: string; age: number; color: number }[] = [];
 
@@ -94,14 +91,12 @@ async function main() {
     stageIndex = i;
     sim = new ClawSim(clawStages[i], toClaw(cfg));
     bot = new ClawBot(0.85, 1 + i);
-    targetX = WORLD_W / 2;
+    target = null;
     resultTimer = -1;
-    recentFalls = [];
     for (const sp of sprites.values()) sp.destroy();
     sprites.clear();
     popups.length = 0;
     buildBoard();
-    bumpAge.length = 0;
     const it = moonIntros[clawStages[i].id];
     introCard(it?.frame ?? null, it?.title);
     // ヒントは盤の上ではなく左の余白に（巣穴や柱に重ならないように）。最初の 8 秒だけ
@@ -127,7 +122,7 @@ async function main() {
     menu = el('div', { class: 'menu' });
     menu.innerHTML = `<h1>${stars ? 'CLEAR' : 'FAILED'}</h1><h2>${st.name}</h2>
       ${stars ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
-      <p>巣穴の点 ${sim.score} / ${st.need}　残り時間 ${sim.timeLeft.toFixed(1)} 秒</p>
+      <p>宝石の点 ${sim.score} / ${st.need}　残り時間 ${sim.timeLeft.toFixed(1)} 秒</p>
       <p style="font-size:13px">★：クリアで★1、残り時間が 45% 以上で★2、65% 以上で★3</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
@@ -155,13 +150,13 @@ async function main() {
       <h1>MOON CLAW</h1>
       <h2>月 の 爪 ク レ ー ン</h2>
       <div class="rulebox"></div>
-      <p style="max-width:620px;line-height:1.8;font-size:13px">上の段は<b style="color:var(--gold)">クレーン</b>。月の爪で精霊の山から掴み、<b>こぼさないようにゆっくり</b>運んで、真ん中の落とし口で放す。<br>
-      下の段は<b style="color:#bfe3ff">ピンボール</b>。落ちた精霊をフリッパーで打ち上げ、金の巣穴（数字は倍率）へ。時間内に必要な点を集めよう。</p>
+      <p style="max-width:620px;line-height:1.8;font-size:13px">月の爪で<b style="color:var(--gold)">宝石</b>をつかみ、<b>宝石箱</b>へ運んで納める。爪は本物の物理 — 指で挟み、指先の鉤に乗せて持ち上げる。<br>
+      重い宝石・丸い宝石・細長い宝石は、挟み方が悪いと落ちる。時間内に必要な点を集めよう（数字は宝石箱の倍率）。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
-      <div class="keys"><b>マウス</b>で爪を動かす　<b>左クリック長押し</b>＝下ろす（放すと掴む）　<b>右クリック</b>＝開く<br>
-      キー：<kbd>A</kbd><kbd>D</kbd>／<kbd>←</kbd><kbd>→</kbd> 爪　<kbd>↓</kbd><kbd>S</kbd> 下ろす　<kbd>↑</kbd><kbd>W</kbd> 開く　<kbd>Z</kbd> <kbd>/</kbd> フリッパー<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：上の段を指でなぞって爪、上のボタンで下ろす・開く、画面の下の左右でフリッパー</div>`;
+      <div class="keys">キー：<kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>（<kbd>A</kbd><kbd>D</kbd><kbd>W</kbd><kbd>S</kbd>）爪を動かす　<kbd>Z</kbd> 開く　<kbd>X</kbd> 閉じる（押している間だけ）<br>
+      マウス：<b>ドラッグ</b>で爪を動かす（指の位置へ向かう）　<b>ホイール</b>（上へ＝開く・下へ＝閉じる）、<b>右ボタン</b>（押している間）＝開く<br>
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：画面をなぞって爪、上のボタンで開く・閉じる</div>`;
     menu.querySelector('.rulebox')!.replaceWith(ruleCards(moonRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
@@ -212,26 +207,28 @@ async function main() {
   );
 
   // ---- マウス・タッチ ----
-  const toWorldX = (cx: number, cy: number) => (ga.toLogical(cx, cy).x - OX) / S;
-  const toWorldY = (cx: number, cy: number) => (ga.toLogical(cx, cy).y - OY) / S;
+  const toWorld = (cx: number, cy: number) => { const l = ga.toLogical(cx, cy); return { x: (l.x - OX) / S, y: (l.y - OY) / S }; };
+  let dragging = false;
   ga.app.canvas.addEventListener('pointermove', (e) => {
-    if (mode !== 'play') return;
-    // タッチは上の段（棚より上）をなぞった時だけ爪を動かす（下はフリッパー）
-    if (e.pointerType === 'touch' && toWorldY(e.clientX, e.clientY) > SHELF_Y + 2) return;
-    targetX = toWorldX(e.clientX, e.clientY);
+    if (mode !== 'play' || !dragging) return;
+    target = toWorld(e.clientX, e.clientY);
   });
   ga.app.canvas.addEventListener('pointerdown', (e) => {
     synth.unlock();
     if (mode !== 'play') return;
-    if (e.pointerType === 'touch') {
-      if (toWorldY(e.clientX, e.clientY) <= SHELF_Y + 2) targetX = toWorldX(e.clientX, e.clientY);
-      return;
-    }
-    targetX = toWorldX(e.clientX, e.clientY);
-    if (e.button === 2) pulse |= IN_OPEN;
-    else mouseBits |= IN_DROP;
+    dragging = true;
+    target = toWorld(e.clientX, e.clientY);
+    if (e.pointerType !== 'touch') mouseBits = e.button === 2 ? IN_OPEN : 0;
   });
-  window.addEventListener('pointerup', () => { mouseBits = 0; });
+  window.addEventListener('pointerup', () => { dragging = false; mouseBits = 0; });
+  // ホイール：上へ回すと開く、下へ回すと閉じる（回した分だけ）
+  let wheelBits = 0, wheelUntil = 0;
+  ga.app.canvas.addEventListener('wheel', (e) => {
+    if (mode !== 'play') return;
+    e.preventDefault();
+    wheelBits = e.deltaY < 0 ? IN_OPEN : IN_CLOSE;
+    wheelUntil = sim.tick + Math.min(40, Math.round(Math.abs(e.deltaY) / 5) + 6);
+  }, { passive: false });
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
     synth.unlock();
@@ -241,69 +238,54 @@ async function main() {
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
     if (e.code === 'KeyB' && e.shiftKey) autoplay = !autoplay;
   });
-  const keys = new Set<string>();
-  window.addEventListener('keydown', (e) => keys.add(e.code));
-  window.addEventListener('keyup', (e) => keys.delete(e.code));
-  window.addEventListener('blur', () => keys.clear());
+  // キーで爪を動かしたら、マウスの目標はやめる
+  window.addEventListener('keydown', (e) => { if (e.code.startsWith('Arrow') || ['KeyA', 'KeyD', 'KeyW', 'KeyS'].includes(e.code)) target = null; });
   const tbar = touchButtons([
     { label: '‖', onPress: () => togglePause() },
-    { label: '▼ 下ろす', onPress: () => { dropLatch = true; } },
-    { label: '◇ 開く', onPress: () => { pulse |= IN_OPEN; } },
+    { label: '◇ 開く', onPress: () => { touchBits = IN_OPEN; touchUntil = sim.tick + 30; } },
+    { label: '◆ 閉じる', onPress: () => { touchBits = IN_CLOSE; touchUntil = sim.tick + 30; } },
   ], 'top');
 
   tuning.onChange((key) => {
     if (key === 'volume') synth.setVolume(cfg.volume);
     if (key === 'bloom') ga.setBloom(cfg.bloom);
     // ルールの値は今のプレイにもすぐ反映（↻ の項目はやり直しで）
-    Object.assign(sim.cfg, { grip: cfg.grip, grabMax: cfg.grabMax, grabR: cfg.grabR, clawSpeed: cfg.clawSpeed, clawDown: cfg.clawDown, bombForce: cfg.bombForce, bombR: cfg.bombR });
+    Object.assign(sim.cfg, { clawSpeed: cfg.clawSpeed, clawAccel: cfg.clawAccel, fingerSpeed: cfg.fingerSpeed, fingerTorque: cfg.fingerTorque, settle: cfg.settle });
   });
   synth.setVolume(cfg.volume);
   synth.setMusicStyle('moon');
   ga.setBloom(cfg.bloom);
 
-  // ---- 盤（動かない物）を描く ----
+  // ---- 部屋（動かない物）を描く ----
   const buildBoard = () => {
     const st = clawStages[stageIndex];
     boardG.clear();
-    // 盤の地（少し明るい夜空）
-    boardG.rect(px(0), py(-0.3), WORLD_W * S, (WORLD_H + 0.3) * S).fill({ color: 0x0c1238, alpha: 0.35 });
-    // 外壁
+    boardG.rect(px(0), py(-0.2), WORLD_W * S, (WORLD_H + 0.2) * S).fill({ color: 0x0c1238, alpha: 0.35 });
     const glowLine = (x0: number, y0: number, x1: number, y1: number, col = 0x8fa6ff, w = 3) => {
       boardG.moveTo(px(x0), py(y0)).lineTo(px(x1), py(y1)).stroke({ width: w + 6, color: col, alpha: 0.12 });
       boardG.moveTo(px(x0), py(y0)).lineTo(px(x1), py(y1)).stroke({ width: w, color: col, alpha: 0.85 });
     };
-    glowLine(0, -0.3, 0, WORLD_H);
-    glowLine(WORLD_W, -0.3, WORLD_W, WORLD_H);
-    // 爪のレール
-    glowLine(0.2, RAIL_Y - 0.5, WORLD_W - 0.2, RAIL_Y - 0.5, 0xffd98a, 2);
-    // 棚と落とし口の縁
-    glowLine(0, SHELF_Y, HOLE_X0, SHELF_Y, 0xb9c6ff);
-    glowLine(HOLE_X1, SHELF_Y, WORLD_W, SHELF_Y, 0xb9c6ff);
-    glowLine(HOLE_X0, SHELF_Y, HOLE_X0, SHELF_Y - 0.45, 0xb9c6ff, 2);
-    glowLine(HOLE_X1, SHELF_Y, HOLE_X1, SHELF_Y - 0.45, 0xb9c6ff, 2);
-    // 落とし口：下へ向かう光の筋
-    for (let k = 0; k < 5; k++) boardG.rect(px(HOLE_X0 + 0.2 + k * 0.38), py(SHELF_Y + 0.1), 2, S * 0.9).fill({ color: 0xffd98a, alpha: 0.18 - k * 0.02 });
-    // 下の段の斜面
-    glowLine(0, 18.5, PIVOT_L.x - 0.1, PIVOT_L.y - 0.3);
-    glowLine(WORLD_W, 18.5, PIVOT_R.x + 0.1, PIVOT_R.y - 0.3);
-    // 柱（月のバンパーは draw で毎フレーム描く）
-    for (const p of st.posts ?? []) {
-      if (p.kick) continue;
-      boardG.circle(px(p.x), py(p.y), p.r * S + 5).fill({ color: 0x8fa6ff, alpha: 0.12 });
-      boardG.circle(px(p.x), py(p.y), p.r * S).fill({ color: 0x1a2260, alpha: 0.9 }).stroke({ width: 2, color: 0xb9c6ff, alpha: 0.9 });
+    glowLine(0, -0.2, 0, FLOOR_Y);
+    glowLine(WORLD_W, -0.2, WORLD_W, FLOOR_Y);
+    glowLine(0, FLOOR_Y, WORLD_W, FLOOR_Y, 0xb9c6ff);
+    // 爪のレール（天井）
+    glowLine(0.3, RAIL_Y, WORLD_W - 0.3, RAIL_Y, 0xffd98a, 2);
+    // 台
+    for (const b of st.blocks ?? []) {
+      boardG.rect(px(b.x), py(b.y), b.w * S, b.h * S).fill({ color: 0x1a2260, alpha: 0.85 }).stroke({ width: 2, color: 0xb9c6ff, alpha: 0.8 });
     }
-    // 棚の仕切り（低い壁）
-    for (const f of st.fences ?? []) {
-      boardG.moveTo(px(f.x), py(SHELF_Y)).lineTo(px(f.x), py(SHELF_Y - f.h)).stroke({ width: 8, color: 0xb9c6ff, alpha: 0.15 });
-      boardG.moveTo(px(f.x), py(SHELF_Y)).lineTo(px(f.x), py(SHELF_Y - f.h)).stroke({ width: 3, color: 0xb9c6ff, alpha: 0.9 });
-      boardG.circle(px(f.x), py(SHELF_Y - f.h), 3).fill({ color: 0xffffff });
-    }
-    // 巣穴の倍率の文字
+    // 宝石箱：金の縁（底と左右）と、倍率の文字
     goalText.removeChildren().forEach((c) => c.destroy());
-    for (const g of st.goals) {
-      const tx = new Text({ text: `×${g.mult}`, style: { fontFamily: 'system-ui, sans-serif', fontSize: 15, fontWeight: '700', fill: 0xffe7a8 } });
+    for (const bx of st.boxes) {
+      const col = bx.mult > 1 ? 0xffd98a : 0xdfe6ff;
+      boardG.rect(px(bx.x), py(bx.y), bx.w * S, bx.h * S).fill({ color: col, alpha: 0.06 });
+      boardG.moveTo(px(bx.x - 0.1), py(bx.y)).lineTo(px(bx.x - 0.1), py(bx.y + bx.h + 0.1)).lineTo(px(bx.x + bx.w + 0.1), py(bx.y + bx.h + 0.1)).lineTo(px(bx.x + bx.w + 0.1), py(bx.y))
+        .stroke({ width: 10, color: col, alpha: 0.12, join: 'round' });
+      boardG.moveTo(px(bx.x - 0.1), py(bx.y)).lineTo(px(bx.x - 0.1), py(bx.y + bx.h + 0.1)).lineTo(px(bx.x + bx.w + 0.1), py(bx.y + bx.h + 0.1)).lineTo(px(bx.x + bx.w + 0.1), py(bx.y))
+        .stroke({ width: 4, color: col, alpha: 0.95, join: 'round' });
+      const tx = new Text({ text: `×${bx.mult}`, style: { fontFamily: 'system-ui, sans-serif', fontSize: 15, fontWeight: '700', fill: bx.mult > 1 ? 0xffe7a8 : 0xdfe6ff } });
       tx.anchor.set(0.5);
-      tx.position.set(px(g.x), py(g.y));
+      tx.position.set(px(bx.x + bx.w / 2), py(bx.y) - 14);
       goalText.addChild(tx);
     }
   };
@@ -313,24 +295,17 @@ async function main() {
     update: () => {
       const mask = input.sample();
       if (mode !== 'play' && mode !== 'result') return;
-      // キーボードで爪を動かす（押している間、目標を進める）
-      const kdir = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-      if (kdir) targetX = Math.max(0.6, Math.min(WORLD_W - 0.6, sim.claw.x + kdir * sim.cfg.clawSpeed * DT * 1.5));
-      let bits = mask | mouseBits | pulse;
-      pulse = 0;
-      if (dropLatch) {
-        bits |= IN_DROP;
-        if (sim.clawMode === 'up') dropLatch = false;
-      }
-      let tx = targetX;
+      let bits = mask | mouseBits;
+      if (sim.tick < touchUntil) bits |= touchBits;
+      if (sim.tick < wheelUntil) bits |= wheelBits;
+      let tg = target ?? undefined;
       if (mode === 'play' && autoplay) {
         const a = bot.act(sim);
         bits = a.bits;
-        tx = a.x;
-        targetX = a.x;
+        tg = a.target;
       }
       if (mode !== 'play') bits = 0;
-      sim.step(bits, tx);
+      sim.step(bits, tg);
       handleEvents();
       if (sim.phase !== 'play' && resultTimer < 0) resultTimer = sim.tick + Math.round(HZ * 1.6);
       if (resultTimer >= 0 && sim.tick >= resultTimer && mode === 'play') { resultTimer = -1; showResult(); }
@@ -349,12 +324,11 @@ async function main() {
       if (mode === 'menu') tl.innerHTML = '';
       else {
         const st = clawStages[stageIndex];
-        const left = sim.spirits.filter((s) => s.state !== 'home' && s.state !== 'lost').length;
+        const left = sim.gems.filter((g) => g.state === 'free').length;
         const tl0 = sim.timeLeft;
         tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${sim.score} / ${st.need}</div>
-          <div style="font-size:14px;color:${tl0 < 15 ? '#ff9f9f' : 'var(--dim)'}">残り ${tl0.toFixed(0)} 秒</div>
-          <div style="font-size:13px;color:var(--dim)">精霊 ${left}</div>
-          <div style="font-size:12px;color:var(--dim);margin-top:6px;line-height:1.6">マウス＝爪<br>長押し＝下ろす<br>右クリック＝開く<br>Z ／ ＝フリッパー</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}${sim.time < 8 ? `<div style="font-size:13px;color:var(--gold);max-width:150px;margin-top:10px;line-height:1.6;opacity:${Math.min(1, (8 - sim.time) / 1.5).toFixed(2)}">${st.hint}</div>` : ''}`;
+          <div style="font-size:14px;color:${tl0 < 15 ? '#ff9f9f' : 'var(--dim)'}">残り ${tl0.toFixed(0)} 秒　宝石 ${left}</div>
+          ${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}${sim.time < 9 ? `<div style="font-size:13px;color:var(--gold);max-width:420px;margin-top:8px;line-height:1.6;opacity:${Math.min(1, (9 - sim.time) / 1.5).toFixed(2)}">${st.hint}</div>` : ''}`;
       }
       tbar.update();
       hook.frames++;
@@ -364,56 +338,25 @@ async function main() {
 
   const handleEvents = () => {
     for (const e of sim.events) {
-      if (e.t === 'grab') {
-        particles.emit(px(e.x), py(e.y), { count: 10 * e.n, speed: [20, 90], life: [0.2, 0.5], size: [0.04, 0.1], color: [0xffd98a, 0xbfe3ff] });
-        synth.chord(2, [0, 4, 7].slice(0, e.n), 0.05, 0.07);
-      } else if (e.t === 'slip') {
-        synth.tone(330, 0.25, { type: 'sine', vol: 0.06, slideTo: 180 });
-        particles.emit(px(e.x), py(e.y), { count: 8, speed: [20, 80], life: [0.2, 0.4], size: [0.04, 0.08], color: 0x8fa6ff });
-      } else if (e.t === 'release') {
-        synth.whoosh(0.5);
-      } else if (e.t === 'fall') {
-        // 解放：落とし口をくぐった瞬間。2つ以上が続けて落ちると（マルチボール）、スローと金の光
-        recentFalls = recentFalls.filter((k) => sim.tick - k < HZ * 0.8);
-        recentFalls.push(sim.tick);
-        synth.hbell(4 + recentFalls.length, 0.1, 1.1);
-        particles.emit(px(e.x), py(e.y), { count: 26, speed: [40, 220], life: [0.3, 0.8], size: [0.05, 0.14], color: [0xffd98a, 0xffffff] });
-        popups.push({ x: px(e.x), y: py(e.y) - 10, text: '↓', age: 0, color: 0xffd98a });
-        if (recentFalls.length >= 2) {
-          juice.slowmo(0.35, cfg.slowmo);
-          juice.doFlash(0.18 + 0.06 * recentFalls.length, 0xffe7a8);
-          juice.shake(0.15 * recentFalls.length);
-          // 前の MULTI の文字は消して、数字だけ大きくなっていくように
-          for (let k = popups.length - 1; k >= 0; k--) if (popups[k].text.startsWith('MULTI')) popups.splice(k, 1);
-          popups.push({ x: px(7), y: py(SHELF_Y + 1.6), text: `MULTI ×${recentFalls.length}`, age: 0, color: 0xffe7a8 });
-        }
-      } else if (e.t === 'boom') {
-        juice.shake(0.6);
-        juice.hitstop(0.06);
-        juice.doFlash(0.35, 0xff9f8a);
-        synth.boom(0.8, 2);
-        particles.emit(px(e.x), py(e.y), { count: 70, speed: [80, 420], life: [0.3, 1], size: [0.06, 0.2], color: [0xff8f8f, 0xffd98a, 0xffffff] });
-        shock.push({ x: px(e.x), y: py(e.y), r: e.r * S, age: 0 });
+      if (e.t === 'grip') {
+        particles.emit(px(e.x), py(e.y), { count: 12, speed: [20, 90], life: [0.2, 0.5], size: [0.04, 0.1], color: [0xffd98a, 0xbfe3ff] });
+        synth.tone(660, 0.12, { type: 'triangle', vol: 0.07, slideTo: 990 });
+      } else if (e.t === 'drop') {
+        synth.tone(420, 0.22, { type: 'sine', vol: 0.05, slideTo: 240 });
+      } else if (e.t === 'clack') {
+        synth.tone(fxRandom(900, 1300), 0.06, { type: 'triangle', vol: Math.min(0.08, 0.01 * e.speed) });
+        if (e.speed > 6) juice.shake(0.08);
       } else if (e.t === 'home') {
-        juice.hitstop(0.05);
-        juice.shake(0.25);
-        synth.arp([0, 4, 7, 9 + e.mult].map((n) => n + e.total), 0.05, 0.09);
-        particles.emit(px(e.x), py(e.y), { count: 50 + 20 * e.mult, speed: [60, 330], life: [0.4, 1.1], size: [0.05, 0.18], color: [0xffd98a, 0xfff1c8, 0xbfe3ff] });
-        shock.push({ x: px(e.x), y: py(e.y), r: 40, age: 0 });
-        popups.push({ x: px(e.x), y: py(e.y) - 18, text: `+${e.mult}`, age: 0, color: 0xffe7a8 });
-      } else if (e.t === 'bump') {
-        const i = (clawStages[stageIndex].posts ?? []).findIndex((p) => p.x === e.x && p.y === e.y);
-        if (i >= 0) bumpAge[i] = 0;
-        synth.tone(fxRandom(520, 600), 0.12, { type: 'triangle', vol: 0.07, slideTo: 880 });
-        particles.emit(px(e.x), py(e.y), { count: 12, speed: [60, 200], life: [0.2, 0.4], size: [0.04, 0.1], color: [0xdde8ff, 0xffffff] });
-      } else if (e.t === 'lost' && e.faded) {
-        // 光が尽きて消える：小さく散る
-        particles.emit(px(e.x), py(e.y), { count: 16, speed: [10, 60], life: [0.4, 0.9], size: [0.03, 0.08], color: [0x8fa6ff, 0x4a5aa8] });
-        synth.tone(260, 0.5, { type: 'sine', vol: 0.05, slideTo: 130 });
-      } else if (e.t === 'lost') {
-        synth.tone(180, 0.4, { type: 'sine', vol: 0.07, slideTo: 80 });
-      } else if (e.t === 'flip') {
-        synth.flipper(e.side === 'L' ? 1 : 1.1);
+        // 解放：宝石が箱の中で落ち着いた瞬間。光の柱・高い和音・点数の飛び出し。コンボで強く
+        const big = e.value * e.mult;
+        juice.hitstop(0.04 + 0.01 * big);
+        juice.shake(0.12 + 0.05 * big);
+        if (big >= 4) { juice.slowmo(0.5, 0.35); juice.doFlash(0.2, 0xffe7a8); }
+        synth.arp([0, 4, 7, 11].map((n) => n + e.total % 12), 0.05, 0.09);
+        particles.emit(px(e.x), py(e.y), { count: 30 + 14 * big, speed: [60, 300], life: [0.4, 1.1], size: [0.05, 0.18], color: [GEMS[sim.gems[e.id].kind].color, 0xfff1c8, 0xffffff] });
+        shock.push({ x: px(e.x), y: py(e.y), r: 30 + 8 * big, age: 0 });
+        beams.push({ x: px(e.x), age: 0, color: GEMS[sim.gems[e.id].kind].color });
+        popups.push({ x: px(e.x), y: py(e.y) - 24, text: e.mult > 1 ? `+${e.value}×${e.mult}` : `+${e.value}`, age: 0, color: 0xffe7a8 });
       } else if (e.t === 'clear') {
         juice.doFlash(0.55, 0xffe7a8);
         juice.slowmo(0.4, 0.9);
@@ -425,112 +368,80 @@ async function main() {
   };
 
   const shock: { x: number; y: number; r: number; age: number }[] = [];
-  const bumpAge: number[] = [];
+  const beams: { x: number; age: number; color: number }[] = [];
   const popTexts: Text[] = [];
   const draw = (dt: number) => {
-    const st = clawStages[stageIndex];
-    // 巣穴：金の輪がゆっくり脈打つ
-    goalG.clear();
-    st.goals.forEach((g, gi) => {
-      const pulseK = 0.5 + 0.5 * Math.sin(t * 2.4 + g.x);
-      const gx = sim.goalX(g);
-      goalText.children[gi]?.position.set(px(gx), py(g.y));
-      // 揺れる巣穴は、行き来する範囲を淡い線で
-      if (g.move) goalG.moveTo(px(g.x - g.move.amp), py(g.y)).lineTo(px(g.x + g.move.amp), py(g.y)).stroke({ width: 1, color: 0xffd98a, alpha: 0.2 });
-      goalG.circle(px(gx), py(g.y), g.r * S + 8 + pulseK * 4).fill({ color: 0xffd98a, alpha: 0.06 + 0.04 * pulseK });
-      goalG.circle(px(gx), py(g.y), g.r * S).fill({ color: 0x2a1e08, alpha: 0.55 }).stroke({ width: 2.5, color: 0xffd98a, alpha: 0.75 + 0.25 * pulseK });
-      for (let k = 0; k < 6; k++) {
-        const a = t * 0.9 + (k * Math.PI) / 3;
-        goalG.circle(px(gx) + Math.cos(a) * (g.r * S + 4), py(g.y) + Math.sin(a) * (g.r * S + 4), 1.6).fill({ color: 0xfff1c8, alpha: 0.8 });
-      }
-    });
-    // 月のバンパー：満月の円盤。当たると明るく膨らむ
-    (st.posts ?? []).forEach((p, i) => {
-      if (!p.kick) return;
-      const hot = Math.max(0, 1 - (bumpAge[i] ?? 9) / 0.25);
-      const r = p.r * S * (1 + hot * 0.18);
-      goalG.circle(px(p.x), py(p.y), r + 7).fill({ color: 0xbfe3ff, alpha: 0.1 + hot * 0.3 });
-      goalG.circle(px(p.x), py(p.y), r).fill({ color: 0xdde8ff, alpha: 0.35 + hot * 0.5 }).stroke({ width: 2.5, color: 0xffffff, alpha: 0.9 });
-      goalG.circle(px(p.x) - r * 0.3, py(p.y) - r * 0.2, r * 0.22).fill({ color: 0x8fa6ff, alpha: 0.35 });
-      goalG.circle(px(p.x) + r * 0.25, py(p.y) + r * 0.3, r * 0.15).fill({ color: 0x8fa6ff, alpha: 0.3 });
-      bumpAge[i] = (bumpAge[i] ?? 9) + dt;
-    });
-    // フリッパー
-    flipG.clear();
-    for (const f of sim.flipperPoses()) {
-      const s = f.side === 'L' ? 1 : -1;
-      const ex = f.x + Math.cos(f.angle) * s * f.length, ey = f.y + Math.sin(f.angle) * s * f.length;
-      flipG.moveTo(px(f.x), py(f.y)).lineTo(px(ex), py(ey)).stroke({ width: 14, color: 0x8fa6ff, alpha: 0.18, cap: 'round' });
-      flipG.moveTo(px(f.x), py(f.y)).lineTo(px(ex), py(ey)).stroke({ width: 8, color: 0xe6ecff, alpha: 0.95, cap: 'round' });
-      flipG.circle(px(f.x), py(f.y), 4).fill({ color: 0xffd98a });
-    }
-    // 精霊
-    for (const s of sim.spirits) {
-      let sp = sprites.get(s.id);
-      const gone = s.state === 'home' || s.state === 'lost';
+    // 宝石：形どおりに描く（水晶・星の結晶は四角、真珠・月長石は丸）。光の芯を重ねる
+    gemG.clear();
+    for (const g of sim.gems) {
+      let sp = sprites.get(g.id);
       if (!sp) {
         sp = new Sprite(glowTexture());
         sp.anchor.set(0.5);
         sp.blendMode = 'add';
         spiritLayer.addChild(sp);
-        sprites.set(s.id, sp);
+        sprites.set(g.id, sp);
       }
-      sp.visible = !gone;
-      if (gone) continue;
-      const p = s.body.getPosition();
+      sp.visible = g.state === 'free';
+      if (g.state !== 'free') continue;
+      const d = GEMS[g.kind];
+      const p = g.body.getPosition(), a = g.body.getAngle();
+      const held = sim.heldGems().includes(g);
       sp.position.set(px(p.x), py(p.y));
-      const tw = 0.9 + 0.1 * Math.sin(t * 5 + s.id);
-      sp.scale.set((sim.cfg.spiritR * S * 2.1) / 64 * tw * (s.bomb ? 1.2 : 1));
-      // 下の段の精霊は、光の残りが少ないほど暗く、最後の 2 割は点滅
-      const life = sim.lifeOf(s);
-      sp.alpha = (s.bomb ? 1 : 0.85) * (life < 0.2 ? 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t * 22)) : 0.45 + 0.55 * life);
-      sp.tint = s.bomb ? 0xff5a5a : s.state === 'held' ? 0xffe7a8 : s.state === 'ball' ? 0xd8f0ff : 0xa9cfff;
-    }
-    // 月の爪：レールから吊り下がる糸、三日月の頭、2本の爪（開き具合）
-    clawG.clear();
-    const c = sim.claw;
-    const cx = px(c.x), cy = py(c.y);
-    clawG.moveTo(cx, py(RAIL_Y - 0.5)).lineTo(cx, cy).stroke({ width: 1.5, color: 0xb9c6ff, alpha: 0.7 });
-    clawG.circle(cx, py(RAIL_Y - 0.5), 4).fill({ color: 0xffd98a });
-    // 三日月（外の円から内の円を抜いた形を、2本の弧で）
-    clawG.moveTo(cx + Math.cos(Math.PI * 0.1) * 12, cy + Math.sin(Math.PI * 0.1) * 12).arc(cx, cy, 12, Math.PI * 0.1, Math.PI * 0.9, true).arc(cx, cy - 4, 10, Math.PI * 0.82, Math.PI * 0.18, false).fill({ color: 0xffe7a8, alpha: 0.95 });
-    const tip = py(sim.clawTip);
-    const a = 0.25 + c.open * 0.55;
-    const armL = 0.9 * S;
-    for (const sgn of [-1, 1]) {
-      const bx = cx + sgn * 6, by = cy + 4;
-      const ex = bx + sgn * Math.sin(a) * armL, ey = by + Math.cos(a) * armL;
-      const hx = ex - sgn * 7, hy = ey + 2;
-      clawG.moveTo(bx, by).lineTo(ex, ey).lineTo(hx, hy).stroke({ width: 3.5, color: 0xffd98a, alpha: 0.95, cap: 'round', join: 'round' });
-    }
-    // 爪の真下に、下ろした時に届く所の目安（点線）
-    if (sim.clawMode === 'idle' && mode === 'play') {
-      for (let y = tip + 10; y < py(SHELF_Y) - 4; y += 14) clawG.rect(cx - 1, y, 2, 6).fill({ color: 0xffd98a, alpha: 0.25 });
-    }
-    // 握力：掴んでいる時、爪が速く動いていたら、爪の周りに赤い揺れ（こぼれそう）
-    const heldN = sim.spirits.filter((s) => s.state === 'held').length;
-    if (heldN) {
-      const sh = Math.abs(c.vx) / Math.max(0.1, sim.cfg.grip) / 0.6;
-      clawG.circle(cx, tip, 22).stroke({ width: 2, color: sh > 1 ? 0xff8f8f : 0xffd98a, alpha: Math.min(0.9, 0.2 + sh * 0.5) });
-    }
-    // 衝撃の輪と文字。爆弾精霊には赤い棘の輪（ひと目で分かるように）
-    fxG.clear();
-    for (const s of sim.spirits) {
-      if (!s.bomb || s.state === 'home' || s.state === 'lost') continue;
-      const p = s.body.getPosition();
-      const r = sim.cfg.spiritR * S + 3;
-      fxG.circle(px(p.x), py(p.y), r).stroke({ width: 2, color: 0xff6a6a, alpha: 0.9 });
-      for (let k = 0; k < 6; k++) {
-        const a = t * 2 + (k * Math.PI) / 3;
-        fxG.moveTo(px(p.x) + Math.cos(a) * r, py(p.y) + Math.sin(a) * r).lineTo(px(p.x) + Math.cos(a) * (r + 4), py(p.y) + Math.sin(a) * (r + 4)).stroke({ width: 2, color: 0xff9a8a, alpha: 0.9 });
+      sp.scale.set((Math.max(d.w, d.h) * S * 2.0) / 64 * (0.92 + 0.08 * Math.sin(t * 4 + g.id)));
+      sp.tint = d.color;
+      sp.alpha = held ? 0.45 : 0.28;
+      if (d.shape === 'circle') {
+        gemG.circle(px(p.x), py(p.y), d.w * S).fill({ color: d.color, alpha: 0.55 }).stroke({ width: 2, color: 0xffffff, alpha: 0.85 });
+        gemG.circle(px(p.x) - d.w * S * 0.3, py(p.y) - d.w * S * 0.3, d.w * S * 0.25).fill({ color: 0xffffff, alpha: 0.7 });
+      } else {
+        const c = Math.cos(a), s2 = Math.sin(a), hw = (d.w / 2) * S, hh = (d.h / 2) * S;
+        const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => ({ x: px(p.x) + x * c - y * s2, y: py(p.y) + x * s2 + y * c }));
+        gemG.poly(pts).fill({ color: d.color, alpha: 0.5 }).stroke({ width: 2, color: 0xffffff, alpha: 0.85 });
+        // 結晶の面（中心から角への線）
+        for (const q of pts) gemG.moveTo(px(p.x), py(p.y)).lineTo(q.x, q.y).stroke({ width: 1, color: 0xffffff, alpha: 0.35 });
       }
     }
+    // 月の爪：レールから吊る糸、頭、2本の指（物理の形のまま）
+    clawG.clear();
+    const hp = sim.head.getPosition();
+    clawG.moveTo(px(hp.x), py(RAIL_Y)).lineTo(px(hp.x), py(hp.y)).stroke({ width: 1.5, color: 0xb9c6ff, alpha: 0.7 });
+    clawG.circle(px(hp.x), py(RAIL_Y), 4).fill({ color: 0xffd98a });
+    clawG.roundRect(px(hp.x - 0.45), py(hp.y - 0.18), 0.9 * S, 0.36 * S, 4).fill({ color: 0xffe7a8, alpha: 0.95 });
+    const holding = sim.heldGems().length > 0;
+    for (const f of sim.fingers) {
+      const s = f.side === 'L' ? 1 : -1;
+      const fp = f.body.getPosition(), a = f.body.getAngle();
+      const tr = (x: number, y: number) => ({ x: px(fp.x + x * Math.cos(a) - y * Math.sin(a)), y: py(fp.y + x * Math.sin(a) + y * Math.cos(a)) });
+      const top = tr(0, 0), bot = tr(0, FINGER_L - 0.05), hook = tr(s * 0.34, FINGER_L - 0.05);
+      const col = holding ? 0xfff1c8 : 0xffd98a;
+      clawG.moveTo(top.x, top.y).lineTo(bot.x, bot.y).lineTo(hook.x, hook.y).stroke({ width: 10, color: col, alpha: 0.15, cap: 'round', join: 'round' });
+      clawG.moveTo(top.x, top.y).lineTo(bot.x, bot.y).lineTo(hook.x, hook.y).stroke({ width: 4.5, color: col, alpha: 0.95, cap: 'round', join: 'round' });
+      clawG.circle(top.x, top.y, 3.5).fill({ color: 0xffffff });
+    }
+    // 爪の真下の目安（点線）：何も持っていない時
+    if (!holding && mode === 'play') {
+      const tip = sim.tip;
+      for (let y = py(tip.y) + 12; y < py(FLOOR_Y) - 4; y += 14) clawG.rect(px(hp.x) - 1, y, 2, 6).fill({ color: 0xffd98a, alpha: 0.2 });
+    }
+    // マウスの目標
+    if (target && mode === 'play' && !autoplay) clawG.circle(px(target.x), py(target.y), 6).stroke({ width: 1.5, color: 0xffd98a, alpha: 0.5 });
+    // 衝撃の輪・光の柱・文字
+    fxG.clear();
     for (let i = shock.length - 1; i >= 0; i--) {
       const k = shock[i];
       k.age += dt;
       const f = k.age / 0.5;
       if (f >= 1) { shock.splice(i, 1); continue; }
       fxG.circle(k.x, k.y, k.r * (0.3 + f)).stroke({ width: 3 * (1 - f) + 1, color: 0xffe7a8, alpha: 0.8 * (1 - f) });
+    }
+    for (let i = beams.length - 1; i >= 0; i--) {
+      const b = beams[i];
+      b.age += dt;
+      const f = b.age / 0.8;
+      if (f >= 1) { beams.splice(i, 1); continue; }
+      const w = 26 * (1 - f) + 4;
+      fxG.rect(b.x - w / 2, py(0), w, py(FLOOR_Y) - py(0)).fill({ color: b.color, alpha: 0.22 * (1 - f) });
     }
     while (popTexts.length < popups.length) {
       const tx = new Text({ text: '', style: { fontFamily: 'system-ui, sans-serif', fontSize: 20, fontWeight: '800', fill: 0xffffff } });
@@ -550,7 +461,7 @@ async function main() {
     });
   };
 
-  const hook = installDebugHook('moon-claw', () => ({ mode, stage: stageIndex, phase: sim.phase, score: sim.score, need: clawStages[stageIndex].need, time: +sim.time.toFixed(1), held: sim.spirits.filter((s) => s.state === 'held').length, balls: sim.spirits.filter((s) => s.state === 'ball').length }));
+  const hook = installDebugHook('moon-claw', () => ({ mode, stage: stageIndex, phase: sim.phase, score: sim.score, need: clawStages[stageIndex].need, time: +sim.time.toFixed(1), held: sim.heldGems().length, gems: sim.gems.filter((g) => g.state === 'free').length, open: +sim.openness.toFixed(2) }));
   hook.start = (i: number) => start(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
   // ?stage=N&autoplay=1 ならすぐに始める。それ以外はタイトルから

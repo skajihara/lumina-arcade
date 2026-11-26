@@ -1,79 +1,98 @@
 /**
- * Moon Claw のボット（自動プレイとステージの測定用）。決定的（乱数は Rng）。
- * 爪：一番高い所にある精霊の上へ動き、下ろして掴み、こぼさない速さで落とし口の上へ運んで放す。
- * フリッパー：下の段の精霊がフリッパーの上に来たら弾く。skill が低いほど弾く時が遅れ・早まり、運ぶのも雑になる。
+ * Moon Claw のボット（自動プレイとステージの測定用）。MC-10 で物理の爪に合わせて作り直した。決定的（乱数は Rng）。
+ * 一番点の高い宝石（同じなら近い方）の真上へ開いて動き、下ろして閉じ、持ち上げて、一番倍率の高い宝石箱の上で開く。
+ * skill が低いほど狙いがずれ、運ぶのが速く（振れて落としやすく）なる。
  */
 import { Rng } from '@engine/rng';
-import { ClawSim, IN_DROP, IN_LEFT, IN_OPEN, IN_RIGHT, HOLE_X0, HOLE_X1, PIVOT_L, PIVOT_R, DT, SHELF_Y } from './sim';
+import { ClawSim, IN_CLOSE, IN_OPEN, FINGER_L, GEMS, type Gem } from './sim';
+
+type Phase = 'aim' | 'down' | 'close' | 'lift' | 'carry' | 'release';
 
 export class ClawBot {
   private rng: Rng;
-  private target: number | null = null;
-  private hold = { L: 0, R: 0 };
-  private miss = { L: 0, R: 0 };
-  private wait = 0;
+  private phase: Phase = 'aim';
+  private gem: Gem | null = null;
+  private off = 0;
+  private timer = 0;
+  private skipped = new Map<number, number>();
   constructor(public skill = 0.8, seed = 7) {
     this.rng = new Rng(seed);
   }
 
-  /** このティックの入力ビットと、爪の目標の x */
-  act(sim: ClawSim): { bits: number; x: number } {
-    let bits = 0;
-    const c = sim.claw;
-    let x = c.x;
-    // ---- 爪 ----
-    const held = sim.spirits.filter((s) => s.state === 'held').length;
-    const mid = (HOLE_X0 + HOLE_X1) / 2;
-    if (this.wait > 0) this.wait--;
-    else if (sim.clawMode === 'idle') {
-      if (held) {
-        // こぼさない速さ（握力の 6 割未満）で落とし口へ。下手なほど速く動かしてこぼす
-        const vmax = sim.cfg.grip * (0.35 + (1 - this.skill) * 0.4);
-        const dx = mid - c.x;
-        // 止まってから開く（動きながら開くと、精霊が勢いのまま飛んで落とし口を外れる）。下手なほど止まり切らずに開く
-        if (Math.abs(dx) < 0.08 && Math.abs(c.vx) < 0.3 + (1 - this.skill) * 3) { bits |= IN_OPEN; this.wait = 30; this.target = null; }
-        else x = c.x + Math.sign(dx) * Math.min(Math.abs(dx), vmax * DT);
-      } else {
-        // 一番高い精霊（山の頂）。爆弾は山の真ん中なら最後に
-        const pile = sim.spirits.filter((s) => s.state === 'pile' && s.body.getPosition().y < SHELF_Y && s.body.getPosition().y > SHELF_Y - 3);
-        if (pile.length) {
-          if (this.target === null) {
-            pile.sort((a, b) => a.body.getPosition().y - b.body.getPosition().y);
-            const k = Math.min(pile.length - 1, Math.floor(this.rng.next() * 3 * (1 - this.skill)));
-            this.target = pile[k].body.getPosition().x + (this.rng.next() - 0.5) * 0.4 * (1 - this.skill);
-          }
-          x = this.target;
-          if (Math.abs(c.x - this.target) < 0.05) bits |= IN_DROP;
-        }
-      }
-    } else if (sim.clawMode === 'down') {
-      bits |= IN_DROP;
-    }
-    // ---- フリッパー ----
-    for (const side of ['L', 'R'] as const) {
-      const pv = side === 'L' ? PIVOT_L : PIVOT_R;
-      const L = sim.cfg.flipperLength;
-      const x0 = side === 'L' ? pv.x - 0.3 : pv.x - L - 0.2;
-      const x1 = side === 'L' ? pv.x + L + 0.2 : pv.x + 0.3;
-      // 下手なほど弾く高さがずれる
-      const off = (1 - this.skill) * (this.rng.next() - 0.5) * 1.2;
-      const ball = sim.spirits.some((s) => {
-        if (s.state !== 'ball') return false;
-        const p = s.body.getPosition();
-        const v = s.body.getLinearVelocity();
-        return p.x > x0 && p.x < x1 && p.y > pv.y - 1.4 + off && p.y < pv.y + 0.4 && v.y > -2;
-      });
-      // 下手なほど、来た球に反応しそこねる（その球が通り過ぎるまで）
-      if (ball && this.hold[side] <= 0 && this.miss[side] <= 0) {
-        if (this.rng.next() < (1 - this.skill) * 0.7) this.miss[side] = 40;
-        else this.hold[side] = 18;
-      }
-      if (this.miss[side] > 0) this.miss[side]--;
-      if (this.hold[side] > 0) {
-        this.hold[side]--;
-        if (this.hold[side] > 4) bits |= side === 'L' ? IN_LEFT : IN_RIGHT;
+  private pickGem(sim: ClawSim): Gem | null {
+    const free = sim.gems.filter((g) => g.state === 'free' && !sim.stage.boxes.some((b) => {
+      const q = g.body.getPosition();
+      return q.x > b.x && q.x < b.x + b.w && q.y > b.y - 0.3 && q.y < b.y + b.h + 0.2;
+    }));
+    if (!free.length) return null;
+    const hp = sim.head.getPosition();
+    // 点が高く、近く、何度も失敗していない宝石。山の上の方（y が小さい）を先に
+    free.sort((a, b) => this.score(b, hp) - this.score(a, hp));
+    return free[0];
+  }
+
+  private score(g: Gem, hp: { x: number; y: number }): number {
+    const q = g.body.getPosition();
+    return GEMS[g.kind].value * 2 - Math.abs(q.x - hp.x) * 0.15 - q.y * 0.3 - (this.skipped.get(g.id) ?? 0) * 2.5;
+  }
+
+  /** このティックの入力ビットと、爪の頭の目標の位置 */
+  act(sim: ClawSim): { bits: number; target: { x: number; y: number } } {
+    const hp = sim.head.getPosition();
+    this.timer++;
+    const next = (p: Phase) => { this.phase = p; this.timer = 0; };
+    if (this.phase === 'aim' || !this.gem || this.gem.state !== 'free') {
+      if (this.phase !== 'aim' && this.phase !== 'release') next('aim');
+      if (this.phase === 'aim' && (!this.gem || this.gem.state !== 'free' || this.timer === 1)) {
+        this.gem = this.pickGem(sim);
+        this.off = (this.rng.next() - 0.5) * 0.5 * (1 - this.skill);
       }
     }
-    return { bits, x };
+    const g = this.gem;
+    if (!g) return { bits: 0, target: { x: hp.x, y: 2.5 } };
+    const q = g.body.getPosition();
+    const box = [...sim.stage.boxes].sort((a, b) => b.mult - a.mult)[0];
+    // 開きすぎると隣の宝石に指が当たって閉じられない。宝石の幅に合わせた開き具合にする
+    const want = Math.min(1, 0.42 + GEMS[g.kind].w * 0.45);
+    const openBits = sim.openness < want ? IN_OPEN : sim.openness > want + 0.08 ? IN_CLOSE : 0;
+    switch (this.phase) {
+      case 'aim': {
+        const tx = q.x + this.off, ty = Math.min(hp.y, q.y - FINGER_L - 1.2);
+        if (Math.abs(hp.x - tx) < 0.06 && Math.abs(sim.openness - want) < 0.1 && Math.abs(sim.vel.x) < 0.3) next('down');
+        return { bits: openBits, target: { x: tx, y: Math.max(1.6, ty) } };
+      }
+      case 'down': {
+        // 鉤が宝石の中心より少し下に来る高さ
+        const ty = q.y - 1.2;
+        if ((Math.abs(hp.y - ty) < 0.06 && Math.abs(sim.vel.y) < 0.2) || this.timer > 360 || Math.abs(sim.vel.y) < 0.05 && this.timer > 60) next('close');
+        return { bits: openBits, target: { x: q.x + this.off, y: ty } };
+      }
+      case 'close': {
+        if (this.timer > 60) next('lift');
+        return { bits: IN_CLOSE, target: { x: hp.x, y: hp.y } };
+      }
+      case 'lift': {
+        const top = Math.min(box.y - FINGER_L - 1.6, 2.4);
+        if (!sim.heldGems().includes(g) && this.timer > 30) { this.skipped.set(g.id, (this.skipped.get(g.id) ?? 0) + 1); next('aim'); }
+        else if (hp.y < top + 0.1) next('carry');
+        return { bits: IN_CLOSE, target: { x: hp.x, y: top } };
+      }
+      case 'carry': {
+        const tx = box.x + box.w / 2;
+        const top = Math.min(box.y - FINGER_L - 1.6, 2.4);
+        if (!sim.heldGems().includes(g)) { this.skipped.set(g.id, (this.skipped.get(g.id) ?? 0) + 1); next('aim'); }
+        // 上手いほどゆっくり近づいて止まる
+        const slow = 0.5 + this.skill * 0.5;
+        const d = tx - hp.x;
+        const x = hp.x + Math.sign(d) * Math.min(Math.abs(d), (2.5 - slow * 1.2) * Math.min(1, Math.abs(d)) + 0.02);
+        if (Math.abs(d) < 0.08 && Math.abs(sim.vel.x) < 0.25 + (1 - this.skill)) next('release');
+        return { bits: IN_CLOSE, target: { x, y: top } };
+      }
+      case 'release': {
+        if (this.timer > 70) { this.gem = null; next('aim'); }
+        return { bits: IN_OPEN, target: { x: hp.x, y: hp.y } };
+      }
+    }
+    return { bits: 0, target: { x: hp.x, y: hp.y } };
   }
 }
