@@ -1,94 +1,66 @@
 /**
- * Moon Claw のステージ（NEW-04：9面）。
- * 座標は物理の世界（幅 14 × 高さ 24 m）。棚は y=9、落とし口は x=6〜8。下の段の斜面は y=18.5〜21.3、フリッパーは y=21.6
- * 巣穴は「落ちるだけでは入らない」所（壁際・高い所・柱の陰）に置き、フリッパーで狙わせる。
+ * Moon Claw のステージ（MC-10：物理の爪で作り直した最初の6面。MC-12 で 8〜10 面に作り直す）。
+ * 座標は物理の世界（幅 22 × 高さ 14 m）。床は y = FLOOR_Y。宝石箱は口の左上と中の広さ
  */
-import { SHELF_Y, type ClawStage, type SpiritDef } from './sim';
+import { FLOOR_Y, GEMS, type BoxDef, type ClawStage, type GemDef, type GemKind } from './sim';
 
-/** 棚の上の山：x0 から右へ cols 個ずつ、rows 段。bombs は爆弾にする番号 */
-export function pile(x0: number, cols: number, rows: number, bombs: number[] = []): SpiritDef[] {
-  const out: SpiritDef[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols - (r % 2); c++) {
-      const i = out.length;
-      out.push({ x: x0 + c * 0.66 + (r % 2) * 0.33, y: SHELF_Y - 0.33 - r * 0.58, bomb: bombs.includes(i) });
-    }
-  }
-  return out;
+/** 床の上に横一列 */
+function row(kind: GemKind, x0: number, n: number, gap: number, y = FLOOR_Y): GemDef[] {
+  const g = GEMS[kind];
+  const hh = g.shape === 'circle' ? g.w : g.h / 2;
+  return Array.from({ length: n }, (_, i) => ({ kind, x: +(x0 + i * gap).toFixed(2), y: +(y - hh - 0.01).toFixed(2) }));
 }
-
-/** 落とし口の真下の柱（落ちた精霊を左右へ振り分ける） */
-const SPLIT = { x: 7, y: 11.2, r: 0.5 };
+/** 床の上の宝石箱 */
+function floorBox(x: number, w: number, h: number, mult: number): BoxDef {
+  return { x, y: FLOOR_Y - h - 0.2, w, h, mult };
+}
 
 export const clawStages: ClawStage[] = [
   {
-    id: 'mc-1', name: '月の爪', hint: '爪を山の上へ動かし、下ろして掴む。落とし口の上で止まってから開こう',
-    spirits: pile(1.5, 5, 2),
-    goals: [{ x: 2.2, y: 14.2, r: 1.0, mult: 1 }, { x: 11.8, y: 14.2, r: 1.0, mult: 1 }],
-    posts: [SPLIT],
-    need: 3,
+    id: 'mc-1', name: '月の爪',
+    hint: '爪を水晶の真上へ。開いて（Z）下ろし（↓）、閉じて（X）持ち上げる。宝石箱の上で開けば納まる',
+    gems: row('crystal', 3, 4, 1.8),
+    boxes: [floorBox(15.5, 3.6, 1.4, 1)],
+    need: 3, startX: 6,
   },
   {
-    id: 'mc-2', name: '両岸の山', hint: '山は左右に二つ。真ん中の高い巣穴は ×2',
-    spirits: [...pile(1.2, 4, 2), ...pile(9.9, 4, 2)],
-    goals: [{ x: 1.6, y: 13.4, r: 0.85, mult: 1 }, { x: 12.4, y: 13.4, r: 0.85, mult: 1 }, { x: 7, y: 13.6, r: 0.6, mult: 2 }],
-    posts: [SPLIT, { x: 7, y: 14.8, r: 0.35 }],
-    need: 4,
+    id: 'mc-2', name: '転がる真珠',
+    hint: '真珠は丸くて滑る（2点）。指先の鉤の上に乗せるように、深く下ろしてから閉じよう',
+    gems: [...row('pearl', 2.5, 3, 1.7), ...row('crystal', 8.5, 2, 1.8)],
+    boxes: [floorBox(16, 3.4, 1.4, 1)],
+    need: 6, startX: 5,
   },
   {
-    id: 'mc-3', name: '月のバンパー', hint: '丸い月のバンパーは精霊を弾き返す。暴れる精霊を巣穴へ',
-    spirits: pile(9.6, 5, 2),
-    goals: [{ x: 1.5, y: 11.6, r: 0.8, mult: 2 }, { x: 12.5, y: 11.6, r: 0.8, mult: 2 }, { x: 7, y: 16.6, r: 0.55, mult: 1 }],
-    posts: [{ ...SPLIT, kick: 8 }, { x: 4.4, y: 14.2, r: 0.55, kick: 9 }, { x: 9.6, y: 14.2, r: 0.55, kick: 9 }],
-    need: 10,
+    id: 'mc-3', name: '高い台',
+    hint: '台の上の宝石箱は ×2。高く持ち上げてから運ぼう',
+    gems: [...row('crystal', 2.5, 3, 1.8), ...row('pearl', 8, 2, 1.7)],
+    blocks: [{ x: 16.6, y: 7.6, w: 4.2, h: FLOOR_Y - 7.6 }],
+    boxes: [{ x: 16.9, y: 7.6 - 1.4 - 0.2, w: 3.6, h: 1.4, mult: 2 }, floorBox(11.2, 3.2, 1.2, 1)],
+    need: 10, startX: 6,
   },
   {
-    id: 'mc-4', name: '星の雪崩', hint: '赤い爆弾精霊は強くぶつかると弾ける。山の上へ落とせば、精霊が雪崩のように落とし口へ',
-    spirits: pile(2.3, 6, 3, [14]),
-    goals: [{ x: 1.6, y: 13, r: 0.8, mult: 1 }, { x: 12.4, y: 13, r: 0.8, mult: 1 }, { x: 7, y: 14.4, r: 0.55, mult: 3 }],
-    posts: [SPLIT, { x: 4.6, y: 16.4, r: 0.35 }, { x: 9.4, y: 16.4, r: 0.35 }],
-    need: 8,
+    id: 'mc-4', name: '月長石',
+    hint: '月長石は重い（3点）。しっかり閉じて、ゆっくり動かそう — 急に動くと振れて落ちる',
+    gems: [...row('moonstone', 3, 3, 2.0), ...row('crystal', 9.4, 2, 1.8)],
+    boxes: [floorBox(16, 3.6, 1.4, 1)],
+    need: 9, startX: 6,
   },
   {
-    id: 'mc-5', name: '揺れる巣穴', hint: '巣穴が左右に揺れる。来る時に合わせて弾け',
-    spirits: [...pile(1.0, 4, 2), ...pile(10.2, 4, 2)],
-    goals: [{ x: 7, y: 12.6, r: 0.7, mult: 2, move: { amp: 4.2, speed: 1.1 } }, { x: 7, y: 15.4, r: 0.6, mult: 1, move: { amp: 3.6, speed: 1.6, phase: 2 } }],
-    posts: [SPLIT],
-    need: 6,
-    timeScale: 0.9,
+    id: 'mc-5', name: '星の結晶',
+    hint: '星の結晶は細長い（2点）。真ん中を挟まないと傾いて抜ける。細い宝石箱は ×2',
+    gems: [...row('shard', 2.6, 3, 2.2), ...row('pearl', 9.6, 2, 1.7)],
+    boxes: [floorBox(17.5, 1.6, 1.6, 2), floorBox(12.6, 3.4, 1.2, 1)],
+    need: 10, startX: 6,
   },
   {
-    id: 'mc-6', name: '仕切りの棚', hint: '棚が低い壁で仕切られている。遠い山から、こぼさずに速く運べ',
-    spirits: [...pile(0.6, 3, 2), ...pile(11.2, 3, 2), ...pile(3.4, 3, 1)],
-    fences: [{ x: 2.6, h: 0.9 }, { x: 11.0, h: 0.9 }],
-    goals: [{ x: 1.4, y: 12.2, r: 0.75, mult: 2 }, { x: 12.6, y: 12.2, r: 0.75, mult: 2 }, { x: 7, y: 16.8, r: 0.5, mult: 1 }],
-    posts: [{ ...SPLIT, kick: 7 }],
-    need: 10,
-    timeScale: 0.8,
-  },
-  {
-    id: 'mc-7', name: '連鎖の山', hint: '爆弾が三つ。一つを弾けさせれば、隣の爆弾も弾ける',
-    spirits: pile(1.4, 7, 3, [2, 9, 15]),
-    goals: [{ x: 1.4, y: 12.4, r: 0.75, mult: 2 }, { x: 12.6, y: 12.4, r: 0.75, mult: 2 }, { x: 7, y: 15, r: 0.55, mult: 3, move: { amp: 2.5, speed: 1.3 } }],
-    posts: [SPLIT, { x: 4.2, y: 14.8, r: 0.5, kick: 8 }, { x: 9.8, y: 14.8, r: 0.5, kick: 8 }],
-    need: 11,
-    timeScale: 0.85,
-  },
-  {
-    id: 'mc-8', name: '高い巣穴', hint: '巣穴は棚のすぐ下。フリッパーの先で強く打ち上げろ',
-    spirits: [...pile(1.0, 4, 2, [5]), ...pile(10.0, 4, 2, [2])],
-    goals: [{ x: 3.2, y: 10.4, r: 0.7, mult: 3 }, { x: 10.8, y: 10.4, r: 0.7, mult: 3 }, { x: 1.2, y: 15.6, r: 0.6, mult: 1 }, { x: 12.8, y: 15.6, r: 0.6, mult: 1 }],
-    posts: [SPLIT, { x: 7, y: 15.2, r: 0.5, kick: 9 }],
-    need: 13,
-    timeScale: 0.85,
-  },
-  {
-    id: 'mc-9', name: '満月', hint: '揺れる巣穴、バンパー、爆弾、仕切り。全部の技で',
-    spirits: [...pile(0.6, 3, 2, [1]), ...pile(3.4, 3, 2), ...pile(9.0, 4, 2, [6]), ...pile(11.6, 3, 1)],
-    fences: [{ x: 2.8, h: 0.8 }, { x: 11.4, h: 0.8 }],
-    goals: [{ x: 7, y: 12.4, r: 0.6, mult: 3, move: { amp: 4.6, speed: 1.4 } }, { x: 1.3, y: 14.4, r: 0.65, mult: 1 }, { x: 12.7, y: 14.4, r: 0.65, mult: 1 }],
-    posts: [{ ...SPLIT, kick: 8 }, { x: 4.4, y: 16.2, r: 0.45, kick: 8 }, { x: 9.6, y: 16.2, r: 0.45, kick: 8 }],
-    need: 11,
-    timeScale: 1,
+    id: 'mc-6', name: '宝石の山',
+    hint: '台の上の宝石の山。崩さないように上から順に。宙に浮かぶ宝石箱は ×2',
+    blocks: [{ x: 2, y: 10.4, w: 6, h: FLOOR_Y - 10.4 }],
+    gems: [
+      ...row('crystal', 2.6, 4, 1.5, 10.4), ...row('pearl', 3.3, 3, 1.5, 10.4 - 0.5),
+      ...row('moonstone', 10.2, 2, 2.0),
+    ],
+    boxes: [floorBox(17.4, 3.4, 1.4, 1), { x: 12.8, y: 6.2, w: 2.6, h: 1.2, mult: 2 }],
+    need: 11, startX: 5,
   },
 ];

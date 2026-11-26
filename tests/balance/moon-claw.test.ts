@@ -10,7 +10,7 @@ import { clawStages } from '../../games/moon-claw/src/stages';
 import { ClawBot } from '../../games/moon-claw/src/bot';
 
 it('moon-claw balance report', () => {
-  const lines = ['# Moon Claw 難易度レポート', '', `ボット（skill が低いほど運ぶのが速くて雑・弾く時がずれる）。各欄は シード3つのクリア数／平均の点／クリアした時の平均秒。生成: ${new Date().toISOString()}`, ''];
+  const lines = ['# Moon Claw 難易度レポート', '', `ボット（MC-10 の物理の爪。skill が低いほど狙いがずれ、運ぶのが雑）。各欄は シード3つのクリア数／平均の点／クリアした時の平均秒。生成: ${new Date().toISOString()}`, ''];
   for (const preset of ['やさしい', 'ふつう', 'むずかしい']) {
     lines.push(`## ${preset}`, '', '| # | ステージ | 必要 | skill 0.5 | skill 0.7 | skill 0.9 |', '|---|---|---|---|---|---|');
     clawStages.forEach((st, i) => {
@@ -19,7 +19,7 @@ it('moon-claw balance report', () => {
         for (const seed of [1, 2, 3]) {
           const sim = new ClawSim(st, toClaw({ ...presets[preset] }));
           const bot = new ClawBot(skill, seed);
-          while (sim.phase === 'play') { const a = bot.act(sim); sim.step(a.bits, a.x); }
+          while (sim.phase === 'play') { const a = bot.act(sim); sim.step(a.bits, a.target); }
           pts += sim.score;
           if (sim.phase === 'clear') { clears++; secs += sim.time; }
         }

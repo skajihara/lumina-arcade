@@ -62,8 +62,8 @@ export const games: GameEntry[] = [
     at: [0.47, 0.43], hue: '#9fc0ff',
   },
   {
-    id: 'moon-claw', title: 'Moon Claw', jp: '月の爪クレーン', status: 'ready', stages: 9,
-    desc: '上はクレーン、下はピンボール。月の爪で精霊を掴み、そっと落として、弾いて巣穴へ。',
+    id: 'moon-claw', title: 'Moon Claw', jp: '月の爪クレーン', status: 'ready', stages: 6,
+    desc: '物理の月の爪で宝石を挟んで持ち上げ、宝石箱へ。重い月長石・転がる真珠・細長い星の結晶。',
     shape: [[0.5, 0.5], [0.35, 0.1], [0.12, 0.4], [0.2, 0.78], [0.55, 0.92], [0.8, 0.7]], edges: [[1, 2], [2, 3], [3, 4], [4, 5], [5, 0], [0, 1]],
     at: [0.87, 0.68], hue: '#ffe7a8',
   },
