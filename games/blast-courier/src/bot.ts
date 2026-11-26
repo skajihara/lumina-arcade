@@ -22,8 +22,8 @@ export class CourierBot {
     const n = sim.stage.nest;
     const cands: CourierAction[] = [];
     // 飛んでいる間は少なめに試す（空中でもう一吹き）
-    const angs = moving ? 10 : this.skill > 0.7 ? 24 : 14;
-    const pows = moving ? [0.35, 0.65] : this.skill > 0.7 ? [0.25, 0.4, 0.55, 0.68, 0.78] : [0.35, 0.55, 0.75];
+    const angs = moving ? 8 : this.skill > 0.7 ? 20 : 12;
+    const pows = moving ? [0.35, 0.65] : this.skill > 0.7 ? [0.28, 0.44, 0.6, 0.76] : [0.35, 0.55, 0.75];
     for (const k of sim.stage.kinds) {
       if (k === 'push') {
         for (let i = 0; i < angs; i++) {
@@ -49,7 +49,7 @@ export class CourierBot {
     // 先読み：止まるか、雲海に落ちるか、5 秒まで
     const run = (c: CourierSim) => {
       let ob = false, still = 0, near = 1e9;
-      for (let i = 0; i < HZ * 5 && c.phase === 'play'; i++) {
+      for (let i = 0; i < HZ * 3.5 && c.phase === 'play'; i++) {
         c.step();
         if (c.events.some((q) => q.t === 'ob')) { ob = true; break; }
         const q = c.eggPos;
@@ -64,12 +64,15 @@ export class CourierBot {
       // 止まった所と、途中で一番巣に近づいた所の両方を見る（上昇気流で上がってから、空中でもう一吹きできる）
       return -(d * 0.7 + near * 0.3) * 10 - c.cracks * 60 - (c.phase === 'fail' ? 1e5 : 0) - (ob ? 400 : 0);
     };
-    const base = run(sim.clone()) + (moving ? 0 : -1e4);
+    const raw = run(sim.clone());
+    // 何もしなくても巣で落ち着くなら撃たない
+    if (raw >= 1e6) return null;
+    const base = raw + (moving ? 0 : -1e4);
     let best: { s: number; c: CourierAction } | null = null;
     for (const cand of cands) {
       const c = sim.clone();
       if (!c.act(cand)) continue;
-      let s = run(c) - 15; // 1回撃つぶんの重み
+      let s = run(c) - 45; // 1回撃つぶんの重み（巣まで 4.5 m 近づかないなら撃たない＝無駄撃ちしない）
       // 昇る：一番高い所で横へもう一吹きする続きまで読む（上がって→運ぶ、の組み合わせ）
       if (cand.k === 'lift' && sim.stage.kinds.includes('push')) {
         const up = sim.clone();
@@ -83,13 +86,13 @@ export class CourierBot {
           for (const pw of [0.35, 0.55, 0.7]) {
             const c3 = c2.clone();
             if (!c3.act({ k: 'push', x: q.x, y: q.y, ax: Math.cos(a), ay: Math.sin(a), p: pw })) continue;
-            s = Math.max(s, run(c3) - 30);
+            s = Math.max(s, run(c3) - 90);
           }
         }
       }
       if (!best || s > best.s) best = { s, c: cand };
     }
-    if (!best || best.s <= base) return null;
+    if (!best || best.s <= base + (moving ? 25 : 0)) return null;
     // 下手なほど、向き・強さ・置く所がぶれる
     const j = (1 - this.skill) * 0.6;
     const c = best.c;

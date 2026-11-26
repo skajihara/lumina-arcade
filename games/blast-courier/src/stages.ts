@@ -40,7 +40,7 @@ export const courierStages: CourierStage[] = [
     start: { x: 5, y: 14.9 }, nest: { x: 25, y: 4.5, w: 2.2 },
     islands: [{ pts: flat(1, 11, 15.4) }, { pts: flat(20, 29, 4.5, 2) }],
     thorns: [spike(15, 4, 18, 9)],
-    kinds: ['push', 'pull', 'lift'], par: 5, maxBlasts: 14,
+    kinds: ['push', 'pull', 'lift'], par: 6, maxBlasts: 14,
   },
   {
     id: 'bc-5', name: '遅れ火', hint: '4 の「遅れ」は 1 秒後に強く弾ける。坂を転がる卵の先に置いて、通る時に合わせろ',
@@ -60,21 +60,21 @@ export const courierStages: CourierStage[] = [
     islands: [{ pts: flat(1, 8, 13.4) }, { pts: flat(14, 18, 9.5, 1.6) }, { pts: flat(24, 31, 12.5) }],
     thorns: [spike(11, 3, 18, 12), spike(21, 3, 18, 11.5)],
     clouds: [{ x: 16, y: 6.5, rx: 2.5, ry: 0.9 }],
-    kinds: ['push', 'pull', 'lift'], par: 4, maxBlasts: 14,
+    kinds: ['push', 'pull', 'lift'], par: 5, maxBlasts: 14,
   },
   {
     id: 'bc-8', name: '雲の階段', hint: '雲を踏み台に、高い巣へ。上昇気流は雲の中でも効く',
     start: { x: 3, y: 15.4 }, nest: { x: 28, y: 3.5, w: 2.2 },
     islands: [{ pts: flat(1, 9, 15.9) }, { pts: flat(15, 19, 11, 1.6) }, { pts: flat(24, 31, 3.5, 1.6) }],
     clouds: [{ x: 12, y: 12.5, rx: 3, ry: 1 }, { x: 21, y: 7, rx: 3, ry: 1 }],
-    kinds: ['push', 'pull', 'lift'], par: 7, maxBlasts: 18,
+    kinds: ['push', 'pull', 'lift'], par: 5, maxBlasts: 18,
   },
   {
     id: 'bc-9', name: '天の川渡し', hint: '動く島、棘、遠い巣。遅れ火で、島が来る時に合わせて飛ばせ',
     start: { x: 2.5, y: 9.9 }, nest: { x: 29, y: 7.5, w: 2.0 },
     islands: [{ pts: flat(1, 6, 10.4) }, { pts: flat(8, 11, 12, 1.3), move: { dx: 0, dy: -5, period: 5 } }, { pts: flat(14, 18, 10.5, 1.6) }, { pts: flat(21, 24, 9, 1.3), move: { dx: 0, dy: 4, period: 6 } }, { pts: flat(27, 31, 7.5) }],
     thorns: [spike(12.5, 2.5, 18, 13), spike(19.5, 2.5, 18, 12.5), spike(25.5, 2.5, 18, 12)],
-    kinds: ['push', 'pull', 'delay'], par: 6, maxBlasts: 18,
+    kinds: ['push', 'pull', 'delay'], par: 4, maxBlasts: 18,
   },
   {
     id: 'bc-10', name: '星の巣へ', hint: '四つの爆風、全部の技で。空の真ん中の巣まで',
@@ -82,6 +82,6 @@ export const courierStages: CourierStage[] = [
     islands: [{ pts: flat(1, 6, 15.9) }, { pts: flat(10, 15, 13, 1.3) }, { pts: flat(25, 31, 10.5) }, { pts: flat(13.5, 18.5, 5.5, 1.4) }],
     clouds: [{ x: 27, y: 6.5, rx: 2.2, ry: 0.8 }],
     thorns: [spike(9, 3, 18, 14), spike(22, 3, 18, 13)],
-    kinds: ['push', 'pull', 'lift', 'delay'], par: 4, maxBlasts: 20,
+    kinds: ['push', 'pull', 'lift', 'delay'], par: 5, maxBlasts: 20,
   },
 ];
