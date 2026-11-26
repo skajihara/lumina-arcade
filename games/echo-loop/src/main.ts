@@ -16,7 +16,7 @@ import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { schema, presets, DEFAULT_PRESET, type EchoConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
-import { echoRules, handFrame } from './rules';
+import { echoRules, handFrame, shrinkFrame } from './rules';
 import { EchoSim, echoBias } from './sim';
 import { HZ, type SimEvent } from '../../nova-pinball/src/sim';
 import { NovaView, VIEW_H, VIEW_W, SCALE, chainTier } from '../../nova-pinball/src/view';
@@ -164,7 +164,7 @@ async function main() {
     hudApi.chain(0);
     hudApi.toast(stages[i].hint);
     // このステージで初めて出てくる要素の図解（RULE-01c）：1面は残響、4面は共鳴
-    { const r = echoRules(cfg.loopSec); const id = stages[i].id; introCard(id === 'echo-bridge' ? r[1] : id === 'echo-clock' && cfg.hand > 0 ? handFrame : id === 'echo-twin' && cfg.resonance > 0 && r[3] ? r[3] : null, id === 'echo-bridge' ? '残響' : id === 'echo-clock' ? '時計の針' : '共鳴'); }
+    { const r = echoRules(cfg.loopSec, cfg.echoTwist); const id = stages[i].id; introCard(id === 'echo-bridge' ? r[1] : id === 'echo-clock' && cfg.hand > 0 ? handFrame : id === 'echo-mirror' && Math.round(cfg.echoTwist) === 1 ? shrinkFrame : id === 'echo-twin' && cfg.resonance > 0 && r[3] ? r[3] : null, id === 'echo-bridge' ? '残響' : id === 'echo-clock' ? '時計の針' : id === 'echo-mirror' ? '縮む時間' : '共鳴'); }
     mode = 'play';
     resultTimer = -1;
     bot = new NovaBot(i + 1, 0.85);
@@ -231,7 +231,7 @@ async function main() {
       <div class="grid"></div>
       <div class="keys"><kbd>←</kbd>/<kbd>Z</kbd> 左フリッパー　<kbd>→</kbd>/<kbd>/</kbd> 右フリッパー　<kbd>Space</kbd> 長押しで発射<br>
       <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>フリッパーはループごとに自分専用（過去の自分のフリッパーは淡い紫の影）<br>スマホ：画面の左下／右下でフリッパー、上半分で発射</div>`;
-    menu.querySelector('.rulebox')!.replaceWith(ruleCards(echoRules(cfg.loopSec)));
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(echoRules(cfg.loopSec, cfg.echoTwist)));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -266,7 +266,7 @@ async function main() {
       m.onclick = showTitle;
       row.append(c, r, m, launcherButton());
       menu.appendChild(settingsRow(tuning.gui, () => tuning.toggle()));
-      menu.appendChild(ruleCards(echoRules(cfg.loopSec)));
+      menu.appendChild(ruleCards(echoRules(cfg.loopSec, cfg.echoTwist)));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
@@ -294,6 +294,8 @@ async function main() {
 
   /** 全員そろって燃やしきった瞬間：残響ひとりひとりから光が弾け、和音が人数分だけ積み上がる */
   let finaleT = -1;
+  /** 縮む時間：共鳴で時間を取り戻した時の時計の波紋 */
+  let regainFx = 0;
   const onAllClear = () => {
     if (!es || !view) return;
     const n = es.loop + 1;
@@ -307,7 +309,7 @@ async function main() {
     }
     synth.arp(Array.from({ length: Math.min(12, n + 4) }, (_, k) => k), 0.07, 0.11);
     synth.pad(0.07, 4);
-    hudApi.toast(`${n} 人の自分が、同じ ${cfg.loopSec} 秒で`);
+    hudApi.toast(`${n} 人の自分が、同じ ${+es.loopSecNow.toFixed(1)} 秒で`);
   };
 
   /** ループが巻き戻った瞬間 */
@@ -319,6 +321,10 @@ async function main() {
     loopNote = loop === 1
       ? { text: '巻き戻った — 前の自分（残響）が、同じ動きをくり返す\n✕ は残響がこれから当てる星。残りの星をねらえ', t: 0 }
       : { text: `LOOP ${loop + 1} — 残響 ${loop} 人が、それぞれの動きをくり返す`, t: 0 };
+    if (es && Math.round(es.cfg.echoTwist) === 1 && es.loopSecNow < es.cfg.loopSec) {
+      loopNote.text += `\nループは ${+es.loopSecNow.toFixed(1)} 秒に縮んだ — 共鳴で取り戻せる`;
+    }
+    if (es && Math.round(es.cfg.echoTwist) === 2 && loop === 1) loopNote.text += '\n残響が壊した星は「影」— 少しすると戻る';
     rewritten.clear();
     attachView();
     rewindFx = 1;
@@ -387,6 +393,22 @@ async function main() {
           juice.doFlash(0.35, 0xe8dcff);
           synth.arp([0, 4, 7, 12], 0.03, 0.1);
           hudApi.toast('共鳴 — 過去の自分と重なった');
+        }
+        else if (e.t === 'regain') {
+          // 縮む時間：共鳴でこのループの時間を取り戻した。時の粒が上の時計の帯へ飛ぶ
+          view.particles.emit(e.x * SCALE, e.y * SCALE, { count: 40, speed: [80, 360], life: [0.5, 1.2], size: [0.05, 0.18], color: [0x9fe8ff, 0xffffff], drag: 1.2 });
+          synth.arp([12, 16, 19], 0.04, 0.08);
+          regainFx = 1;
+          hudApi.toast(`共鳴 — 時間を ${e.sec.toFixed(1)} 秒取り戻した`);
+        }
+        else if (e.t === 'shadow') {
+          if (es.loop === before) view.particles.emit(e.x * SCALE, e.y * SCALE, { count: 10, speed: [20, 90], life: [0.6, 1.2], size: [0.05, 0.14], color: [0x8a7cc8, 0x5a6fa8] });
+        }
+        else if (e.t === 'revive') {
+          if (es.loop === before) {
+            view.particles.emit(e.x * SCALE, e.y * SCALE, { count: 18, speed: [40, 160], life: [0.3, 0.8], size: [0.05, 0.16], color: [0xa38cff, 0xffffff] });
+            synth.tone(392, 0.25, { type: 'sine', vol: 0.05, slideTo: 523 });
+          }
         }
         else if (e.t !== 'loopStart' && e.t !== 'loopEnd' && es.loop === before) view.handle(e as SimEvent);
       }
@@ -601,14 +623,36 @@ async function main() {
       g.circle(cx, cy, 20 + 60 * k2).stroke({ width: 3, color: 0xffe7a8, alpha: Math.max(0, 0.7 - finaleT * 0.2) });
     }
     // ループの時計（盤面の上端の光の帯。残り2秒で桃色に。最後のループは金）
+    // 影：残響が壊した星の跡（戻るまでの残りを細い輪で）
+    for (const [id, until] of es.shadows) {
+      const d = es.stage.stars[id];
+      if (!d) continue;
+      const rest = Math.max(0, (until - es.sim.tick) / (es.cfg.shadowSec * HZ));
+      const x = d.x * SCALE, y = d.y * SCALE, r = (d.r ?? 0.5) * SCALE;
+      g.circle(x, y, r).stroke({ width: 1.5, color: 0x8a7cc8, alpha: 0.5 });
+      g.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * rest).stroke({ width: 2, color: 0xa38cff, alpha: 0.8 });
+    }
+    // ループの時計（盤面の上端の光の帯）。縮む時間：帯の長さは元の秒数のまま、縮んだ分は右端に暗い赤で
+    const full = es.cfg.loopSec, nowSec = es.loopSecNow;
     const k = Math.min(1, t / es.loopTicks);
-    const left = es.cfg.loopSec * (1 - k);
+    const left = nowSec * (1 - k);
     const col = left < 2 ? lerpColor(0xffa3e0, 0xffffff, 0.5 + 0.5 * Math.sin(t * 0.3)) : lastLoop ? 0xffd27f : 0xc9a3ff;
     const x0 = 3.0 * SCALE, x1 = 11.8 * SCALE, y = 0.32 * SCALE;
     g.moveTo(x0, y).lineTo(x1, y).stroke({ width: 3, color: 0x2a2450, alpha: 0.9, cap: 'round' });
-    g.moveTo(x0, y).lineTo(x0 + (x1 - x0) * (1 - k), y).stroke({ width: 3, color: col, alpha: 0.95, cap: 'round' });
-    for (let s = 1; s < es.cfg.loopSec; s++) {
-      const x = x0 + ((x1 - x0) * s) / es.cfg.loopSec;
+    const xs = (sec: number) => x0 + ((x1 - x0) * sec) / full;
+    if (nowSec < full - 1e-6) {
+      // 縮んだ分（残響の数だけ失った時間）
+      g.moveTo(xs(nowSec), y).lineTo(x1, y).stroke({ width: 5, color: 0x8a2c58, alpha: 0.85 });
+      for (let sx = xs(nowSec) + 4; sx < x1; sx += 7) g.moveTo(sx, y - 3).lineTo(sx - 4, y + 3).stroke({ width: 1, color: 0xff7fb0, alpha: 0.5 });
+      g.circle(xs(nowSec), y, 3.5).fill({ color: 0xff9fc8, alpha: 0.9 });
+    }
+    if (regainFx > 0) {
+      regainFx = Math.max(0, regainFx - dt * 1.4);
+      g.circle(xs(nowSec), y, 4 + (1 - regainFx) * 26).stroke({ width: 2, color: 0x9fe8ff, alpha: regainFx });
+    }
+    g.moveTo(x0, y).lineTo(xs(left), y).stroke({ width: 3, color: col, alpha: 0.95, cap: 'round' });
+    for (let s = 1; s < full; s++) {
+      const x = xs(s);
       g.circle(x, y, 1.5).fill({ color: 0xffffff, alpha: 0.35 });
     }
     // 巻き戻りの波紋

@@ -27,7 +27,9 @@ export type EchoEvent =
   | { t: 'loopStart'; loop: number }
   | { t: 'loopEnd'; loop: number; destroyed: number }
   | { t: 'echoClear'; loop: number }
-  | { t: 'echoFail' };
+  | { t: 'echoFail' }
+  | { t: 'shadow'; star: number; x: number; y: number; until: number }
+  | { t: 'regain'; sec: number; x: number; y: number };
 
 export class EchoSim {
   /** 今のループ番号（0 始まり）。今のボールの owner と同じ */
@@ -56,8 +58,20 @@ export class EchoSim {
   }
 
   get loopTicks(): number {
-    return Math.round(this.cfg.loopSec * HZ);
+    return Math.round(this.loopSecNow * HZ);
   }
+
+  /** このループの秒数（ひねり「縮む時間」では残響の数だけ短く、共鳴で取り戻した分だけ長い） */
+  get loopSecNow(): number {
+    if (Math.round(this.cfg.echoTwist) !== 1) return this.cfg.loopSec;
+    const base = Math.max(Math.min(this.cfg.minLoopSec, this.cfg.loopSec), this.cfg.loopSec - this.cfg.shrinkSec * this.loop);
+    return Math.min(this.cfg.loopSec, base + this.regained);
+  }
+
+  /** このループで共鳴して取り戻した秒（縮む時間） */
+  regained = 0;
+  /** 影：戻る予定の星（星の番号 → 戻るティック） */
+  shadows = new Map<number, number>();
 
   /** ループ内の経過秒 */
   get loopTime(): number {
@@ -98,6 +112,8 @@ export class EchoSim {
       this.hand = body;
     }
     this.current = [];
+    this.regained = 0;
+    this.shadows.clear();
     this.destroyedPerLoop[this.loop] = 0;
     this.destroyedIds[this.loop] = new Set();
     this.events.push({ t: 'loopStart', loop: this.loop });
@@ -147,12 +163,39 @@ export class EchoSim {
     this.sim.step(input);
     for (const b of this.sim.balls) if (b.launched && !this.launchedAt.has(b.id)) this.launchedAt.set(b.id, this.sim.tick);
     this.totalTicks++;
+    const twist = Math.round(this.cfg.echoTwist);
     for (const e of this.sim.events) {
       if (e.t === 'explode') {
         this.destroyedPerLoop[this.loop]++;
         this.destroyedIds[this.loop].add(e.star);
+        // 影：残響の連鎖で壊れた星は、しばらくすると戻る（今の自分の連鎖なら戻らない）
+        if (twist === 2 && e.owner !== undefined && e.owner >= 0 && e.owner !== this.loop) {
+          const until = this.sim.tick + Math.round(this.cfg.shadowSec * HZ);
+          this.shadows.set(e.star, until);
+          this.events.push(e, { t: 'shadow', star: e.star, x: e.x, y: e.y, until });
+          continue;
+        }
+        this.shadows.delete(e.star);
+      }
+      // 縮む時間：共鳴でこのループの時間を取り戻す
+      if (e.t === 'resonance' && twist === 1 && this.cfg.regainSec > 0) {
+        const before = this.loopSecNow;
+        this.regained += this.cfg.regainSec;
+        const sec = this.loopSecNow - before;
+        if (sec > 0) this.events.push(e, { t: 'regain', sec, x: e.x, y: e.y });
+        else this.events.push(e);
+        continue;
       }
       this.events.push(e);
+    }
+    if (twist === 2 && this.sim.phase === 'play') {
+      for (const [id, until] of [...this.shadows]) {
+        if (this.sim.tick < until) continue;
+        this.shadows.delete(id);
+        this.sim.reviveStar(id, Math.max(0, Math.round(this.cfg.maxCharge) - 1));
+        this.destroyedPerLoop[this.loop] = Math.max(0, this.destroyedPerLoop[this.loop] - 1);
+      }
+      this.events.push(...this.sim.events.filter((e) => e.t === 'revive'));
     }
     this.best = Math.max(this.best, this.destroyedPerLoop[this.loop]);
     if (this.sim.phase === 'clear') {

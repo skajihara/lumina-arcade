@@ -84,7 +84,8 @@ export type SimEvent =
   /** Echo Loop：違うループの自分がほぼ同時に同じ星へ当てた */
   | { t: 'resonance'; star: number; x: number; y: number; a: number; b: number }
   | { t: 'bump'; x: number; y: number; by?: number }
-  | { t: 'explode'; star: number; x: number; y: number; r: number; chain: number; last: boolean }
+  | { t: 'explode'; star: number; x: number; y: number; r: number; chain: number; last: boolean; owner?: number }
+  | { t: 'revive'; star: number; x: number; y: number }
   | { t: 'link'; a: number; b: number }
   | { t: 'fuse'; a: number; b: number; dur: number }
   | { t: 'supernova' }
@@ -232,6 +233,8 @@ export class NovaSim {
   /** ボールどうしをぶつけるか（Echo Loop 用。null なら常にぶつかる） */
   ballCollide: ((a: Ball, b: Ball) => boolean) | null = null;
   chainId = 0;
+  /** 今の連鎖を始めたボールの持ち主（Echo Loop の「影」で、だれの連鎖かを見る。分からなければ -1） */
+  chainOwner = -1;
   chainCount = 0;
   chainUntil = -1;
   bestChain = 0;
@@ -751,6 +754,23 @@ export class NovaSim {
     }
   }
 
+  /**
+   * 壊れた星を元の場所に戻す（Echo Loop のひねり「影」）。charge は戻った時のチャージ。
+   * そこにボールが重なっていても、星は静的なので押し出すだけ
+   */
+  reviveStar(id: number, charge: number): void {
+    const s = this.stars[id];
+    const d = this.stage.stars[id];
+    if (!s || !d || s.alive) return;
+    const body = this.world.createBody({
+      type: d.loose ? 'dynamic' : 'static', position: { x: d.x, y: d.y }, linearDamping: 1.2, angularDamping: 2, gravityScale: 0,
+      userData: { kind: 'star', id } as Tag,
+    });
+    body.createFixture(new Circle(s.r), { density: 0.6, restitution: 0.85, friction: 0.05 });
+    Object.assign(s, { body, alive: true, exploded: false, explodedChain: -1, charge, decay: 0, pendingAt: -1, blastChain: -1, resonant: false, lastOwner: -1, lastOwnerTick: -999, lastHit: this.tick });
+    this.events.push({ t: 'revive', star: id, x: d.x, y: d.y });
+  }
+
   private removeStar(s: Star): void {
     s.alive = false;
     this.world.destroyBody(s.body);
@@ -762,6 +782,7 @@ export class NovaSim {
     if (this.chainUntil < 0) {
       this.chainId++;
       this.chainCount = 0;
+      this.chainOwner = s.lastOwner;
     }
     this.chainCount++;
     this.bestChain = Math.max(this.bestChain, this.chainCount);
@@ -815,7 +836,7 @@ export class NovaSim {
     }
 
     const last = this.starsAlive() === 0 && !this.stars.some((x) => x.alive && x.pendingAt >= 0);
-    this.events.push({ t: 'explode', star: s.id, x: p.x, y: p.y, r: R, chain: this.chainCount, last });
+    this.events.push({ t: 'explode', star: s.id, x: p.x, y: p.y, r: R, chain: this.chainCount, last, owner: this.chainOwner });
 
     // 星座の線
     this.links.forEach(([a, b], i) => {
