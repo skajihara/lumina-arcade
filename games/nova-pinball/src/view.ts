@@ -72,6 +72,8 @@ export class NovaView {
   private linksDirty = true;
   /** 星座の線を走っている火（シミュレーション時間で進める） */
   private fuses: { a: number; b: number; start: number; dur: number }[] = [];
+  /** 満月の光（NP-18b）：月から星へ飛ぶ銀の光 */
+  private moonBeams: { x: number; y: number; tx: number; ty: number; age: number }[] = [];
   private bumperFlash: number[] = [];
   private gimmicks = new Graphics();
   private slingFlash = { L: 0, R: 0 };
@@ -228,6 +230,13 @@ export class NovaView {
         synth.tone(e.side === 'L' ? 523 : 587, 0.12, { type: 'square', vol: 0.06 * k, slideTo: 880 });
         this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 12, speed: [80, 260], life: [0.2, 0.45], size: [0.05, 0.12], color: this.palette[1] });
         this.juice.shake(0.06 * this.cfg.shake * k);
+        break;
+      }
+      case 'moonlight': {
+        this.moonBeams.push({ x: e.x * SCALE, y: e.y * SCALE, tx: e.tx * SCALE, ty: e.ty * SCALE, age: 0 });
+        synth.arp([12, 14, 16, 19], 0.03, 0.08);
+        this.particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [60, 220], life: [0.3, 0.8], size: [0.05, 0.14], color: [0xf4f1ff, 0xcfe6ff] });
+        this.hud.toast('満月の光 — 星がひとつ灯った');
         break;
       }
       case 'roll': {
@@ -460,6 +469,21 @@ export class NovaView {
         g.stroke({ width: 1.2, color: 0x9fb8ff, alpha: 0.28 });
       }
     });
+    // 満月の光：月から星へ、銀の光の筋が走って星で弾ける
+    for (const b of this.moonBeams) {
+      b.age += 1 / 60;
+      const k = Math.min(1, b.age / 0.35);
+      const cx = (b.x + b.tx) / 2, cy = (b.y + b.ty) / 2 - 80;
+      const at = (u: number) => ({ x: (1 - u) * (1 - u) * b.x + 2 * (1 - u) * u * cx + u * u * b.tx, y: (1 - u) * (1 - u) * b.y + 2 * (1 - u) * u * cy + u * u * b.ty });
+      const { x: hx, y: hy } = at(k);
+      const fade = b.age < 0.35 ? 1 : Math.max(0, 1 - (b.age - 0.35) / 0.4);
+      g.moveTo(b.x, b.y);
+      for (let j = 1; j <= 12; j++) { const q = at((k * j) / 12); g.lineTo(q.x, q.y); }
+      g.stroke({ width: 3, color: 0xf4f1ff, alpha: 0.7 * fade });
+      if (k < 1) g.circle(hx, hy, 5).fill({ color: 0xffffff, alpha: 0.95 });
+      else if (b.age < 0.45) g.circle(b.tx, b.ty, 10 + (b.age - 0.35) * 160).stroke({ width: 2, color: 0xf4f1ff, alpha: fade });
+    }
+    this.moonBeams = this.moonBeams.filter((b) => b.age < 0.8);
     // 線を走る火：明るい頭と、燃えた後の尾
     const now = this.sim.time;
     this.fuses = this.fuses.filter((f) => now >= f.start && now - f.start < f.dur + 0.25);

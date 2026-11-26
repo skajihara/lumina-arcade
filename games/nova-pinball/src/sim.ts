@@ -92,6 +92,7 @@ export type SimEvent =
   | { t: 'bump'; x: number; y: number; by?: number }
   | { t: 'explode'; star: number; x: number; y: number; r: number; chain: number; last: boolean; owner?: number }
   | { t: 'revive'; star: number; x: number; y: number }
+  | { t: 'moonlight'; side: 'L' | 'R'; star: number; x: number; y: number; tx: number; ty: number }
   | { t: 'link'; a: number; b: number }
   | { t: 'fuse'; a: number; b: number; dur: number }
   | { t: 'supernova' }
@@ -657,6 +658,9 @@ export class NovaSim {
     return this.balls.find((b) => b.id === ballId)?.owner ?? 0;
   }
 
+  /** 満月の光を最後に出した満月の番号（月ごと） */
+  private moonLit: Record<'L' | 'R', number> = { L: -1, R: -1 };
+
   /** 月のバンパーを使うか（設定 slingMode 1） */
   get moonMode(): boolean {
     return Math.round(this.cfg.slingMode ?? 1) === 1;
@@ -686,6 +690,26 @@ export class NovaSim {
     ball.setAwake(true);
     if (full > 0.85) this.score += 30;
     this.events.push({ t: 'sling', side, x: c.x, y: c.y, by });
+    // 満月の光（NP-18b）：満月で当てると（1回の満月に1度だけ）、一番近い「灯っていない」星（なければ一番チャージの少ない星）へ光が飛んで1つ灯す
+    // 1回の満月で灯せるのは1つだけ（月ごと）
+    const cycle = Math.floor(this.tick / HZ / Math.max(1, this.cfg.moonPeriod ?? 6) + (side === 'R' ? 0.5 : 0) + 0.5);
+    // まん丸の満月（0.97 以上、6 秒の周期のうち約 0.7 秒）の時だけ。満ち欠けを読んで当てる遊び
+    if (full > 0.97 && (this.cfg.moonCharge ?? 0) > 0 && this.moonLit[side] !== cycle) {
+      this.moonLit[side] = cycle;
+      let best: Star | null = null, bk = 1e9;
+      for (const s of this.stars) {
+        if (!s.alive || s.pendingAt >= 0) continue;
+        const q = s.body.getPosition();
+        const k = s.charge * 100 + Math.hypot(q.x - c.x, q.y - c.y);
+        if (k < bk) { bk = k; best = s; }
+      }
+      if (best) {
+        const q = best.body.getPosition();
+        best.decay = 0;
+        this.addCharge(best, 1);
+        this.events.push({ t: 'moonlight', side, star: best.id, x: c.x, y: c.y, tx: q.x, ty: q.y });
+      }
+    }
   }
 
   private slingKick(ball: Body, side: 'L' | 'R', by = 0): void {
