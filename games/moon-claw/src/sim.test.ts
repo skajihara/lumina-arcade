@@ -46,4 +46,17 @@ describe('ClawSim（物理の爪）', () => {
     pick(a, 'pearl'); pick(b, 'pearl');
     expect(a.digest()).toEqual(b.digest());
   });
+
+  it('同じ種類を続けて納めるとコンボで点が増える（1点 → 2点）', () => {
+    const st: ClawStage = { id: 't', name: 't', hint: '', gems: [{ kind: 'crystal', x: 6, y: FLOOR_Y - 0.26 }, { kind: 'crystal', x: 9, y: FLOOR_Y - 0.26 }], boxes: [{ x: 16, y: FLOOR_Y - 2, w: 3, h: 1.6, mult: 1 }], need: 3, startX: 6 };
+    const sim = new ClawSim(st, { ...defaults, timeLimit: 999 });
+    // 宝石を直接箱の中へ置いて、順に納める
+    sim.gems[0].body.setPosition({ x: 17.5, y: FLOOR_Y - 1 });
+    for (let i = 0; i < 240; i++) sim.step(0);
+    expect(sim.score).toBe(1);
+    sim.gems[1].body.setPosition({ x: 17.5, y: FLOOR_Y - 1 });
+    for (let i = 0; i < 240; i++) sim.step(0);
+    expect(sim.score).toBe(3);
+    expect(sim.phase).toBe('clear');
+  });
 });

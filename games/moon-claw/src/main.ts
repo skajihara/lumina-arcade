@@ -250,7 +250,7 @@ async function main() {
     if (key === 'volume') synth.setVolume(cfg.volume);
     if (key === 'bloom') ga.setBloom(cfg.bloom);
     // ルールの値は今のプレイにもすぐ反映（↻ の項目はやり直しで）
-    Object.assign(sim.cfg, { clawSpeed: cfg.clawSpeed, clawAccel: cfg.clawAccel, fingerSpeed: cfg.fingerSpeed, fingerTorque: cfg.fingerTorque, settle: cfg.settle });
+    Object.assign(sim.cfg, { clawSpeed: cfg.clawSpeed, clawAccel: cfg.clawAccel, fingerSpeed: cfg.fingerSpeed, fingerTorque: cfg.fingerTorque, settle: cfg.settle, comboMax: cfg.comboMax });
   });
   synth.setVolume(cfg.volume);
   synth.setMusicStyle('moon');
@@ -328,7 +328,8 @@ async function main() {
         const tl0 = sim.timeLeft;
         tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${sim.score} / ${st.need}</div>
           <div style="font-size:14px;color:${tl0 < 15 ? '#ff9f9f' : 'var(--dim)'}">残り ${tl0.toFixed(0)} 秒　宝石 ${left}</div>
-          ${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}${sim.time < 9 ? `<div style="font-size:13px;color:var(--gold);max-width:420px;margin-top:8px;line-height:1.6;opacity:${Math.min(1, (9 - sim.time) / 1.5).toFixed(2)}">${st.hint}</div>` : ''}`;
+          ${sim.lastKind && sim.cfg.comboMax > 1 ? `<div style="font-size:13px;color:#${GEMS[sim.lastKind].color.toString(16).padStart(6, '0')}">次も${GEMS[sim.lastKind].name}なら ×${Math.min(sim.combo + 1, sim.cfg.comboMax)}</div>` : ''}
+          ${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}${sim.time < 9 ? `<div style="font-size:13px;color:var(--gold);max-width:190px;margin-top:8px;line-height:1.6;opacity:${Math.min(1, (9 - sim.time) / 1.5).toFixed(2)}">${st.hint}</div>` : ''}`;
       }
       tbar.update();
       hook.frames++;
@@ -348,7 +349,7 @@ async function main() {
         if (e.speed > 6) juice.shake(0.08);
       } else if (e.t === 'home') {
         // 解放：宝石が箱の中で落ち着いた瞬間。光の柱・高い和音・点数の飛び出し。コンボで強く
-        const big = e.value * e.mult;
+        const big = e.gain;
         juice.hitstop(0.04 + 0.01 * big);
         juice.shake(0.12 + 0.05 * big);
         if (big >= 4) { juice.slowmo(0.5, 0.35); juice.doFlash(0.2, 0xffe7a8); }
@@ -356,7 +357,13 @@ async function main() {
         particles.emit(px(e.x), py(e.y), { count: 30 + 14 * big, speed: [60, 300], life: [0.4, 1.1], size: [0.05, 0.18], color: [GEMS[sim.gems[e.id].kind].color, 0xfff1c8, 0xffffff] });
         shock.push({ x: px(e.x), y: py(e.y), r: 30 + 8 * big, age: 0 });
         beams.push({ x: px(e.x), age: 0, color: GEMS[sim.gems[e.id].kind].color });
-        popups.push({ x: px(e.x), y: py(e.y) - 24, text: e.mult > 1 ? `+${e.value}×${e.mult}` : `+${e.value}`, age: 0, color: 0xffe7a8 });
+        popups.push({ x: px(e.x), y: py(e.y) - 24, text: `+${e.gain}`, age: 0, color: 0xffe7a8 });
+        if (e.bonus > 1) {
+          // コンボ：同じ種類が続いた。宝石の色の大きな文字と、上がっていく音
+          popups.push({ x: px(e.x), y: py(e.y) - 52, text: `コンボ ×${e.bonus}`, age: 0, color: GEMS[sim.gems[e.id].kind].color });
+          synth.hbell(6 + e.bonus * 2, 0.12, 1.2);
+          juice.doFlash(0.12 + 0.06 * e.bonus, GEMS[sim.gems[e.id].kind].color);
+        }
       } else if (e.t === 'clear') {
         juice.doFlash(0.55, 0xffe7a8);
         juice.slowmo(0.4, 0.9);

@@ -27,13 +27,15 @@ export class ClawBot {
     if (!free.length) return null;
     const hp = sim.head.getPosition();
     // 点が高く、近く、何度も失敗していない宝石。山の上の方（y が小さい）を先に
-    free.sort((a, b) => this.score(b, hp) - this.score(a, hp));
+    free.sort((a, b) => this.score(b, hp, sim) - this.score(a, hp, sim));
     return free[0];
   }
 
-  private score(g: Gem, hp: { x: number; y: number }): number {
+  private score(g: Gem, hp: { x: number; y: number }, sim: ClawSim): number {
     const q = g.body.getPosition();
-    return GEMS[g.kind].value * 2 - Math.abs(q.x - hp.x) * 0.15 - q.y * 0.3 - (this.skipped.get(g.id) ?? 0) * 2.5;
+    // コンボを狙う：前に納めたのと同じ種類を先に
+    const combo = sim.cfg.comboMax > 1 && g.kind === sim.lastKind ? 3 * this.skill : 0;
+    return combo + GEMS[g.kind].value * 2 - Math.abs(q.x - hp.x) * 0.15 - q.y * 0.3 - (this.skipped.get(g.id) ?? 0) * 2.5;
   }
 
   /** このティックの入力ビットと、爪の頭の目標の位置 */
