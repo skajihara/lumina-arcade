@@ -251,3 +251,28 @@ describe('リプレイ', () => {
     }
   });
 });
+
+describe('NP-16 発射', () => {
+  it('レーンで跳ねている・落ちてくる途中でも、放せば発射できる', () => {
+    for (const vy of [3, -1.5, 6]) {
+      const sim = new NovaSim(stages[0], cfg());
+      const b = sim.balls[0];
+      for (let i = 0; i < 30; i++) sim.step(IN_LAUNCH);
+      b.body.setTransform({ x: b.body.getPosition().x, y: 19 }, 0);
+      b.body.setLinearVelocity({ x: 0, y: vy });
+      sim.step(0);
+      expect(b.body.getLinearVelocity().y).toBeLessThan(-10);
+      expect(b.launched).toBe(true);
+    }
+  });
+  it('発射した直後（勢いよく上がっている間）はもう一度発射しない', () => {
+    const sim = new NovaSim(stages[0], cfg());
+    const b = sim.balls[0];
+    for (let i = 0; i < 30; i++) sim.step(IN_LAUNCH);
+    sim.step(0);
+    const v1 = b.body.getLinearVelocity().y;
+    sim.step(IN_LAUNCH);
+    sim.step(0);
+    expect(b.body.getLinearVelocity().y).toBeGreaterThan(v1 - 0.5);
+  });
+});

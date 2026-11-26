@@ -73,7 +73,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-twin', ...base,
-    extraLoops: 1,
+    extraLoops: 0,
     name: '二つの灯',
     hint: '二つの灯は離れている。残響の軌跡を見て、まだ燃えない方を狙え',
     stars: pts([...ring(3.9, 7.0, 1.0, 3), ...ring(9.9, 7.0, 1.0, 3)], 0.55),
@@ -82,7 +82,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-drift', ...base, outlanes: true,
-    extraLoops: 2,
+    extraLoops: 1,
     name: '流星群',
     hint: '漂う星は残響の道を変える。同じループでも毎回ちがう過去になる',
     stars: pts([...ring(3.8, 6.4, 1.1, 4), ...ring(10.0, 6.4, 1.1, 4), ...line(5.2, 11.6, 8.6, 11.6, 3)], 0.5, [9]),
@@ -91,7 +91,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-rain', ...base,
-    extraLoops: 2,
+    extraLoops: 1,
     name: '星の雨',
     hint: '縦に並んだ三本の雨。上から順に灯せば下まで届く',
     stars: pts([...line(3.2, 3.6, 3.2, 11.6, 4), ...line(6.9, 2.6, 6.9, 10.6, 4), ...line(10.6, 3.6, 10.6, 11.6, 4)], 0.45),
@@ -100,7 +100,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-crossing', ...base, outlanes: true,
-    extraLoops: 3,
+    extraLoops: 1,
     name: '交差点',
     hint: '軌道が交わる。残響とぶつかると過去が変わる — それを利用しろ',
     stars: pts([...ring(4.0, 5.2, 0.9, 3), ...ring(9.8, 5.2, 0.9, 3), ...ring(4.0, 11.4, 0.9, 3), ...ring(9.8, 11.4, 0.9, 3)], 0.52),
@@ -111,7 +111,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-scatter', ...base, outlanes: true,
-    extraLoops: 3,
+    extraLoops: 2,
     name: '散開',
     hint: '四隅の群れと、真ん中の大きな星。最後のループで全員そろえ',
     stars: pts([
@@ -123,7 +123,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-triad', ...base,
-    extraLoops: 2,
+    extraLoops: 1,
     name: '三つ星',
     hint: '三つの群れ。三人の自分で一つずつ',
     stars: pts([...ring(3.4, 10.4, 0.95, 3), ...ring(6.9, 5.6, 0.95, 3), ...ring(10.4, 10.4, 0.95, 3)], 0.5),
@@ -133,7 +133,7 @@ export const stages: EchoStage[] = [
   },
   {
     id: 'echo-finale', ...base, outlanes: true, noKickbackStart: true,
-    extraLoops: 2,
+    extraLoops: 0,
     name: '残響の果て',
     hint: '盤面いっぱいの星。六人の自分が同じ10秒にそろった時だけ届く',
     stars: pts([

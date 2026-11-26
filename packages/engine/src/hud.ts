@@ -256,3 +256,71 @@ export function touchText(text: string, pairs: [string, string][]): string {
   for (const [a, b] of pairs) t = t.split(a).join(b);
   return t;
 }
+
+/**
+ * 確認ダイアログ（UX-02）。何が起きるかの一覧と、元に戻せないことを見せる。danger なら決定ボタンを赤く。
+ * 「やめる」・Esc・外側のクリックで false、決定で true。
+ */
+export function confirmDialog(opts: { title: string; items?: string[]; note?: string; ok: string; cancel?: string; danger?: boolean }): Promise<boolean> {
+  return new Promise((resolve) => {
+    const bg = document.createElement('div');
+    bg.className = 'lumina-confirm';
+    bg.setAttribute('role', 'dialog');
+    bg.setAttribute('aria-modal', 'true');
+    bg.innerHTML = `<div class="box"><h3></h3>${opts.items?.length ? '<ul></ul>' : ''}${opts.note ? '<p class="note"></p>' : ''}<div class="row"><button class="cancel"></button><button class="ok${opts.danger ? ' danger' : ''}"></button></div></div>`;
+    bg.querySelector('h3')!.textContent = opts.title;
+    const ul = bg.querySelector('ul');
+    for (const it of opts.items ?? []) { const li = document.createElement('li'); li.textContent = it; ul?.appendChild(li); }
+    const note = bg.querySelector('.note');
+    if (note) note.textContent = opts.note!;
+    const okB = bg.querySelector<HTMLButtonElement>('.ok')!, noB = bg.querySelector<HTMLButtonElement>('.cancel')!;
+    okB.textContent = opts.ok;
+    noB.textContent = opts.cancel ?? 'やめる';
+    if (!document.getElementById('lumina-confirm-style')) {
+      const st = document.createElement('style');
+      st.id = 'lumina-confirm-style';
+      st.textContent = `.lumina-confirm{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(4,6,20,.72);backdrop-filter:blur(4px);pointer-events:auto;font-family:system-ui,sans-serif}
+.lumina-confirm .box{max-width:min(440px,calc(100vw - 32px));background:rgba(20,24,60,.96);border:1px solid rgba(160,180,255,.35);border-radius:16px;padding:22px 22px 18px;color:#e8ecff;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.lumina-confirm h3{margin:0 0 10px;font-size:18px;letter-spacing:.05em}
+.lumina-confirm ul{margin:0 0 10px;padding-left:1.2em;font-size:14px;line-height:1.7;color:#c9d0ff}
+.lumina-confirm .note{margin:0 0 14px;font-size:13px;color:#ff9db0}
+.lumina-confirm .row{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.lumina-confirm button{min-height:44px;min-width:96px;padding:0 18px;border-radius:22px;border:1px solid rgba(160,180,255,.4);background:rgba(60,70,140,.5);color:#e8ecff;font-size:15px;cursor:pointer}
+.lumina-confirm button.danger{background:#c8324f;border-color:#ff6b8a;color:#fff}
+.lumina-confirm button:focus-visible{outline:2px solid #ffd98a;outline-offset:2px}`;
+      document.head.appendChild(st);
+    }
+    const done = (v: boolean) => { removeEventListener('keydown', onKey, true); bg.remove(); resolve(v); };
+    const onKey = (e: KeyboardEvent) => { if (e.code === 'Escape') { e.stopPropagation(); e.preventDefault(); done(false); } };
+    addEventListener('keydown', onKey, true);
+    okB.addEventListener('click', () => done(true));
+    noB.addEventListener('click', () => done(false));
+    bg.addEventListener('pointerdown', (e) => { if (e.target === bg) done(false); });
+    document.body.appendChild(bg);
+    noB.focus();
+  });
+}
+
+/**
+ * タイトルに置く「この作品の記録を消す」ボタン（UX-02）。確認してから消し、ページを読み直す
+ */
+export function resetButton(gameId: string, gameName: string, clear: (id: string) => number): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.className = 'reset-data';
+  b.textContent = 'この作品の記録を消す';
+  b.style.cssText = 'margin-top:14px;background:none;border:none;color:var(--dim,#8f96c9);font-size:12px;text-decoration:underline;cursor:pointer;min-height:32px';
+  b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const ok = await confirmDialog({
+      title: `「${gameName}」の記録を消しますか？`,
+      items: ['クリアしたステージと★', 'ベスト記録・リプレイ', '調整パネルの設定（難易度・音量など）'],
+      note: '消した記録は元に戻せません。',
+      ok: '消す',
+      danger: true,
+    });
+    if (!ok) return;
+    clear(gameId);
+    location.reload();
+  });
+  return b;
+}

@@ -447,7 +447,7 @@ export class NovaSim {
 
     // 発射（レーンにいるボールだけ）
     if (this.ownerInputs) this.launchByOwner(this.ownerInputs);
-    const laneBall = this.ownerInputs ? undefined : this.balls.find((b) => this.inLane(b));
+    const laneBall = this.ownerInputs ? undefined : this.balls.find((b) => this.canLaunch(b));
     if (!this.ownerInputs && input & IN_LAUNCH) this.launchCharge = Math.min(1, this.launchCharge + DT / 0.9);
     if (!this.ownerInputs && released & IN_LAUNCH) {
       if (laneBall) {
@@ -490,7 +490,7 @@ export class NovaSim {
       const on = ((masks[b.owner] ?? 0) & IN_LAUNCH) !== 0;
       if (on) b.charge = Math.min(1, b.charge + DT / 0.9);
       if (!on && b.prevLaunch) {
-        if (this.inLane(b)) {
+        if (this.canLaunch(b)) {
           const v = cfg.launchMin + (cfg.launchMax - cfg.launchMin) * b.charge;
           b.body.setLinearVelocity({ x: 0, y: -v });
           b.body.setAwake(true);
@@ -504,6 +504,16 @@ export class NovaSim {
     // 描画の発射メーター用：一番新しい持ち主の溜め
     const mine = this.balls.find((b) => b.owner === masks.length - 1);
     this.launchCharge = mine?.charge ?? 0;
+  }
+
+  /**
+   * 発射できるか（NP-16）：発射レーンの下半分にいれば、跳ねていても落ちてくる途中でも発射できる（速度は上書き）。
+   * 勢いよく上がっていく途中（発射した直後）だけは除く
+   */
+  canLaunch(b: Ball): boolean {
+    const p = b.body.getPosition();
+    const v = b.body.getLinearVelocity();
+    return p.x > FIELD_RIGHT && p.y > BOARD_H * 0.45 && v.y > -4;
   }
 
   inLane(b: Ball): boolean {

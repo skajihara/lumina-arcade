@@ -1,6 +1,7 @@
 /** 星図ランチャー。各ゲームが1つの星座。Canvas2D だけで描く軽量ページ */
 import { games, type GameEntry } from './games';
-import { injectBaseStyle, goTo } from '@engine/hud';
+import { injectBaseStyle, goTo, confirmDialog } from '@engine/hud';
+import { clearStored, storedKeys } from '@engine/storage';
 import { synth } from '@engine/audio';
 
 injectBaseStyle(`
@@ -23,6 +24,8 @@ injectBaseStyle(`
   filter:drop-shadow(0 0 16px rgba(110,140,255,.85)) drop-shadow(0 0 44px rgba(160,120,255,.35)); }
 .music { position:fixed; right:14px; bottom:10px; font-size:12px; color:var(--dim); letter-spacing:.1em; pointer-events:auto; cursor:pointer; user-select:none; }
 .music:hover { color:var(--ink); }
+.reset-all { position:fixed; left:14px; bottom:10px; font-size:12px; color:var(--dim); letter-spacing:.1em; pointer-events:auto; cursor:pointer; user-select:none; background:none; border:none; padding:6px 0; }
+.reset-all:hover { color:#ff9db0; }
 .wip { color:#8f96c9; font-size:12px; border:1px solid #4a5290; border-radius:999px; padding:1px 8px; margin-left:6px; }
 `);
 
@@ -42,6 +45,26 @@ musicLabel();
 document.body.appendChild(musicEl);
 musicEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (!synth.ctx) synth.unlock(); else synth.setMuted(!synth.muted); musicLabel(); });
 addEventListener('pointerdown', () => { if (!synth.ctx) { synth.unlock(); musicLabel(); } });
+// UX-02：すべてのデータを消す（確認してから。全作品の進行・★・ベスト記録・リプレイ・調整パネル）
+const resetEl = document.createElement('button');
+resetEl.className = 'reset-all';
+resetEl.textContent = '⟲ すべてのデータを消す';
+document.body.appendChild(resetEl);
+resetEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+resetEl.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const n = storedKeys().length;
+  const ok = await confirmDialog({
+    title: 'すべてのデータを消しますか？',
+    items: ['全作品のクリアしたステージと★', 'ベスト記録・リプレイ', '調整パネルの設定（難易度・音量など）'],
+    note: n ? `保存されている ${n} 件を消します。元に戻せません。` : '保存されているデータはありません。',
+    ok: '消す',
+    danger: true,
+  });
+  if (!ok) return;
+  clearStored();
+  location.reload();
+});
 addEventListener('keydown', (e) => { if (!synth.ctx) synth.unlock(); else if (e.code === 'KeyM') synth.setMuted(!synth.muted); musicLabel(); });
 
 let W = 0, H = 0, dpr = 1;

@@ -6,8 +6,8 @@ import { Input } from '@engine/input';
 import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
-import { Save } from '@engine/storage';
-import { injectBaseStyle, el, backLink, touchButtons } from '@engine/hud';
+import { Save, clearStored } from '@engine/storage';
+import { injectBaseStyle, el, backLink, touchButtons, resetButton } from '@engine/hud';
 import { schema, presets, DEFAULT_PRESET, type NovaConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
@@ -270,6 +270,7 @@ async function main() {
       }
       grid.appendChild(d);
     });
+    menu.appendChild(resetButton('nova-pinball', '星爆ピンボール', clearStored));
     document.body.appendChild(menu);
   };
 

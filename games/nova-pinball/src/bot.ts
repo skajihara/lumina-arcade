@@ -76,7 +76,7 @@ export class NovaBot {
         } else this.pending[side] = lag - 1;
       }
     }
-    const lane = sim.balls.some((b) => b.owner === this.owner && sim.inLane(b));
+    const lane = sim.balls.some((b) => b.owner === this.owner && sim.canLaunch(b));
     if (lane) {
       if (this.holdLaunch === 0) this.holdLaunch = 20 + this.rng.int(0, 90);
       this.holdLaunch--;
