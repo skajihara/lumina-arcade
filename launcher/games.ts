@@ -20,7 +20,7 @@ export interface GameEntry {
 
 export const games: GameEntry[] = [
   {
-    id: 'nova-pinball', title: 'Nova Pinball', jp: '星爆ピンボール', status: 'ready', stages: 13,
+    id: 'nova-pinball', title: 'Nova Pinball', jp: '星爆ピンボール', status: 'ready', stages: 16,
     desc: '星に当ててチャージ、満タンで爆発。育てた星を一気に点火して連鎖で全部燃やす。',
     shape: [[0.5, 0.5], [0.2, 0.25], [0.8, 0.2], [0.85, 0.75], [0.25, 0.8]], edges: [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2]],
     at: [0.27, 0.33], hue: '#9fd0ff',

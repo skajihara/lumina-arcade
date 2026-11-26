@@ -18,14 +18,14 @@ function runBot(stage: StageDef, loops: number, seed = 1) {
 
 describe('EchoSim', () => {
   it('同じ入力なら同じ結果になる（決定性）', () => {
-    const a = runBot(stages[11], 3, 4);
-    const b = runBot(stages[11], 3, 4);
+    const a = runBot(stages.find((s) => s.id === 'galaxy')!, 3, 4);
+    const b = runBot(stages.find((s) => s.id === 'galaxy')!, 3, 4);
     expect(a.loop).toBe(3);
     expect(hashNumbers(a.digest())).toBe(hashNumbers(b.digest()));
   });
 
   it('ループが終わると時間が巻き戻り、星が復活し、ボールが1つ増える', () => {
-    const es = new EchoSim(stages[11], cfg());
+    const es = new EchoSim(stages.find((s) => s.id === 'galaxy')!, cfg());
     const bot = new NovaBot(2, 0.85);
     let started = 0;
     while (es.loop < 1 && es.phase === 'play') {
@@ -34,13 +34,13 @@ describe('EchoSim', () => {
     }
     expect(started).toBe(1);
     expect(es.sim.tick).toBe(0);
-    expect(es.sim.starsAlive()).toBe(stages[11].stars.length);
+    expect(es.sim.starsAlive()).toBe(stages.find((s) => s.id === 'galaxy')!.stars.length);
     expect(es.sim.balls.length).toBe(2);
     expect(es.history[0].length).toBe(es.loopTicks);
   });
 
   it('邪魔しなければ、残響は前のループと同じ動きをする', () => {
-    const es = new EchoSim(stages[11], cfg());
+    const es = new EchoSim(stages.find((s) => s.id === 'galaxy')!, cfg());
     const bot = new NovaBot(3, 0.85);
     const path0: number[] = [];
     while (es.loop < 1 && es.phase === 'play') {

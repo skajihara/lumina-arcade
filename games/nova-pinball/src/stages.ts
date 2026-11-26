@@ -103,6 +103,32 @@ function spiral(): StarDef[] {
   return out;
 }
 
+/**
+ * 実際の星座（NP-12）：赤経（時）・赤緯（度）・等級から星を置く。
+ * 東が左になるように写し（空を見上げた向き）、盤の箱 box に縦横比を保って収める。明るい星ほど大きい
+ */
+type SkyStar = [ra: number, dec: number, mag: number];
+function sky(list: SkyStar[], box = { x0: 2.2, x1: 11.6, y0: 3.2, y1: 12.4 }): StarDef[] {
+  const dec0 = (list.reduce((a, s) => a + s[1], 0) / list.length) * (Math.PI / 180);
+  const pts = list.map(([ra, dec]) => ({ x: -ra * 15 * Math.cos(dec0), y: -dec }));
+  const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
+  const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
+  const k = Math.min((box.x1 - box.x0) / Math.max(1e-6, maxX - minX), (box.y1 - box.y0) / Math.max(1e-6, maxY - minY));
+  const ox = (box.x0 + box.x1) / 2 - ((minX + maxX) / 2) * k, oy = (box.y0 + box.y1) / 2 - ((minY + maxY) / 2) * k;
+  return list.map(([, , mag], i) => ({
+    x: +(ox + pts[i].x * k).toFixed(2),
+    y: +(oy + pts[i].y * k).toFixed(2),
+    r: +Math.min(0.68, Math.max(0.34, 0.66 - mag * 0.075)).toFixed(2),
+  }));
+}
+
+/** カシオペア：カフ・シェダル・ツィー・ルクバー・セギン（W の字） */
+const CASSIOPEIA: SkyStar[] = [[0.153, 59.15, 2.27], [0.675, 56.54, 2.24], [0.945, 60.72, 2.15], [1.430, 60.24, 2.68], [1.907, 63.67, 3.37]];
+/** こと座：ベガと小さな平行四辺形（シェリアク・スラファト・δ・ζ）、ε */
+const LYRA: SkyStar[] = [[18.616, 38.78, 0.03], [18.739, 39.61, 4.7], [18.746, 37.61, 4.3], [18.835, 33.36, 3.5], [18.982, 32.69, 3.25], [18.908, 36.90, 4.3]];
+/** しし座：レグルスから「？の鎌」（η・アルギエバ・アダフェラ・μ・ε）、背中のゾスマ・シェルタン、尾のデネボラ */
+const LEO: SkyStar[] = [[10.140, 11.97, 1.35], [10.122, 16.76, 3.5], [10.333, 19.84, 2.0], [10.278, 23.42, 3.4], [9.879, 26.01, 3.9], [9.764, 23.77, 3.0], [11.235, 20.52, 2.56], [11.237, 15.43, 3.3], [11.818, 14.57, 2.1]];
+
 function milkyWay(): StarDef[] {
   const out: StarDef[] = [];
   for (let i = 0; i < 13; i++) {
@@ -176,6 +202,40 @@ export const stages: StageDef[] = [
     links: [[0, 1], [1, 2], [3, 4], [4, 5], [0, 3]],
     items: [{ kind: 'split', x: 6.9, y: 12.8 }],
     hue: 0.7,
+  },
+  {
+    id: 'cassiopeia',
+    shape: SHAPES.dome,
+    slings: true, outlanes: true, rollovers: true,
+    name: 'カシオペア',
+    hint: '本物の W。5つの星は離れている — 端から順に灯して、線の火で W を一気に走らせろ',
+    stars: sky(CASSIOPEIA, { x0: 2.2, x1: 11.6, y0: 4.4, y1: 10.4 }),
+    links: [[0, 1], [1, 2], [2, 3], [3, 4]],
+    bumpers: [{ x: 6.9, y: 13.0, r: 0.55 }],
+    hue: 0.9,
+  },
+  {
+    id: 'lyra',
+    slings: true, outlanes: true, rollovers: true,
+    name: 'こと座',
+    hint: '本物のこと座。いちばん明るいベガは大きく、琴の小さな星は細い隙間の先にある',
+    stars: sky(LYRA, { x0: 3.4, x1: 10.4, y0: 3.4, y1: 12.6 }),
+    links: [[0, 1], [0, 2], [2, 3], [3, 4], [4, 5], [5, 2]],
+    bumpers: [{ x: 10.0, y: 9.6, r: 0.55 }, { x: 3.0, y: 5.0, r: 0.5 }],
+    items: [{ kind: 'comet', x: 6.9, y: 14.6 }],
+    hue: 0.55,
+  },
+  {
+    id: 'leo',
+    shape: SHAPES.gem,
+    slings: true, outlanes: true, rollovers: true,
+    name: 'しし座',
+    hint: '本物のしし座。レグルスから「？」の鎌を上り、背中を渡って尾のデネボラへ',
+    stars: sky(LEO),
+    links: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [2, 6], [6, 7], [7, 0], [6, 8], [7, 8]],
+    bumpers: [{ x: 6.9, y: 14.2, r: 0.5 }],
+    items: [{ kind: 'magnet', x: 9.6, y: 14.4 }],
+    hue: 0.12,
   },
   {
     id: 'cygnus',
