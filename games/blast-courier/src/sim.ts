@@ -2,10 +2,10 @@
  * Blast Courier（爆風便）のシミュレーション（描画なし）。NEW-05。
  *
  * 割れやすい「灯の卵」を、雲海に浮かぶ島から島へ運び、星の巣まで届ける。卵には触れない — クリックした所の爆風だけで動かす。
- *   - 押す（push）：その場で弾ける。近いほど強く飛ぶが、強すぎる爆風は卵にひびを入れる
+ *   - 押す（push）：卵のすぐ後ろで弾け、選んだ向きへ選んだ強さで飛ばす（BC-10：向きはドラッグ、強さは押す長さ）。強すぎる爆風は卵にひびを入れる
  *   - 吸う（pull）：その場へ引き寄せる（ひびは入らない）
  *   - 昇る（lift）：その場から上へ、しばらく上昇気流の柱が立つ
- *   - 遅れ（delay）：1 秒後に、押すより強く弾ける（先に置いて、卵が通る時に合わせる）
+ *   - 遅れ（delay）：置いた所で 1 秒後に、選んだ向きへ押すより強く弾ける（先に置いて、卵が通る時に合わせる）
  * 卵は強くぶつかってもひびが入る。ひびが cracksMax に達すると割れて失敗。雲に入るとふわりと受け止められる（ひびが入らない）。
  * 画面の外（雲海の下）へ落ちると、最後に止まっていた所へ戻る（爆風を1回ぶん足される）。
  * 巣の中でしばらく止まればクリア。使った爆風の数がスコア（少ないほど良い：爆風ゴルフ）。
@@ -41,6 +41,8 @@ export interface CourierConfig {
   delayMul: number;
   /** 次の爆風までの待ち（秒） */
   cooldown: number;
+  /** 一番弱い押す（強さ 0〜1 のうち、これより弱くはならない） */
+  minPower: number;
   /** この速さの変化を超える爆風で、ひびが入る */
   blastCrack: number;
   /** この速さを超えてぶつかると、ひびが入る */
@@ -53,10 +55,10 @@ export interface CourierConfig {
 
 export const defaults: CourierConfig = {
   gravity: 9, air: 0.25, eggR: 0.45, restitution: 0.3,
-  blastR: 3.2, blastForce: 12, pullForce: 6,
+  blastR: 3.2, blastForce: 14, pullForce: 6,
   liftW: 1.6, liftTime: 1.4, liftAccel: 2.1,
   delayTime: 1.0, delayMul: 1.3,
-  cooldown: 0.5, blastCrack: 11, crackSpeed: 9, cracksMax: 3, nestHold: 0.6,
+  cooldown: 0.15, minPower: 0.12, blastCrack: 11, crackSpeed: 9, cracksMax: 3, nestHold: 0.6,
 };
 
 export interface Pt { x: number; y: number }
@@ -87,11 +89,18 @@ export interface CourierStage {
 }
 
 export interface Zone { x: number; y: number; age: number }
-export interface Pending { x: number; y: number; at: number }
+/** 遅れ爆風：置いた所・向き（単位ベクトル）・強さ 0〜1・弾ける時刻 */
+export interface Pending { x: number; y: number; ax: number; ay: number; p: number; at: number }
+
+/**
+ * 1回の操作（BC-10）。押す・遅れは向き（ax, ay：長さは問わない）と強さ p（0〜1）を持つ。
+ * 吸う・昇るは置く所（x, y）だけ。遅れは置く所も使う
+ */
+export interface CourierAction { k: BlastKind; x: number; y: number; ax?: number; ay?: number; p?: number }
 
 export type CourierEvent =
-  | { t: 'blast'; kind: BlastKind; x: number; y: number; dv: number; n: number }
-  | { t: 'boom'; x: number; y: number; dv: number }
+  | { t: 'blast'; kind: BlastKind; x: number; y: number; dv: number; n: number; ax: number; ay: number }
+  | { t: 'boom'; x: number; y: number; dv: number; ax: number; ay: number }
   | { t: 'crack'; x: number; y: number; n: number; why: 'blast' | 'hit' }
   | { t: 'bounce'; x: number; y: number; speed: number }
   | { t: 'cloud'; x: number; y: number }
@@ -208,34 +217,59 @@ export class CourierSim {
     this.hits.push({ speed, thorn: other?.kind === 'thorn', x: p.x, y: p.y });
   }
 
-  /** 爆風を撃つ。撃てたら true */
-  blast(x: number, y: number, kind: BlastKind): boolean {
-    if (this.phase !== 'play' || this.cooldownLeft > 0 || !this.stage.kinds.includes(kind)) return false;
+  /** 撃てるか（待ち時間・種類） */
+  canFire(kind: BlastKind): boolean {
+    return this.phase === 'play' && this.cooldownLeft <= 0 && this.stage.kinds.includes(kind);
+  }
+
+  /**
+   * 爆風を撃つ（BC-10）。撃てたら true。
+   * 押す：卵を (ax, ay) の向きへ、強さ p（blastForce × p、ただし minPower 以上）で飛ばす。卵がどこにあっても届く
+   * 遅れ：(x, y) に置き、delayTime 後にその場で (ax, ay) の向きへ弾ける（卵が半径の中にいれば、強さ × delayMul）
+   */
+  act(a: CourierAction): boolean {
+    const kind = a.k;
+    if (!this.canFire(kind)) return false;
     this.blasts++;
     this.lastBlastTick = this.tick;
     let dv = 0;
-    if (kind === 'push') dv = this.push(x, y, this.cfg.blastForce);
-    else if (kind === 'pull') dv = this.pull(x, y);
-    else if (kind === 'lift') this.lifts.push({ x, y, age: 0 });
-    else this.pending.push({ x, y, at: this.tick + Math.round(this.cfg.delayTime * HZ) });
-    this.events.push({ t: 'blast', kind, x, y, dv, n: this.blasts });
+    const p = Math.min(1, Math.max(this.cfg.minPower, a.p ?? 1));
+    let ax = a.ax ?? 0, ay = a.ay ?? -1;
+    const al = Math.hypot(ax, ay);
+    if (al < 1e-6) { ax = 0; ay = -1; } else { ax /= al; ay /= al; }
+    if (kind === 'push') dv = this.kick(ax, ay, this.cfg.blastForce * p);
+    else if (kind === 'pull') dv = this.pull(a.x, a.y);
+    else if (kind === 'lift') this.lifts.push({ x: a.x, y: a.y, age: 0 });
+    else this.pending.push({ x: a.x, y: a.y, ax, ay, p, at: this.tick + Math.round(this.cfg.delayTime * HZ) });
+    this.events.push({ t: 'blast', kind, x: a.x, y: a.y, dv, n: this.blasts, ax, ay });
     if (this.blasts > this.stage.maxBlasts && this.phase === 'play') this.fail('blasts');
     return true;
   }
 
-  /** 押す爆風：中心から外へ。近いほど強い（距離に対して滑らかに減る） */
-  private push(x: number, y: number, force: number): number {
-    const p = this.egg.getPosition();
-    const dx = p.x - x, dy = p.y - y, d = Math.hypot(dx, dy);
-    if (d > this.cfg.blastR) return 0;
-    const k = 1 - d / this.cfg.blastR;
-    const dv = force * Math.sqrt(k);
-    const ux = d > 1e-3 ? dx / d : 0, uy = d > 1e-3 ? dy / d : -1;
+  /**
+   * 前の操作（クリックした所から卵への向き、近いほど強い）。テストと「その場を叩く」時のため。
+   * 押す・遅れは、(x, y) から卵への向きと、距離から決まる強さの act に直す
+   */
+  blast(x: number, y: number, kind: BlastKind): boolean {
+    if (kind === 'pull' || kind === 'lift') return this.act({ k: kind, x, y });
+    const e = this.eggPos;
+    const d = Math.hypot(e.x - x, e.y - y);
+    const p = Math.sqrt(Math.max(0, 1 - d / this.cfg.blastR));
+    return this.act({ k: kind, x, y, ax: e.x - x, ay: e.y - y, p });
+  }
+
+  /** 卵に向き (ux, uy) で速さ dv を足す */
+  private kick(ux: number, uy: number, dv: number): number {
     const v = this.egg.getLinearVelocity();
     this.egg.setLinearVelocity({ x: v.x + ux * dv, y: v.y + uy * dv });
     this.egg.setAwake(true);
     if (dv > this.cfg.blastCrack) this.crack('blast');
     return dv;
+  }
+
+  /** 押す強さ p（0〜1）の時の速さの変化 */
+  shotDv(kind: BlastKind, p: number): number {
+    return this.cfg.blastForce * Math.min(1, Math.max(this.cfg.minPower, p)) * (kind === 'delay' ? this.cfg.delayMul : 1);
   }
 
   /** 吸う爆風：その場へ引き寄せる（届く距離は押すの 1.4 倍、ひびは入らない） */
@@ -279,8 +313,10 @@ export class CourierSim {
     const cfg = this.cfg;
     // 遅れ爆風
     for (const q of this.pending) if (q.at === this.tick) {
-      const dv = this.push(q.x, q.y, cfg.blastForce * cfg.delayMul);
-      this.events.push({ t: 'boom', x: q.x, y: q.y, dv });
+      const e = this.egg.getPosition();
+      const inside = Math.hypot(e.x - q.x, e.y - q.y) < cfg.blastR;
+      const dv = inside ? this.kick(q.ax, q.ay, cfg.blastForce * q.p * cfg.delayMul) : 0;
+      this.events.push({ t: 'boom', x: q.x, y: q.y, dv, ax: q.ax, ay: q.ay });
     }
     this.pending = this.pending.filter((q) => q.at > this.tick);
     // 上昇気流

@@ -14,7 +14,7 @@ function nest(g: CanvasRenderingContext2D, x: number, y: number): void {
 
 export const blastRules: RuleFrame[] = [
   {
-    caption: 'クリックした所で爆風が弾ける。卵は反対へ飛ぶ。近いほど強いが、近すぎるとひびが入る',
+    caption: '押さえてドラッグで向き、押す長さで強さ。放すと卵の後ろで爆風が弾ける。強すぎるとひびが入る',
     draw: (g, t) => {
       const p = phase(t, 2.8);
       line(g, 6, 70, 56, 70, LAND, 0.9, 2);
@@ -29,7 +29,7 @@ export const blastRules: RuleFrame[] = [
     },
   },
   {
-    caption: '右クリック＝吸う（その場へ引き寄せる）。3＝昇る（上昇気流の柱）。空中でもう一吹きもできる',
+    caption: '2＝吸う（その場へ引き寄せる）。3＝昇る（上昇気流の柱）。空中で構えると時間がゆっくり — てっぺんで横へ',
     draw: (g, t) => {
       const p = phase(t, 3.2);
       line(g, 6, 84, 60, 84, LAND, 0.9, 2);
@@ -79,9 +79,9 @@ export const blastRules: RuleFrame[] = [
 export const blastIntros: Record<string, { title: string; frame: RuleFrame }> = {
   'bc-2': { title: '雲', frame: blastRules[3] },
   'bc-3': {
-    title: '吸う（右クリック）',
+    title: '吸う（2）',
     frame: {
-      caption: '右クリック（または 2）で吸う。その場へ卵を引き寄せる。ひびは入らないので、崖の上へそっと運べる',
+      caption: '2（またはボタン・ホイール）で吸う。その場へ卵を引き寄せる。ひびは入らないので、崖の上へそっと運べる',
       draw: (g, t) => {
         const p = phase(t, 2.6);
         line(g, 6, 80, 60, 80, LAND, 0.9, 2);

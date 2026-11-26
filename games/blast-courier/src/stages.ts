@@ -17,7 +17,7 @@ export const spike = (x: number, w: number, base: number, top: number): { pts: P
 
 export const courierStages: CourierStage[] = [
   {
-    id: 'bc-1', name: 'はじめの一吹き', hint: '卵の左下をクリックすると、爆風で右上へ飛ぶ。近いほど強い（矢印が赤い時は割れる強さ）',
+    id: 'bc-1', name: 'はじめの一吹き', hint: '画面を押さえて、飛ばしたい向きへドラッグ。長く押すほど強い（輪が赤い所まで溜めると割れる）。放すと撃つ',
     start: { x: 4, y: 11.9 }, nest: { x: 25.5, y: 12.5, w: 2.4 },
     islands: [{ pts: flat(1, 12, 12.4) }, { pts: flat(17, 31, 12.5) }],
     kinds: ['push'], par: 3, maxBlasts: 12,
@@ -30,7 +30,7 @@ export const courierStages: CourierStage[] = [
     kinds: ['push'], par: 4, maxBlasts: 12,
   },
   {
-    id: 'bc-3', name: '吸い寄せ', hint: '右クリックで「吸う」。その場へ卵を引き寄せる（ひびは入らない）。崖の上へは、押して吸って',
+    id: 'bc-3', name: '吸い寄せ', hint: '2（または下のボタン・ホイール）で「吸う」。クリックした所へ卵を引き寄せる（ひびは入らない）。崖の上へは、押して吸って',
     start: { x: 4, y: 13.9 }, nest: { x: 26, y: 6.5, w: 2.2 },
     islands: [{ pts: flat(1, 11, 14.4) }, { pts: flat(13, 20, 10.5) }, { pts: flat(22, 30, 6.5) }],
     kinds: ['push', 'pull'], par: 5, maxBlasts: 14,

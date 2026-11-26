@@ -18,8 +18,14 @@ export interface BlastConfig {
   cooldown: number;
   gravity: number;
   air: number;
-  /** 狙いの矢印（卵がどちらへどれだけ飛ぶか）を出す */
+  /** 押す長さで強さが満ちるまでの秒（BC-10） */
+  chargeTime: number;
+  /** 一番弱い押す（強さの何割） */
+  minPower: number;
+  /** 飛ぶ先の予測線の長さ（秒。0 で無し） */
   aim: number;
+  /** 卵が飛んでいる間に構えると、時間がこの速さになる（1 で無し）。上昇気流のてっぺんで狙うため */
+  airSlow: number;
   gameSpeed: number;
   shake: number;
   particles: number;
@@ -40,7 +46,10 @@ export const schema: Schema<BlastConfig> = {
   cooldown: { label: '次の爆風までの待ち（秒）', min: 0, max: 3, step: 0.05, folder: '爆風' },
   gravity: { label: '重力', min: 2, max: 25, step: 0.5, folder: '世界', restart: true },
   air: { label: '空気抵抗', min: 0, max: 2, step: 0.05, folder: '世界', restart: true },
-  aim: { label: '狙いの矢印（0で無し）', min: 0, max: 1, step: 1, folder: '遊びやすさ' },
+  chargeTime: { label: '強さが満ちるまで押す秒', min: 0.2, max: 3, step: 0.05, folder: '操作' },
+  minPower: { label: '一番弱い押す（割合）', min: 0, max: 0.5, step: 0.01, folder: '操作' },
+  aim: { label: '予測線の長さ（秒、0で無し）', min: 0, max: 3, step: 0.1, folder: '操作' },
+  airSlow: { label: '空中で構えた時の時間の速さ（1で無し）', min: 0.1, max: 1, step: 0.05, folder: '操作' },
   gameSpeed: { label: 'ゲーム速度', min: 0.3, max: 1.5, step: 0.05, folder: '演出' },
   shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
   particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
@@ -61,7 +70,10 @@ const normal: BlastConfig = {
   cooldown: defaults.cooldown,
   gravity: defaults.gravity,
   air: defaults.air,
-  aim: 1,
+  chargeTime: 1.1,
+  minPower: defaults.minPower,
+  aim: 1.2,
+  airSlow: 0.35,
   gameSpeed: 1,
   shake: 1,
   particles: 1,
@@ -70,9 +82,9 @@ const normal: BlastConfig = {
 };
 
 export const presets: Record<string, BlastConfig> = {
-  やさしい: { ...normal, cracksMax: 5, crackSpeed: 11, blastCrack: 13 },
+  やさしい: { ...normal, cracksMax: 5, crackSpeed: 11, blastCrack: 13, aim: 2, airSlow: 0.25 },
   ふつう: normal,
-  むずかしい: { ...normal, cracksMax: 2, crackSpeed: 8, cooldown: 0.7 },
+  むずかしい: { ...normal, cracksMax: 2, crackSpeed: 8, cooldown: 0.4, aim: 0.5, airSlow: 0.5 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';
@@ -81,6 +93,6 @@ export const DEFAULT_PRESET = 'ふつう';
 export function toCourier(c: BlastConfig): CourierConfig {
   return {
     ...defaults, cracksMax: c.cracksMax, crackSpeed: c.crackSpeed, blastCrack: c.blastCrack, blastForce: c.blastForce, blastR: c.blastR,
-    pullForce: c.pullForce, liftAccel: c.liftAccel, liftTime: c.liftTime, delayTime: c.delayTime, cooldown: c.cooldown, gravity: c.gravity, air: c.air,
+    pullForce: c.pullForce, liftAccel: c.liftAccel, liftTime: c.liftTime, delayTime: c.delayTime, cooldown: c.cooldown, gravity: c.gravity, air: c.air, minPower: c.minPower,
   };
 }
