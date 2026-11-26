@@ -339,4 +339,32 @@ describe('NP-16 発射', () => {
     sim.step(0);
     expect(b.body.getLinearVelocity().y).toBeGreaterThan(v1 - 0.5);
   });
+
+  it('エンドレスでは3波目から波ごとにアイテムが1つ置かれ、星と重ならない（NP-11c）', () => {
+    const endless = stages.find((s) => s.endless)!;
+    const sim = new NovaSim(endless, cfg());
+    expect(sim.items.length).toBe(0);
+    const kinds: string[] = [];
+    for (let w = 2; w <= 8; w++) {
+      if (w === 2) { const p = sim as unknown as { wave: number; spawnWave(): void }; for (const s of sim.stars) s.alive = false; p.wave = 2; p.spawnWave(); expect(sim.items.length).toBe(0); continue; }
+      const priv = sim as unknown as { wave: number; spawnWave(): void };
+      for (const s of sim.stars) s.alive = false;
+      priv.wave = w;
+      priv.spawnWave();
+      expect(sim.items.length).toBe(1);
+      const it = sim.items[0];
+      kinds.push(it.kind);
+      for (const s of sim.stars) {
+        if (!s.alive) continue;
+        const q = s.body.getPosition();
+        expect(Math.hypot(q.x - it.x, q.y - it.y)).toBeGreaterThan(1.3);
+      }
+      if (it.kind === 'warp') expect(it.to).toBeDefined();
+    }
+    expect(kinds.slice(0, 5)).toEqual(['hole', 'comet', 'split', 'magnet', 'warp']);
+    const off = new NovaSim(endless, { ...cfg(), endlessItems: 0 });
+    const p2 = off as unknown as { wave: number; spawnWave(): void };
+    p2.wave = 3; p2.spawnWave();
+    expect(off.items.length).toBe(0);
+  });
 });

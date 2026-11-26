@@ -256,7 +256,7 @@ export class NovaSim {
   /** ひねり3：爆発の引力（重力井戸）。連鎖中は重なって渦を巻く */
   wells: { x: number; y: number; born: number; until: number; k?: number }[] = [];
   /** アイテム（NP-11）：readyAt のティックから使える */
-  items: { kind: ItemKind; x: number; y: number; to?: { x: number; y: number }; readyAt: number }[] = [];
+  items: { kind: ItemKind; x: number; y: number; to?: { x: number; y: number }; readyAt: number; once?: boolean }[] = [];
 
   constructor(public stage: StageDef, public cfg: NovaConfig) {
     this.world = new World({ gravity: { x: 0, y: cfg.gravity } });
@@ -438,7 +438,44 @@ export class NovaSim {
     this.waveLinkStart = this.links.length;
     for (let k = 0; k < order.length - 1; k++) this.links.push([from + k, from + k + 1]);
     this.supernova = false;
+    this.placeWaveItem(pts);
     this.events.push({ t: 'wave', n: this.wave, from });
+  }
+
+  /**
+   * エンドレスのアイテム（NP-11c）：3波目から、波ごとに1つ。前の波のアイテムは消える。
+   * 置き場所は星の群れの少し下（フリッパーから打ち上げた球が通りやすい所）。
+   * 1回使うと消える（何度も使えると、分裂で球が尽きなくなり波が倍以上続いてしまった）
+   */
+  private placeWaveItem(pts: StarDef[]): void {
+    if ((this.cfg.endlessItems ?? 0) <= 0 || this.wave < 3 || !pts.length) { if (this.wave >= 2) this.items = []; return; }
+    // 分裂（マルチボール）は強すぎるので5波ごとのごほうびに。ほかは 3 ブラックホール → 4 彗星 → 6 磁石 → 7 ワームホール、以降は乱数
+    const order: ItemKind[] = ['hole', 'comet', 'magnet', 'warp'];
+    const kind: ItemKind = this.wave % 5 === 0 ? 'split' : this.wave < 8 ? order[[0, 1, 0, 2, 3][this.wave - 3]] : order[this.rng.int(0, order.length - 1)];
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+    const lowY = Math.max(...pts.map((p) => p.y));
+    const ok = (x: number, y: number) =>
+      x > 2.2 && x < 11.6 && y > 3 && y < 16.2
+      && pts.every((p) => Math.hypot(p.x - x, p.y - y) > 1.4)
+      && this.bumpers.every((b) => Math.hypot(b.x - x, b.y - y) > b.r + 1.0);
+    let best: { x: number; y: number } | null = null, bs = Infinity;
+    for (let k = 0; k < 120; k++) {
+      const x = this.rng.range(2.6, 11.2), y = this.rng.range(6, 16);
+      if (!ok(x, y)) continue;
+      // 星の群れの中心の真下・群れの一番下より少し下が良い（ブラックホールと彗星は群れに近い方が効く）
+      const want = kind === 'hole' ? lowY - 0.5 : kind === 'warp' ? 14.5 : lowY + 1.8;
+      const sc = Math.abs(x - (kind === 'warp' ? 6.9 : cx)) + Math.abs(y - Math.min(15.5, want)) * 1.3;
+      if (sc < bs) { bs = sc; best = { x: +x.toFixed(2), y: +y.toFixed(2) }; }
+    }
+    if (!best) { this.items = []; return; }
+    let to: { x: number; y: number } | undefined;
+    if (kind === 'warp') {
+      // 出口：入口から一番遠い星の少し下
+      let far = pts[0], fd = -1;
+      for (const p of pts) { const d = Math.hypot(p.x - best.x, p.y - best.y); if (d > fd) { fd = d; far = p; } }
+      to = { x: +Math.min(11.4, Math.max(2.4, far.x)).toFixed(2), y: +Math.min(15, far.y + 1.3).toFixed(2) };
+    }
+    this.items = [{ kind, x: best.x, y: best.y, to, readyAt: 0, once: true }];
   }
 
   spawnBall(at = { x: 13.8, y: 23.8 }, owner = 0): Ball {
@@ -1023,6 +1060,8 @@ export class NovaSim {
         if (Math.hypot(p.x - it.x, p.y - it.y) > 0.75) continue;
         const v = b.body.getLinearVelocity();
         if (it.kind === 'split') {
+          // ボールの上限（NP-11c）：上限に達していたら分けない（アイテムはそのまま残る）
+          if (this.balls.length >= Math.max(1, Math.round(this.cfg.maxBalls ?? 4))) continue;
           // ボールが2つに：今のボールと、少し向きを変えた新しいボール
           const a = 0.6, c = Math.cos(a), s = Math.sin(a);
           const nb = this.spawnBall({ x: p.x, y: p.y }, b.owner);
@@ -1057,9 +1096,12 @@ export class NovaSim {
           it.readyAt = this.tick + HZ * 2;
           this.events.push({ t: 'item', kind: 'warp', x: it.x, y: it.y, tx: it.to.x, ty: it.to.y });
         }
+        // 1回きりのアイテム（エンドレス）は使ったら消える
+        if (it.once) it.readyAt = Number.MAX_SAFE_INTEGER;
         break;
       }
     }
+    if (this.items.some((it) => it.once && it.readyAt === Number.MAX_SAFE_INTEGER)) this.items = this.items.filter((it) => !(it.once && it.readyAt === Number.MAX_SAFE_INTEGER));
   }
 
   private updateBalls(): void {

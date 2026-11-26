@@ -14,6 +14,10 @@ export interface NovaConfig {
   moonPeriod: number;
   /** 満月の光（NP-18b）：満月の時に月へ当てると、一番近い灯っていない星へ光が飛んでチャージ +1（0 で無し） */
   moonCharge: number;
+  /** エンドレスで波ごとにアイテムを1つ置く（NP-11c。0 で無し） */
+  endlessItems: number;
+  /** 盤の上のボールの上限（分裂アイテムで増やせる数） */
+  maxBalls: number;
   /** 盤面の下の方（下 3 割）で引力を何倍にするか（NP-17。1 で弱めない） */
   lowPull: number;
   ballRestitution: number;
@@ -64,6 +68,8 @@ export const schema: Schema<NovaConfig> = {
   slingMode: { label: '下の左右（0スリングショット／1月のバンパー）', min: 0, max: 1, step: 1, folder: '盤面', restart: true },
   moonKick: { label: '月のバンパー：満月の時の強さ', min: 4, max: 30, step: 0.5, folder: '盤面' },
   moonCharge: { label: '満月の光：満月で当てると近くの星を1つ灯す（0/1）', min: 0, max: 1, step: 1, folder: '盤面' },
+  endlessItems: { label: 'エンドレス：波ごとにアイテム（0/1）', min: 0, max: 1, step: 1, folder: 'ルール' },
+  maxBalls: { label: '盤の上のボールの上限（分裂）', min: 1, max: 6, step: 1, folder: 'ルール' },
   moonPeriod: { label: '月の満ち欠けの周期（秒）', min: 1, max: 20, step: 0.5, folder: '盤面' },
   lowPull: { label: '盤面の下の方の引力（倍）', min: 0, max: 1, step: 0.05, folder: '盤面' },
   ballRestitution: { label: 'ボールの弾み', min: 0, max: 0.95, step: 0.01, folder: '盤面' },
@@ -111,6 +117,8 @@ const normal: NovaConfig = {
   moonKick: 16,
   moonPeriod: 6,
   moonCharge: 1,
+  endlessItems: 1,
+  maxBalls: 4,
   ballRestitution: 0.45,
   popKick: 4.5,
   slingKick: 9,

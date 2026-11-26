@@ -74,7 +74,7 @@ const kickback: RuleFrame = {
 };
 
 const endless: RuleFrame = {
-  caption: '星座が次々に現れる。2波ごとに＋1ボール。どこまで行けるか',
+  caption: '星座が次々に現れる。2波ごとに＋1ボール、3波目からは毎波アイテムが1つ（1回きり）。どこまで行けるか',
   draw: (g, t) => {
     const p = phase(t, 3);
     for (let w = 0; w < 3; w++) {
