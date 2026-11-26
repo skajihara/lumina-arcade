@@ -104,9 +104,8 @@ async function main() {
     bumpAge.length = 0;
     const it = moonIntros[clawStages[i].id];
     introCard(it?.frame ?? null, it?.title);
-    center.innerHTML = `<div style="color:var(--gold);max-width:380px;margin:0 auto">${clawStages[i].hint}</div>`;
-    const cur = sim;
-    setTimeout(() => { if (sim === cur) center.innerHTML = ''; }, 4000);
+    // ヒントは盤の上ではなく左の余白に（巣穴や柱に重ならないように）。最初の 8 秒だけ
+    center.innerHTML = '';
   };
   const restart = () => start(stageIndex);
 
@@ -355,7 +354,7 @@ async function main() {
         tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big">${sim.score} / ${st.need}</div>
           <div style="font-size:14px;color:${tl0 < 15 ? '#ff9f9f' : 'var(--dim)'}">残り ${tl0.toFixed(0)} 秒</div>
           <div style="font-size:13px;color:var(--dim)">精霊 ${left}</div>
-          <div style="font-size:12px;color:var(--dim);margin-top:6px;line-height:1.6">マウス＝爪<br>長押し＝下ろす<br>右クリック＝開く<br>Z ／ ＝フリッパー</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+          <div style="font-size:12px;color:var(--dim);margin-top:6px;line-height:1.6">マウス＝爪<br>長押し＝下ろす<br>右クリック＝開く<br>Z ／ ＝フリッパー</div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}${sim.time < 8 ? `<div style="font-size:13px;color:var(--gold);max-width:150px;margin-top:10px;line-height:1.6;opacity:${Math.min(1, (8 - sim.time) / 1.5).toFixed(2)}">${st.hint}</div>` : ''}`;
       }
       tbar.update();
       hook.frames++;
