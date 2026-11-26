@@ -53,6 +53,8 @@ export const STYLES: Record<string, MusicStyle> = {
   // Starsand：ガラスのような音、さらさら流れる
   starsand: { ...base, tempo: 80, timbre: 'glass', pattern: [0, 1, 2, 4, 2, 1, 3, 5, 0, 2, 4, 6, 4, 2, 1, -1], padBright: 1300, arpOct: 1 },
   // 時空の絵筆：ゆれる時間。鈴が行って戻る（逆再生のように上がって同じ道を下りる）、こだま強め
+  // Moon Claw：クレーンの慎重さ（まばらなオルゴール）と、下の段のはずむ木琴の間。半拍ずれのはずむ並び
+  moon: { ...base, tempo: 88, timbre: 'mallet', pattern: [0, -1, 4, -1, 2, 4, -1, 5, -1, 3, -1, 1, 3, -1, 6, -1], padBright: 1500, padWave: 'triangle', echo: 0.38, arpOct: 1 },
   chrono: { ...base, tempo: 70, timbre: 'bell', pattern: [0, -1, 2, 4, 5, -1, 4, 2, 0, -1, 3, 5, 6, -1, 5, 3], padBright: 1200, padWave: 'triangle', echo: 0.5, arpOct: 1 },
 };
 
