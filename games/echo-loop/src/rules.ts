@@ -16,8 +16,8 @@ function clock(g: CanvasRenderingContext2D, x: number, y: number, r: number, k: 
   g.restore();
 }
 
-export function echoRules(loopSec: number): RuleFrame[] {
-  return [
+export function echoRules(loopSec: number, twist = 0): RuleFrame[] {
+  const list: RuleFrame[] = [
     {
       caption: `${loopSec}秒たつと、時間が巻き戻る`,
       draw: (g, t) => {
@@ -85,7 +85,35 @@ export function echoRules(loopSec: number): RuleFrame[] {
       },
     },
   ];
+  if (Math.round(twist) === 1) list.push(shrinkFrame);
+  return list;
 }
+
+/** EL-09：ひねり「縮む時間」の図解。残響が増えるほどループが短くなり、共鳴で取り戻す */
+export const shrinkFrame: RuleFrame = {
+  caption: '残響が1人増えるごとに、ループは<b style="color:#ff9fc8">1秒短く</b>なる。<b style="color:#c3a6ff">共鳴</b>で取り戻せる',
+  draw: (g, t) => {
+    const p = phase(t, 4.2);
+    const x0 = 14, x1 = 122, y = 30;
+    // 3本の帯：1ループ目・2ループ目・3ループ目（だんだん短い）。最後に共鳴で少し伸びる
+    for (let i = 0; i < 3; i++) {
+      const yy = y + i * 18;
+      const lost = i * 0.12;
+      const grow = i === 2 ? seg(p, 0.6, 0.8) * 0.08 : 0;
+      const len = 1 - lost + grow;
+      g.save(); g.lineCap = 'round';
+      g.strokeStyle = 'rgba(60,50,110,.9)'; g.lineWidth = 4;
+      g.beginPath(); g.moveTo(x0, yy); g.lineTo(x1, yy); g.stroke();
+      if (lost > 0) { g.strokeStyle = 'rgba(160,50,100,.9)'; g.beginPath(); g.moveTo(lerp(x0, x1, len), yy); g.lineTo(x1, yy); g.stroke(); }
+      g.strokeStyle = i === 0 ? VIOLET : i === 1 ? ECHO : ME; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(x0, yy); g.lineTo(lerp(x0, x1, len * Math.min(1, seg(p, i * 0.15, i * 0.15 + 0.3) + (i < 2 ? 0 : 0))), yy); g.stroke();
+      g.restore();
+      label(g, `${i + 1}`, x0 - 7, yy, 'rgba(255,255,255,.6)', 9);
+    }
+    const r = seg(p, 0.6, 0.85);
+    if (r > 0) { ring(g, lerp(x0, x1, 0.76 + r * 0.08), y + 36, 3 + r * 12, VIOLET, 1 - r, 2); label(g, '共鳴 ＋1秒', 98, 86, VIOLET, 10, 1 - seg(p, 0.9, 1)); }
+  },
+};
 
 /** EL-12：時計の針の NEW カード */
 export const handFrame: RuleFrame = {

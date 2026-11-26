@@ -16,6 +16,15 @@ export interface EchoConfig extends NovaConfig {
   handLen: number;
   handTurns: number;
   handBounce: number;
+  /**
+   * ひねり（EL-09）：0 なし／1 縮む時間（残響が1人増えるごとにループが shrinkSec 秒短くなる。共鳴で regainSec 秒取り戻す）／
+   * 2 影（残響の連鎖で壊れた星は shadowSec 秒後に戻る。今の自分の連鎖で壊した星は戻らない）
+   */
+  echoTwist: number;
+  shrinkSec: number;
+  minLoopSec: number;
+  regainSec: number;
+  shadowSec: number;
   /** 発射してからこの秒数（と発射の通り道の中）は、今のボールと残響がぶつからない */
   launchGrace: number;
 }
@@ -31,6 +40,11 @@ export const schema = Object.assign({
   handLen: { label: '針の長さ（倍）', min: 0.3, max: 1.5, step: 0.05, folder: 'ループ', restart: true },
   handTurns: { label: '針が1ループで回る数', min: 0.5, max: 4, step: 0.5, folder: 'ループ', restart: true },
   handBounce: { label: '針の弾み', min: 0, max: 1.2, step: 0.05, folder: 'ループ', restart: true },
+  echoTwist: { label: 'ひねり（0なし／1縮む時間／2影）', min: 0, max: 2, step: 1, folder: 'ループ', restart: true },
+  shrinkSec: { label: '縮む時間：残響1人ごとに短くなる秒', min: 0, max: 3, step: 0.1, folder: 'ループ', restart: true },
+  minLoopSec: { label: '縮む時間：いちばん短いループの秒', min: 3, max: 15, step: 0.5, folder: 'ループ', restart: true },
+  regainSec: { label: '縮む時間：共鳴で取り戻す秒', min: 0, max: 3, step: 0.1, folder: 'ループ' },
+  shadowSec: { label: '影：残響が壊した星が戻るまでの秒', min: 0.5, max: 8, step: 0.1, folder: 'ループ' },
   launchGrace: { label: '発射したての球は残響とぶつからない秒数', min: 0, max: 3, step: 0.1, folder: 'ループ' },
 }, novaSchema) as Schema<EchoConfig>;
 
@@ -56,6 +70,11 @@ const base = (p: NovaConfig): EchoConfig => ({
   resonance: 0.4,
   resonanceBlast: 1.6,
   launchGrace: 1,
+  echoTwist: 1,
+  shrinkSec: 1,
+  minLoopSec: 6,
+  regainSec: 1,
+  shadowSec: 3.5,
   hand: 1,
   handLen: 1,
   handTurns: 1,
@@ -63,7 +82,7 @@ const base = (p: NovaConfig): EchoConfig => ({
 });
 
 export const presets: Record<string, EchoConfig> = {
-  やさしい: { ...base(novaPresets['やさしい']), flipperLength: 2.3, maxLoops: 7, loopSec: 11 },
+  やさしい: { ...base(novaPresets['やさしい']), flipperLength: 2.3, maxLoops: 7, loopSec: 11, shrinkSec: 0.6, minLoopSec: 7 },
   ふつう: base(novaPresets['ふつう']),
   むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 5, loopSec: 9.5, blastRadius: 2.6 },
 };

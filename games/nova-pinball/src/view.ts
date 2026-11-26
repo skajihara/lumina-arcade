@@ -483,6 +483,12 @@ export class NovaView {
         sv.c.visible = false;
         return;
       }
+      if (!sv.c.visible) {
+        // 戻った星（Echo Loop の「影」）
+        sv.c.visible = true;
+        sv.lastCharge = -1;
+        sv.pulse = 1;
+      }
       const p = s.body.getPosition();
       sv.x = p.x * SCALE; sv.y = p.y * SCALE;
       sv.c.x = sv.x; sv.c.y = sv.y;

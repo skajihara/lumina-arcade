@@ -7,7 +7,7 @@ import { stages } from '../../nova-pinball/src/stages';
 import { NovaBot } from '../../nova-pinball/src/bot';
 import type { StageDef } from '../../nova-pinball/src/stages';
 
-const cfg = () => ({ ...presets[DEFAULT_PRESET] });
+const cfg = () => ({ ...presets[DEFAULT_PRESET], echoTwist: 0 });
 
 function runBot(stage: StageDef, loops: number, seed = 1) {
   const es = new EchoSim(stage, cfg());
@@ -124,5 +124,33 @@ describe('EL-11/12 残響の再生', () => {
       }
       expect(maxd).toBeLessThan(0.01);
     }
+  });
+
+  it('ひねり「縮む時間」：残響の数だけループが短くなり、下限で止まる', () => {
+    const c = { ...cfg(), echoTwist: 1, loopSec: 10, shrinkSec: 1, minLoopSec: 7, maxLoops: 6 };
+    const es = new EchoSim(echoStages[0], c);
+    const lens: number[] = [];
+    let last = -1;
+    while (es.phase === 'play') {
+      if (es.loop !== last) { lens.push(es.loopTicks); last = es.loop; }
+      es.step(0);
+    }
+    expect(lens).toEqual([1200, 1080, 960, 840, 840, 840]);
+  });
+
+  it('ひねり「影」：残響の連鎖で壊れた星は shadowSec 秒後に戻る', () => {
+    const c = { ...cfg(), echoTwist: 2, shadowSec: 1 };
+    const es = new EchoSim(echoStages[4], c);
+    const bot = new NovaBot(3, 0.85);
+    bot.bias = echoBias(es);
+    // 1ループ目はボットが壊す。2ループ目は何もしない → 残響（1ループ目の自分）が壊した星は影になって戻る
+    while (es.loop === 0 && es.phase === 'play') { bot.owner = 0; es.step(bot.input(es.sim)); }
+    let shadows = 0, revives = 0;
+    while (es.loop === 1 && es.phase === 'play') {
+      es.step(0);
+      for (const e of es.events) { if (e.t === 'shadow') shadows++; if (e.t === 'revive') revives++; }
+    }
+    expect(shadows).toBeGreaterThan(0);
+    expect(revives).toBeGreaterThan(0);
   });
 });
