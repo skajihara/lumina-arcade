@@ -52,6 +52,10 @@ const SHAPES: Record<string, BoardShape> = {
   divider: { name: '仕切り', walls: [[{ x: 6.9, y: 5.4 }, { x: 6.9, y: 9.4 }]] },
   /** 天の川の両岸の小島 */
   banks: { name: '岸の島', islands: [{ x: 3.6, y: 11.6, r: 0.75, n: 5 }, { x: 11.4, y: 5.6, r: 0.6, n: 5 }] },
+  /** 丸い天井の盤（NP-19b：外壁そのものの形） */
+  dome: { name: '丸天井', outer: 'dome' },
+  /** 角を斜めに落とした八角の盤。角で球が鋭く跳ね返る */
+  gem: { name: '八角の盤', outer: 'gem' },
   /** 漏斗（深い） */
   funnelDeep: { name: '深い漏斗', walls: funnel(8.4, 13.6, 2.2) },
 };
@@ -146,6 +150,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'drift',
+    shape: SHAPES.dome,
     slings: true, rollovers: true,
     name: '漂う星',
     hint: '固定されていない星は爆風で飛ぶ。ぶつかってもチャージされる',
@@ -172,6 +177,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'cygnus',
+    shape: SHAPES.gem,
     slings: true, outlanes: true, rollovers: true,
     name: '白鳥',
     hint: '翼の先から胴へ。十字の真ん中が鍵',
@@ -186,6 +192,7 @@ export const stages: StageDef[] = [
   },
   {
     id: 'scorpius',
+    shape: SHAPES.dome,
     slings: true, outlanes: true, rollovers: true,
     name: '蠍',
     hint: '赤い心臓から尾の毒針まで。壁際の星は惑星で跳ねて狙え',

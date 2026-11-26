@@ -125,6 +125,8 @@ export interface BoardShape {
   name: string;
   walls?: { x: number; y: number }[][];
   islands?: { x: number; y: number; r: number; n?: number; rot?: number }[];
+  /** 外壁の上の形（NP-19b）：dome＝丸い天井（半円）／gem＝角を斜めに落とした八角の盤。なし＝角の丸い四角 */
+  outer?: 'dome' | 'gem';
 }
 
 /** 島の多角形（閉じた点の列。最後の点は最初の点と同じ） */
@@ -161,11 +163,17 @@ export function boardWalls(opts: BoardOpts = {}): { x: number; y: number }[][] {
     }
     return p;
   };
+  // 外壁の上の部分（NP-19b で形を選べるように）
+  const kind = opts.shape?.outer;
+  const top = kind === 'dome'
+    ? arcPts(7.5, 7.5, 6.9, Math.PI, Math.PI * 2, 28)
+    : kind === 'gem'
+      ? [{ x: 0.6, y: 5.6 }, { x: 4.6, y: 0.6 }, { x: 10.2, y: 0.6 }, { x: 14.4, y: 4.8 }]
+      : [...arcPts(3.2, 3.2, 2.6, Math.PI, Math.PI * 1.5), ...arcPts(11.8, 3.2, 2.6, Math.PI * 1.5, Math.PI * 2)];
   const outer = [
     ...(opts.outlanes ? [{ x: 0.6, y: 25.6 }] : []),
     { x: 0.6, y: 19.0 },
-    ...arcPts(3.2, 3.2, 2.6, Math.PI, Math.PI * 1.5),
-    ...arcPts(11.8, 3.2, 2.6, Math.PI * 1.5, Math.PI * 2),
+    ...top,
     { x: 14.4, y: 24.4 },
     { x: 13.2, y: 24.4 },
     { x: 13.2, y: 6.4 },
