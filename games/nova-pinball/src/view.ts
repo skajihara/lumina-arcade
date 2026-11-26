@@ -292,7 +292,15 @@ export class NovaView {
       case 'wave':
         this.buildStars();
         this.linksDirty = true;
-        this.hud.toast(`WAVE ${e.n}　星 ${this.sim.stars.length - e.from} 個`);
+        {
+          const names: Record<string, string> = { split: '分裂', hole: 'ブラックホール', warp: 'ワームホール', comet: '彗星', magnet: '磁石' };
+          const it = this.sim.items[0];
+          this.hud.toast(`WAVE ${e.n}　星 ${this.sim.stars.length - e.from} 個${it && e.n >= 2 ? `　＋${names[it.kind]}` : ''}`);
+          if (it && e.n >= 2) {
+            this.particles.emit(it.x * SCALE, it.y * SCALE, { count: 26, speed: [40, 200], life: [0.4, 1.0], size: [0.05, 0.16], color: [0xffffff, 0xffe1a8] });
+            synth.tone(880, 0.25, { type: 'triangle', vol: 0.1, slideTo: 1320 });
+          }
+        }
         synth.nextChord(0.05);
         for (let i = e.from; i < this.sim.stars.length; i++) {
           const sv = this.stars[i];
