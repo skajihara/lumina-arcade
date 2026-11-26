@@ -102,6 +102,29 @@ export const stages: StageDef[] = [
     ink: 700,
     solution: [[{ x: 22, y: 30 }, { x: 40, y: 70 }], [{ x: 100, y: 26 }, { x: 44, y: 70 }], [{ x: 101, y: 26 }, { x: 156, y: 70 }], [{ x: 178, y: 30 }, { x: 160, y: 70 }]],
   }),
+  stage({
+    id: 'ss-09',
+    name: '星風',
+    hint: '青い流れの中では、砂が風に運ばれる。高い壁は越えられない — 風に乗せて向こうの器へ',
+    walls: [{ x: 96, y: 34, w: 4, h: 86 }],
+    winds: [{ x: 56, y: 8, w: 64, h: 24, ax: 900, ay: -380 }],
+    sources: [{ x: 24, y: 2, color: 1, total: 1000, rate: 3, width: 5 }],
+    boxes: [cupBox(124, H - 24, 36, 20, 240)],
+    ink: 200,
+    solution: [[{ x: 4, y: 20 }, { x: 58, y: 26 }]],
+  }),
+  stage({
+    id: 'ss-10',
+    name: '星の門',
+    hint: '器には屋根がある。入れるのは星の門だけ — 門に入った砂は、屋根の下の出口から出てくる。風に負けるな',
+    walls: [{ x: 28, y: 80, w: 40, h: 3 }, { x: 28, y: 83, w: 2, h: 14 }, { x: 66, y: 83, w: 2, h: 14 }],
+    winds: [{ x: 100, y: 50, w: 100, h: 26, ax: -700, ay: 0 }],
+    portals: [{ x: 168, y: 104, w: 16, h: 8, tx: 48, ty: 88 }],
+    sources: [{ x: 150, y: 2, color: 2, total: 1100, rate: 3, width: 5 }],
+    boxes: [cupBox(30, H - 24, 36, 20, 240)],
+    ink: 280,
+    solution: [[{ x: 88, y: 80 }, { x: 172, y: 102 }]],
+  }),
 ];
 
 export { W };

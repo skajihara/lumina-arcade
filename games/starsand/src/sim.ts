@@ -79,7 +79,14 @@ export interface StageDef {
   ink: number;
   /** 自動プレイ・検証用の解の線（折れ線の列） */
   solution?: { x: number; y: number }[][];
+  /** 星風（SS-12）：四角の中の砂を (ax, ay) の向きへ押し続ける（マス/秒²） */
+  winds?: Wind[];
+  /** 星の門（SS-12）：入口の四角に入った砂は、出口 (tx, ty) から同じ速さで出てくる */
+  portals?: Portal[];
 }
+
+export interface Wind { x: number; y: number; w: number; h: number; ax: number; ay: number }
+export interface Portal { x: number; y: number; w: number; h: number; tx: number; ty: number }
 
 /** プレイヤーの線の1本（線分） */
 export interface Seg {
@@ -114,6 +121,8 @@ export class SandSim {
   cupCount: number[];
   filled: boolean[];
   lost = 0;
+  /** 星の門をくぐった粒の数（描画の光に使う） */
+  portalCount = 0;
   events: SandEvent[] = [];
   /** 画面の上にある砂の数 */
   grains = 0;
@@ -406,8 +415,12 @@ export class SandSim {
     const n = this.grains;
     const g = this.cfg.gravity ?? 420, vmax = this.cfg.maxSpeed ?? 100;
     const { px, py, ox, oy, gx, gy, gvx, gvy } = this;
+    const winds = this.stage.winds ?? [];
     for (let i = 0; i < n; i++) {
       gvy[i] += g * DT;
+      for (const w of winds) {
+        if (gx[i] >= w.x && gx[i] < w.x + w.w && gy[i] >= w.y && gy[i] < w.y + w.h) { gvx[i] += w.ax * DT; gvy[i] += w.ay * DT; }
+      }
       const sp = Math.hypot(gvx[i], gvy[i]);
       if (sp > vmax) { gvx[i] *= vmax / sp; gvy[i] *= vmax / sp; }
       ox[i] = gx[i]; oy[i] = gy[i];
@@ -459,6 +472,15 @@ export class SandSim {
       if (this.touch[i]) { vx *= 1 - fr; vy *= 1 - fr; }
       gvx[i] = vx; gvy[i] = vy;
       gx[i] = px[i]; gy[i] = py[i];
+    }
+    // 星の門：入口に入った粒は出口へ（速さはそのまま。少しずらして重なりを避ける）
+    for (const pt of this.stage.portals ?? []) {
+      for (let i = 0; i < this.grains; i++) {
+        if (gx[i] < pt.x || gx[i] >= pt.x + pt.w || gy[i] < pt.y || gy[i] >= pt.y + pt.h) continue;
+        gx[i] = pt.tx + this.rng.range(-1.5, 1.5);
+        gy[i] = pt.ty + this.rng.range(-0.5, 0.5);
+        this.portalCount++;
+      }
     }
     // 画面の下へ落ちた
     let maxSp = 0;

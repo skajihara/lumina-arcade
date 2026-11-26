@@ -84,3 +84,33 @@ export const sandRules: RuleFrame[] = [
     },
   },
 ];
+
+/** 新しい要素の図解（SS-12）：星風と星の門 */
+export const windRule: RuleFrame = {
+  caption: '青い帯（星風）の中では、砂が風の向きへ運ばれる。風に乗せれば壁も越えられる',
+  draw: (g, t) => {
+    g.save(); g.fillStyle = '#7fb8ff'; g.globalAlpha = 0.12; g.fillRect(40, 14, 90, 26); g.restore();
+    for (let k = 0; k < 6; k++) { const f = (t * 0.8 + k / 6) % 1; line(g, 44 + f * 80, 20 + (k % 3) * 8, 54 + f * 80, 20 + (k % 3) * 8, '#cfe6ff', 0.5); }
+    line(g, 100, 46, 100, 92, '#8f9be8', 1, 4);
+    for (let i = 0; i < 14; i++) {
+      const p = phase(t + i * 0.07, 1.6);
+      const x = p < 0.3 ? 20 + p * 60 : lerp(38, 150, seg(p, 0.3, 1));
+      const y = p < 0.3 ? 10 + p * 40 : 22 + Math.pow(seg(p, 0.3, 1), 2) * 62;
+      grain(g, x, y, ICE);
+    }
+    cup(g, 136, 70, 30, 22, '#8f9be8', 0.4, ICE);
+  },
+};
+export const portalRule: RuleFrame = {
+  caption: '星の門に入った砂は、点線の先の出口から出てくる。屋根のある器にはここからしか入れない',
+  draw: (g, t) => {
+    for (let k = 0; k < 3; k++) ring(g, 140, 80, 12 * (1 - ((t * 0.7 + k / 3) % 1)), '#c9a3ff', 0.7);
+    ring(g, 50, 60, 6, '#c9a3ff', 0.8);
+    line(g, 140, 80, 50, 60, '#c9a3ff', 0.4, 1, [2, 4]);
+    line(g, 28, 48, 72, 48, '#8f9be8', 1, 3);
+    cup(g, 32, 62, 36, 26, '#8f9be8', seg(phase(t, 4), 0.2, 1) * 0.8, '#ffa3e0');
+    for (let i = 0; i < 8; i++) { const p = phase(t + i * 0.12, 1); grain(g, lerp(110, 138, p), lerp(40, 78, p), '#ffa3e0'); }
+    glow(g, 50, 60, 5, '#c9a3ff', 0.6);
+    label(g, '門', 140, 102, '#c9a3ff', 10);
+  },
+};

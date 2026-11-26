@@ -17,7 +17,7 @@ import { installNav, launcherButton, settingsRow } from '@engine/nav';
 import { schema, presets, DEFAULT_PRESET, type SandConfig } from './config';
 import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
-import { sandRules } from './rules';
+import { sandRules, windRule, portalRule } from './rules';
 import { SandSim, W, H, COLORS, type SandEvent } from './sim';
 
 const CELL = 5;
@@ -129,7 +129,10 @@ async function main() {
     botLine = 0;
     botT = 0;
     // このステージで初めて出てくる要素の図解（RULE-01c）：4面は色の混合
-    introCard(stages[i].id === 'ss-04' ? sandRules[3] : null, '混ざる光');
+    const id = stages[i].id;
+    if (id === 'ss-09') introCard(windRule, '星風');
+    else if (id === 'ss-10') introCard(portalRule, '星の門');
+    else introCard(id === 'ss-04' ? sandRules[3] : null, '混ざる光');
     mode = 'play';
     hintEl.textContent = touchText(stages[i].hint, [['ドラッグで線', 'なぞって線'], ['右ドラッグで消す', '「消しゴム」で消す']]);
     flowing = false;
@@ -483,6 +486,36 @@ async function main() {
     // 器：星座の形の縁。満ちるほど内側が光る
     const cg = cupG;
     cg.clear();
+    // 星風（SS-12）：うすい青の帯と、風の向きへ流れる光の筋
+    for (const wd of s.stage.winds ?? []) {
+      const x = wd.x * CELL, y = wd.y * CELL, w = wd.w * CELL, h = wd.h * CELL;
+      cg.rect(x, y, w, h).fill({ color: 0x7fb8ff, alpha: 0.07 }).stroke({ width: 1, color: 0x9fd0ff, alpha: 0.18 });
+      const sp = Math.hypot(wd.ax, wd.ay) || 1, ux = wd.ax / sp, uy = wd.ay / sp;
+      const n = Math.max(6, Math.round((wd.w * wd.h) / 60));
+      for (let k = 0; k < n; k++) {
+        const hx = (k * 0.5698403) % 1, hy = (k * 0.7548777 + 0.13) % 1;
+        const frac = (v: number) => ((v % 1) + 1) % 1;
+        const f = frac(t * 0.8 + hy * 3);
+        const cx = x + frac(hx + ux * t * 0.35) * w, cy = y + frac(hy + uy * t * 0.35) * h;
+        const len = 16;
+        cg.moveTo(cx - ux * len, cy - uy * len).lineTo(cx, cy).stroke({ width: 1.5, color: 0xcfe6ff, alpha: 0.5 * Math.sin(f * Math.PI) });
+      }
+    }
+    // 星の門（SS-12）：入口は回る輪、出口は小さな輪。間を点線で結ぶ
+    for (const pt of s.stage.portals ?? []) {
+      const cx = (pt.x + pt.w / 2) * CELL, cy = (pt.y + pt.h / 2) * CELL, R = (Math.max(pt.w, pt.h) / 2) * CELL;
+      const tx = pt.tx * CELL, ty = pt.ty * CELL;
+      for (let k = 0; k < 3; k++) {
+        const rr = R * (1 - ((t * 0.7 + k / 3) % 1));
+        cg.ellipse(cx, cy, rr, rr * (pt.h / pt.w)).stroke({ width: 1.5, color: 0xc9a3ff, alpha: 0.7 * (rr / R) });
+      }
+      cg.circle(tx, ty, 10 + 2 * Math.sin(t * 4)).stroke({ width: 1.5, color: 0xc9a3ff, alpha: 0.6 });
+      const n = 18;
+      for (let k = 1; k < n; k++) {
+        const f = (k / n + t * 0.3) % 1;
+        cg.circle(cx + (tx - cx) * f, cy + (ty - cy) * f, 2.2).fill({ color: 0xc9a3ff, alpha: 0.5 });
+      }
+    }
     s.stage.cups.forEach((c, i) => {
       cupGlow[i] = Math.max(0, (cupGlow[i] ?? 0) - dt * 0.6);
       const x = c.x * CELL, y = c.y * CELL, w = c.w * CELL, h = c.h * CELL;
