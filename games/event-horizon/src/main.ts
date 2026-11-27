@@ -1,238 +1,164 @@
 /**
- * Event Horizon — 事象の地平クレーン（描画・入力・画面遷移）。
- * シミュレーションは sim.ts（Pixi を使わない）。
+ * Event Horizon — 地平すれすれ（EH-20b）。描画・入力・画面遷移。シミュレーションは sim.ts（Pixi を使わない）。
+ * 船でブラックホールの周りを回り、地平すれすれをかすめるほど時計が遅れて倍率が上がる。かけらを拾うと 10 × 倍率 点。
+ * 操作は2つ：加速（↑・Space・W・左クリック長押し／スマホは画面の右半分）、減速（↓・X・S／スマホは左半分）。
  */
 import { createGameApp, installDebugHook } from '@engine/app';
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { BulgePinchFilter } from 'pixi-filters';
 import { FixedLoop } from '@engine/loop';
 import { Juice } from '@engine/juice';
 import { synth } from '@engine/audio';
 import { createTuning } from '@engine/tuning';
 import { Save, clearStored } from '@engine/storage';
 import { Particles } from '@engine/particles';
-import { skyTexture, makeStarfield, glowTexture } from '@engine/gfx';
+import { fxRandom } from '@engine/rng';
+import { skyTexture, makeStarfield, glowTexture, lerpColor } from '@engine/gfx';
 import { injectBaseStyle, el, touchButtons, touchText, resetButton, goTo } from '@engine/hud';
 import { installNav, launcherButton, settingsRow } from '@engine/nav';
-import { schema, presets, DEFAULT_PRESET, type HorizonConfig } from './config';
-import { stages } from './stages';
 import { ruleCards, introCard } from '@engine/rules';
-import { horizonRules } from './rules';
-import { HorizonSim, HZ, WORLD_W, WORLD_H, IN_PULL, IN_BURST, type HorizonInput, type HorizonEvent } from './sim';
-import { HorizonBot } from './bot';
+import { schema, presets, DEFAULT_PRESET, toSkim, type HorizonConfig } from './config';
+import { stages } from './stages';
+import { horizonRules, horizonIntros } from './rules';
+import { SkimSim, HZ, WORLD_W, WORLD_H } from './sim';
+import { SkimBot } from './bot';
 
-const SCALE = 50;
-const VIEW_W = WORLD_W * SCALE;
-const VIEW_H = WORLD_H * SCALE;
+const S = 30;
+const VW = WORLD_W * S, VH = WORLD_H * S;
+const px = (x: number) => x * S;
 const params = new URLSearchParams(location.search);
 
-interface Progress {
-  cleared: Record<string, number>;
-}
-
-const SHARD_COLOR = { dust: 0xbfe8ff, heavy: 0xffd27f };
+interface Progress { cleared: Record<string, number>; best: Record<string, number> }
 
 async function main() {
-  injectBaseStyle();
-  const ga = await createGameApp(VIEW_W, VIEW_H);
+  injectBaseStyle(`
+    .pops { position:fixed; z-index:6; pointer-events:none; font-weight:700; text-shadow:0 0 8px #000 }
+    .ehbar { width:170px; height:6px; border-radius:3px; background:rgba(120,140,220,.2); overflow:hidden; margin:3px 0 6px }
+    .ehbar i { display:block; height:100% }
+  `);
+  const ga = await createGameApp(VW, VH);
   const juice = new Juice();
   const tuning = createTuning<HorizonConfig>('event-horizon', schema, presets, DEFAULT_PRESET);
   const cfg = tuning.config;
-  const save = new Save<Progress>('event-horizon', { cleared: {} });
+  const save = new Save<Progress>('event-horizon', { cleared: {}, best: {} });
+  save.data.best ??= {};
 
-  // 描画の層：背景（重力レンズで歪む）・世界・前景
-  const bgLayer = new Container();
-  const sky = new Sprite(skyTexture(VIEW_W, VIEW_H, '#140a26', '#03030c', ['#6a2a5e', '#2a3a8f', '#8a4a2a']));
-  const field = makeStarfield(VIEW_W, VIEW_H, 220, 31);
-  bgLayer.addChild(sky, field.container);
-  const lens = new BulgePinchFilter({ radius: 150, strength: -0.5 });
-  bgLayer.filters = [lens];
-  const staticG = new Graphics();
-  const goalG = new Graphics();
+  const sky = new Sprite(skyTexture(VW, VH, '#070a22', '#010208', ['#2a1a5a', '#13306a', '#4a1a4a']));
+  // 背景の星：倍率が上がるとブラックホールへ寄って（縮んで）青くなる
+  const fieldWrap = new Container();
+  const field = makeStarfield(VW, VH, 220, 41);
+  fieldWrap.addChild(field.container);
   const trailG = new Graphics();
-  const shardLayer = new Container();
-  const diskBackG = new Graphics();
+  const diskBack = new Graphics();
   const holeG = new Graphics();
-  const diskFrontG = new Graphics();
-  const fxG = new Graphics();
-  const particles = new Particles(2500);
-  const dilateG = new Graphics();
-  ga.world.addChild(bgLayer, staticG, goalG, trailG, diskBackG, shardLayer, holeG, diskFrontG, particles.container, fxG, dilateG);
+  const diskFront = new Graphics();
+  const shardLayer = new Container();
+  const predG = new Graphics();
+  const shipG = new Graphics();
+  const shipGlow = new Sprite(glowTexture());
+  shipGlow.anchor.set(0.5);
+  shipGlow.blendMode = 'add';
+  const lensLayer = new Container();
+  const blueWash = new Graphics().rect(0, 0, VW, VH).fill({ color: 0x3a6cff });
+  blueWash.blendMode = 'add';
+  blueWash.alpha = 0;
+  const particles = new Particles(1600);
+  ga.world.addChild(sky, fieldWrap, lensLayer, trailG, diskBack, holeG, diskFront, shardLayer, predG, shipGlow, shipG, particles.container, blueWash);
 
-  // HUD
   const hud = el('div', { class: 'hud' });
   const tl = el('div', { class: 'tl' });
   const tr = el('div', { class: 'tr' });
   const center = el('div', { class: 'center' });
-  const chainEl = el('div', { class: 'chain' });
-  chainEl.style.opacity = '0';
-  const toastEl = el('div', { class: 'toast' });
-  center.append(chainEl, toastEl);
   hud.append(tl, tr, center);
   document.body.appendChild(hud);
-  // UX-01：左上の戻る・Esc・ブラウザの戻る。プレイ中はポーズ、ポーズは続ける、リザルトはステージ選択、タイトルは星図へ
-  installNav(
-    () => {
-      if (mode === 'play' || mode === 'pause') togglePause();
-      else if (mode === 'result') showTitle();
-      else goTo('./index.html');
-    },
-    () => (mode === 'play' ? '‖ ポーズ' : mode === 'pause' ? '▶ 続ける' : mode === 'result' ? '← ステージ選択' : '← 星図へ'),
-  );
-  let toastTimer = 0;
-  const toast = (msg: string) => {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => toastEl.classList.remove('show'), 2400);
-  };
-  let chainTimer = 0;
-  const showChain = (n: number) => {
-    chainEl.textContent = `${n} CHAIN`;
-    chainEl.style.opacity = '1';
-    chainEl.style.color = n >= 4 ? '#ffb3e6' : n >= 3 ? '#ffd98a' : '#fff';
-    clearTimeout(chainTimer);
-    chainTimer = window.setTimeout(() => (chainEl.style.opacity = '0'), 1400);
-  };
 
-  let sim: HorizonSim | null = null;
-  let bot: HorizonBot | null = null;
-  let stageIndex = 0;
+  let stageIndex = Math.min(stages.length - 1, Math.max(0, Number(params.get('stage') ?? 0) || 0));
+  let sim = new SkimSim(stages[stageIndex], toSkim(cfg));
+  let bot = new SkimBot(0.85, 1);
   let mode: 'menu' | 'play' | 'pause' | 'result' = 'menu';
   let menu: HTMLElement | null = null;
   let autoplay = params.has('autoplay');
   let resultTimer = -1;
   let t = 0;
-  // 入力：マウスの位置（論理座標）・引く・解放
-  const pointer = { x: VIEW_W / 2, y: VIEW_H / 3 };
-  let pullDown = false;
-  /** タッチ：指を置いた所へまず引かずに動き、着いてから引き寄せ始める（道中のかけらを巻き込まない） */
-  let touchArm = false;
-  let burstQueued = false;
-  const keys = new Set<string>();
-  // かけらの見た目
-  let shardSprites: { glow: Sprite; core: Sprite; trail: { x: number; y: number }[] }[] = [];
-  const goalFlash: number[] = [];
-  let burstRings: { x: number; y: number; r: number; age: number }[] = [];
-  let whiteHole = 0;
-  let holdTold = false;
-  let lastInput: HorizonInput = { x: 0, y: 0, bits: 0 };
-
+  let skimGlow = 0;
+  let toneT = 0;
+  const trail: { x: number; y: number; m: number }[] = [];
+  let shardSprites: Sprite[] = [];
+  let lensSprites: Sprite[] = [];
+  const pops: { x: number; y: number; age: number; node: HTMLElement }[] = [];
   const closeMenu = () => { menu?.remove(); menu = null; };
 
-  const drawStatic = () => {
-    if (!sim) return;
-    const g = staticG;
-    g.clear();
-    const pits = [...(sim.stage.pits ?? [])].sort((a, b) => a[0] - b[0]);
-    // 床（穴の部分は抜く）
-    let x0 = 0;
-    const floorY = WORLD_H * SCALE - 1;
-    for (const [a, b] of pits) {
-      if (a > x0) g.moveTo(x0 * SCALE, floorY).lineTo(a * SCALE, floorY);
-      x0 = b;
-    }
-    if (x0 < WORLD_W) g.moveTo(x0 * SCALE, floorY).lineTo(VIEW_W, floorY);
-    g.stroke({ width: 3, color: 0xb8a8ff, alpha: 0.7 });
-    // 奈落：下から立ち上る暗い赤紫の光
-    for (const [a, b] of pits) {
-      for (let k = 0; k < 6; k++) {
-        g.rect(a * SCALE, VIEW_H - 8 - k * 10, (b - a) * SCALE, 10).fill({ color: 0xff4f8a, alpha: 0.05 * (6 - k) / 6 });
-      }
-      g.moveTo(a * SCALE, VIEW_H).lineTo(a * SCALE, VIEW_H - 18).moveTo(b * SCALE, VIEW_H).lineTo(b * SCALE, VIEW_H - 18).stroke({ width: 2, color: 0xff7fae, alpha: 0.6 });
-    }
-    for (const line of sim.stage.walls ?? []) {
-      g.moveTo(line[0].x * SCALE, line[0].y * SCALE);
-      for (const p of line.slice(1)) g.lineTo(p.x * SCALE, p.y * SCALE);
-      g.stroke({ width: 8, color: 0x9fb8ff, alpha: 0.12, cap: 'round' });
-      g.moveTo(line[0].x * SCALE, line[0].y * SCALE);
-      for (const p of line.slice(1)) g.lineTo(p.x * SCALE, p.y * SCALE);
-      g.stroke({ width: 3, color: 0xc9d6ff, alpha: 0.85, cap: 'round' });
-    }
+  const multColor = (m: number) => (m < 1.6 ? lerpColor(0xffe2b0, 0xffffff, (m - 1) / 0.6) : lerpColor(0xffffff, 0x5a9cff, Math.min(1, (m - 1.6) / 2.5)));
+
+  const buildSprites = () => {
+    shardLayer.removeChildren().forEach((c) => c.destroy());
+    lensLayer.removeChildren().forEach((c) => c.destroy());
+    shardSprites = sim.shards.map(() => {
+      const sp = new Sprite(glowTexture());
+      sp.anchor.set(0.5);
+      sp.blendMode = 'add';
+      shardLayer.addChild(sp);
+      return sp;
+    });
+    // 重力レンズの光の暈（ブラックホールごと）
+    lensSprites = sim.stage.holes.map(() => {
+      const sp = new Sprite(glowTexture());
+      sp.anchor.set(0.5);
+      sp.blendMode = 'add';
+      sp.tint = 0x8fa8ff;
+      sp.alpha = 0.35;
+      lensLayer.addChild(sp);
+      return sp;
+    });
   };
 
-  /** かけらの見た目を作る（スコアアタックで増えた分だけ足す） */
-  const buildShards = (reset = false) => {
-    if (reset) {
-      shardLayer.removeChildren();
-      shardSprites = [];
-    }
-    if (!sim) return;
-    for (const s of sim.shards.slice(shardSprites.length)) {
-      const glow = new Sprite(glowTexture());
-      glow.anchor.set(0.5);
-      glow.blendMode = 'add';
-      glow.tint = SHARD_COLOR[s.kind];
-      glow.scale.set((s.r * SCALE * 4) / 128);
-      const core = new Sprite(glowTexture());
-      core.anchor.set(0.5);
-      core.tint = 0xffffff;
-      core.scale.set((s.r * SCALE * 1.4) / 128);
-      shardLayer.addChild(glow, core);
-      shardSprites.push({ glow, core, trail: [] });
-    }
-  };
-
-  const startStage = (i: number) => {
+  const start = (i: number) => {
     closeMenu();
-    stageIndex = i;
-    sim = new HorizonSim(stages[i], cfg);
-    bot = new HorizonBot(i + 3, 0.85);
-    resultTimer = -1;
-    burstRings = [];
-    whiteHole = 0;
-    goalFlash.length = 0;
-    sim.stage.goals.forEach(() => goalFlash.push(0));
-    // このステージで初めて出てくる要素の図解（RULE-01c）：3面は解放（ホワイトホール）
-    { const r = horizonRules(Math.round(cfg.twist) % 2 === 1); introCard(stages[i].id === 'eh-white' ? r[2] : stages[i].id === 'eh-abyss' && Math.round(cfg.twist) % 2 === 1 ? r[3] : null, stages[i].id === 'eh-white' ? 'ホワイトホール' : '落としても、まだ間に合う'); }
     mode = 'play';
-    drawStatic();
-    buildShards(true);
+    stageIndex = i;
+    sim = new SkimSim(stages[i], toSkim(cfg), 7);
+    bot = new SkimBot(0.85, 1 + i);
+    resultTimer = -1;
+    trail.length = 0;
+    skimGlow = 0;
+    for (const p of pops) p.node.remove();
+    pops.length = 0;
+    buildSprites();
+    const it = stages[i].intro ? horizonIntros[stages[i].intro!] : null;
+    introCard(it?.frame ?? null, it?.title);
+    center.innerHTML = `<div style="color:var(--gold);max-width:560px;margin:0 auto">${touchText(stages[i].hint, [['↓（減速）', '左半分を押す（減速）'], ['↑（加速）', '右半分を押す（加速）']])}</div>`;
+    const cur = sim;
+    setTimeout(() => { if (sim === cur) center.innerHTML = ''; }, 5000);
     synth.setKey(i % 5);
-    toast(touchText(stages[i].hint, [['クリックしている間だけ引き寄せる', '指を置くと指の下へ動き、離すまで引き寄せる'], ['Space（右クリック）', '下の「解放」ボタン']]));
   };
-
-  /** 星評価：クリアで★1、かけらを1つも失わずに★2、さらに1回の投げで2つ以上を連鎖して★3 */
-  const ATTACK_STARS = [5000, 10000];
-  const rating = (s: HorizonSim) => {
-    if (s.phase !== 'clear') return 0;
-    if (s.stage.attack) return 1 + ATTACK_STARS.filter((v) => s.score >= v).length;
-    const kept = !s.shards.some((x) => x.state === 'lost');
-    if (!kept) return 1;
-    return s.bestChain >= 2 ? 3 : 2;
-  };
+  const restart = () => start(stageIndex);
 
   const showResult = () => {
-    if (!sim) return;
     mode = 'result';
-    synth.chargeTone(-1);
     const st = stages[stageIndex];
-    const cleared = sim.phase === 'clear';
-    const stars = rating(sim);
-    if (cleared) {
+    const stars = sim.starsFor();
+    if (stars > 0) {
       save.data.cleared[st.id] = Math.max(save.data.cleared[st.id] ?? 0, stars);
+      save.data.best[st.id] = Math.max(save.data.best[st.id] ?? 0, sim.score);
       save.write();
     }
-    const lost = sim.shards.filter((x) => x.state === 'lost').length;
+    const why = sim.endWhy === 'horizon' ? '地平に飲み込まれた' : sim.endWhy === 'drift' ? '遠くへ流された' : '船の時計が尽きた';
     menu = el('div', { class: 'menu' });
-    menu.innerHTML = `
-      <h1>${cleared ? 'CLEAR' : 'FAILED'}</h1><h2>${st.name}</h2>
-      ${cleared ? `<p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>` : ''}
-      <p>${cleared ? `スコア ${sim.score.toLocaleString()}　最大連鎖 ${sim.bestChain}　失ったかけら ${lost}` : sim.worldTime >= cfg.timeLimit ? '時間切れ' : 'かけらが足りなくなった'}</p>
-      <p style="font-size:13px">${st.attack ? `★2：${ATTACK_STARS[0].toLocaleString()} 点　★3：${ATTACK_STARS[1].toLocaleString()} 点` : '★2：かけらを1つも失わない　★3：さらに、1回の投げで2つ以上を連鎖'}</p>
+    menu.innerHTML = `<h1>${stars ? 'CLEAR' : 'FAILED'}</h1><h2>${st.name}</h2>
+      <p style="font-size:34px;color:var(--gold);letter-spacing:.2em">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</p>
+      <p>${why}　得点 <b style="color:#ffe7a8;font-size:22px">${sim.score}</b>　かけら ${sim.picks}　最高倍率 ×${sim.bestMult.toFixed(1)}${save.data.best[st.id] ? `　これまでの最高 ${save.data.best[st.id]}` : ''}</p>
+      <p style="font-size:13px">★ ${st.stars.join(' / ')} 点（★1 で次の面へ）</p>
       <div class="row" style="margin-top:12px"></div>`;
     const row = menu.querySelector('.row')!;
-    if (cleared && stageIndex < stages.length - 1) {
+    if (stars && stageIndex < stages.length - 1) {
       const nb = el('button', { class: 'btn' }, '次のステージ →');
-      nb.onclick = () => startStage(stageIndex + 1);
+      nb.onclick = () => start(stageIndex + 1);
       row.appendChild(nb);
     }
     const rb = el('button', { class: 'btn' }, 'もう一度 (R)');
-    rb.onclick = () => startStage(stageIndex);
+    rb.onclick = restart;
     const mb = el('button', { class: 'btn' }, 'ステージ選択');
     mb.onclick = () => showTitle();
-    row.append(rb, mb);
-    row.append(launcherButton());
+    row.append(rb, mb, launcherButton());
     document.body.appendChild(menu);
     (row.firstElementChild as HTMLElement)?.focus();
   };
@@ -240,21 +166,20 @@ async function main() {
   const showTitle = () => {
     closeMenu();
     mode = 'menu';
-    synth.chargeTone(-1);
+    center.innerHTML = '';
     menu = el('div', { class: 'menu' });
-    // スコアアタックは4ステージクリアで解放
-    const clearedCount = stages.filter((x) => save.data.cleared[x.id] !== undefined).length;
-    const unlocked = (i: number) => i === 0 || params.has('all') || (stages[i].attack ? clearedCount >= 4 : save.data.cleared[stages[i - 1].id] !== undefined);
+    const unlocked = (i: number) => i === 0 || params.has('all') || save.data.cleared[stages[i - 1].id] !== undefined;
     menu.innerHTML = `
       <h1>EVENT HORIZON</h1>
-      <h2>事 象 の 地 平 ク レ ー ン</h2>
+      <h2>事 象 の 地 平</h2>
       <div class="rulebox"></div>
-      <p style="font-size:13px">地平のそばでは時間が遅れる。星座の穴の上（点線の輪の中）では引力が切れる — 輪ごと運んで投げ入れろ。</p>
+      <p style="max-width:640px;line-height:1.8;font-size:13px">小さな船でブラックホールの周りを回ろう。<b style="color:#9fc0ff">地平に近いほど船の時計が遅れ</b>、倍率が上がる。光る<b style="color:var(--gold)">かけら</b>を拾うと 10 × 倍率 点。<br>
+      攻めるほど高得点 — でも地平の内側に入ったら終わり。すれすれで加速して離脱しろ。</p>
       <div class="row diff" style="margin:12px 0"></div>
       <div class="grid"></div>
-      <div class="keys">マウスで動かす　<b>クリックしている間</b> 引き寄せる　<kbd>Space</kbd>／右クリック 解放<br>
-      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：指の所へ動いて、着いたら離すまで引き寄せる、下の「解放」ボタン（2本指でも）</div>`;
-    menu.querySelector('.rulebox')!.replaceWith(ruleCards(horizonRules(Math.round(cfg.twist) % 2 === 1)));
+      <div class="keys"><kbd>↑</kbd><kbd>Space</kbd>／左クリック長押し 加速（軌道が膨らむ）　<kbd>↓</kbd><kbd>X</kbd> 減速（地平へ潜る）<br>
+      <kbd>P</kbd> ポーズ　<kbd>R</kbd> やり直し　<kbd>T</kbd> 調整パネル　<kbd>M</kbd> 消音<br>スマホ：画面の右半分を押すと加速、左半分で減速</div>`;
+    menu.querySelector('.rulebox')!.replaceWith(ruleCards(horizonRules));
     const diff = menu.querySelector('.diff')!;
     for (const name of Object.keys(presets)) {
       const b = el('button', { class: 'btn small' + (tuning.preset === name ? ' sel' : '') }, name);
@@ -265,413 +190,300 @@ async function main() {
     stages.forEach((st, i) => {
       const r = save.data.cleared[st.id];
       const ok = unlocked(i);
-      const d = el('div', { class: 'stage' + (r ? ' cleared' : '') + (ok ? '' : ' locked') },
-        `<b>${st.attack ? '∞' : i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
-      if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(49); startStage(i); };
+      const d = el('div', { class: 'stage' + (r ? ' cleared' : '') + (ok ? '' : ' locked') }, `<b>${i + 1}</b>${st.name}<span style="color:var(--gold)">${r ? '★'.repeat(r) : ''}</span>`);
+      if (ok) d.onclick = () => { synth.unlock(); synth.startAmbient(49); start(i); };
       grid.appendChild(d);
     });
-    menu.appendChild(resetButton('event-horizon', '事象の地平クレーン', clearStored));
+    menu.appendChild(resetButton('event-horizon', '事象の地平', clearStored));
     document.body.appendChild(menu);
   };
 
   const togglePause = () => {
     if (mode === 'play') {
       mode = 'pause';
-      synth.chargeTone(-1);
       menu = el('div', { class: 'menu' });
       menu.innerHTML = '<h1>PAUSE</h1><div class="row"></div>';
       const row = menu.querySelector('.row')!;
       const c = el('button', { class: 'btn' }, '続ける (P)');
       c.onclick = togglePause;
       const r = el('button', { class: 'btn' }, 'やり直す (R)');
-      r.onclick = () => startStage(stageIndex);
+      r.onclick = restart;
       const m = el('button', { class: 'btn' }, 'ステージ選択');
       m.onclick = showTitle;
       row.append(c, r, m, launcherButton());
       menu.appendChild(settingsRow(tuning.gui, () => tuning.toggle()));
-      menu.appendChild(ruleCards(horizonRules(Math.round(cfg.twist) % 2 === 1)));
+      menu.appendChild(ruleCards(horizonRules));
       document.body.appendChild(menu);
     } else if (mode === 'pause') {
       closeMenu();
       mode = 'play';
     }
   };
+  installNav(
+    () => {
+      if (mode === 'play' || mode === 'pause') togglePause();
+      else if (mode === 'result') showTitle();
+      else goTo('./index.html');
+    },
+    () => (mode === 'play' ? '‖ ポーズ' : mode === 'pause' ? '▶ 続ける' : mode === 'result' ? '← ステージ選択' : '← 星図へ'),
+  );
 
+  // ---- 入力 ----
+  const keys = { up: false, down: false };
+  const pointers = new Map<number, 1 | -1>();
+  let playerInput = 0;
+  const applyInput = () => {
+    const ps = [...pointers.values()];
+    const up = keys.up || ps.includes(1), down = keys.down || ps.includes(-1);
+    playerInput = up && !down ? 1 : down && !up ? -1 : 0;
+  };
   window.addEventListener('keydown', (e) => {
     synth.unlock();
-    keys.add(e.code);
-    if (e.code === 'Space' && mode === 'play') {
-      e.preventDefault();
-      burstQueued = true;
-    }
+    if (['ArrowUp', 'Space', 'KeyW'].includes(e.code)) { keys.up = true; if (mode === 'play') e.preventDefault(); }
+    if (['ArrowDown', 'KeyX', 'KeyS'].includes(e.code)) { keys.down = true; if (mode === 'play') e.preventDefault(); }
+    if (e.code === 'KeyR' && (mode === 'play' || mode === 'pause' || mode === 'result')) restart();
     if (e.code === 'KeyP') togglePause();
-    if (e.code === 'KeyR' && (mode === 'play' || mode === 'result' || mode === 'pause')) startStage(stageIndex);
+    if (e.code === 'KeyT') tuning.toggle();
     if (e.code === 'KeyM') synth.setMuted(!synth.muted);
     if (e.code === 'KeyB' && e.shiftKey) autoplay = !autoplay;
+    applyInput();
   });
-  window.addEventListener('keyup', (e) => keys.delete(e.code));
-  const setPointer = (cx: number, cy: number) => {
-    const p = ga.toLogical(cx, cy);
-    pointer.x = p.x;
-    pointer.y = p.y;
-  };
-  window.addEventListener('pointermove', (e) => setPointer(e.clientX, e.clientY));
+  window.addEventListener('keyup', (e) => {
+    if (['ArrowUp', 'Space', 'KeyW'].includes(e.code)) keys.up = false;
+    if (['ArrowDown', 'KeyX', 'KeyS'].includes(e.code)) keys.down = false;
+    applyInput();
+  });
   ga.app.canvas.addEventListener('pointerdown', (e) => {
     synth.unlock();
-    setPointer(e.clientX, e.clientY);
-    if (e.button === 2) burstQueued = true;
-    else if (e.pointerType === 'touch') { touchArm = true; pullDown = false; }
-    // 引く操作：押している間だけ（標準）／クリックで切り替え（調整パネル）
-    else if (cfg.pullToggle > 0) pullDown = !pullDown;
-    else pullDown = true;
+    if (e.pointerType === 'mouse') { if (e.button === 0) pointers.set(e.pointerId, 1); else if (e.button === 2) pointers.set(e.pointerId, -1); }
+    else pointers.set(e.pointerId, e.clientX > window.innerWidth / 2 ? 1 : -1);
+    applyInput();
   });
-  window.addEventListener('pointerup', (e) => { if (e.button !== 2 && !(cfg.pullToggle > 0 && e.pointerType !== 'touch')) { pullDown = false; touchArm = false; } });
-  // ダブルクリックでも解放（右クリック・Space と同じ）
-  ga.app.canvas.addEventListener('dblclick', () => { if (mode === 'play') burstQueued = true; });
-  window.addEventListener('pointercancel', () => { pullDown = false; touchArm = false; });
+  const up = (e: PointerEvent) => { pointers.delete(e.pointerId); applyInput(); };
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
   ga.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-  // タッチ：2本目の指で解放
-  ga.app.canvas.addEventListener('touchstart', (e) => { if (e.touches.length >= 2) burstQueued = true; }, { passive: true });
-
-  tuning.onChange((key, restart) => {
+  const tbar = touchButtons([{ label: '‖', onPress: () => togglePause() }], 'top', { landscape: true });
+  tuning.onChange((key) => {
     if (key === 'volume') synth.setVolume(cfg.volume);
-    if (key === 'bloom') ga.setBloom(cfg.bloom);
-    if (restart && mode === 'play' && key !== '*') toast('↻ の項目は R でやり直すと反映されます');
+    // 噴射・倍率・拾える距離は今のプレイにもすぐ反映（重力・燃料・持ち時間はやり直しで）
+    const c = toSkim(cfg);
+    Object.assign(sim.cfg, { thrust: c.thrust, maxMult: c.maxMult, pickR: c.pickR });
   });
   synth.setVolume(cfg.volume);
-  synth.setMusicStyle('horizon');
-  ga.setBloom(cfg.bloom);
 
-  const handle = (e: HorizonEvent) => {
-    if (!sim) return;
-    switch (e.t) {
-      case 'burst': {
-        whiteHole = 1;
-        burstRings.push({ x: e.x * SCALE, y: e.y * SCALE, r: e.r * SCALE, age: 0 });
-        juice.doFlash(0.35 + Math.min(0.4, e.n * 0.08), 0xfff6e8);
-        juice.shake((0.2 + e.n * 0.07) * cfg.shake);
-        if (e.n >= 2) juice.hitstop(0.05);
-        synth.boom(0.6 + e.n * 0.1, 3);
-        synth.whoosh(1 + e.n * 0.2);
-        particles.emit(e.x * SCALE, e.y * SCALE, { count: 60 + e.n * 25, speed: [120, 700], life: [0.4, 1.1], size: [0.05, 0.22], color: [0xffffff, 0xfff0c8, 0xbfe8ff], drag: 2 });
-        if (e.n >= 3) toast(`ホワイトホール ×${e.n}`);
-        break;
-      }
-      case 'capture': {
-        goalFlash[e.goal] = 1;
-        const col = e.chain >= 4 ? [0xffb3e6, 0xffffff] : e.chain >= 2 ? [0xffd98a, 0xffffff] : [0xbfe8ff, 0xffffff];
-        particles.emit(e.x * SCALE, e.y * SCALE, { count: 40 + e.chain * 15, speed: [60, 420], life: [0.5, 1.3], size: [0.05, 0.2], color: col, drag: 1.6 });
-        synth.hbell(4 + e.chain * 2, 0.12, 1.4);
-        if (e.chain >= 2) {
-          showChain(e.chain);
-          juice.slowmo(0.4, 0.6 + e.chain * 0.15);
-          synth.arp([0, 2, 4, 7, 9].slice(0, Math.min(5, e.chain + 1)).map((n) => n + e.chain), 0.05, 0.08);
+  const handle = () => {
+    for (const e of sim.events) {
+      if (e.t === 'pick') {
+        const col = multColor(e.mult);
+        particles.emit(px(e.x), px(e.y), { count: 18 + Math.round(e.mult * 6), speed: [40, 200 + e.mult * 40], life: [0.3, 0.9], size: [0.04, 0.12], color: [col, 0xffffff] });
+        synth.hbell(Math.min(14, 4 + Math.round(e.mult * 2)), 0.08 + Math.min(0.06, e.mult * 0.01), 0.7);
+        if (e.mult >= 2.5) { juice.hitstop(0.04); juice.doFlash(0.15, 0x9fc0ff); }
+        const node = el('div', { class: 'pops' }, `+${e.pts}${e.mult >= 1.5 ? ` <small>×${e.mult.toFixed(1)}</small>` : ''}`);
+        node.style.color = `#${col.toString(16).padStart(6, '0')}`;
+        document.body.appendChild(node);
+        pops.push({ x: e.x, y: e.y, age: 0, node });
+      } else if (e.t === 'skim') {
+        // すれすれに入った：スロー・青い光・低い音
+        juice.slowmo(0.3, 0.9);
+        juice.doFlash(0.22, 0x6f9cff);
+        synth.whoosh(1.2);
+        synth.tone(110, 1.2, { type: 'sine', vol: 0.1, slideTo: 55 });
+        skimGlow = 1;
+      } else if (e.t === 'perihelion') {
+        if (e.mult >= 2) {
+          // 一番近い所を抜けた：離脱の手応え
+          synth.chord(Math.min(10, Math.round(e.mult * 2)), [0, 4, 7, 11], 0.05, 0.07);
+          juice.shake(0.15 + Math.min(0.3, (e.mult - 2) * 0.1));
         }
-        juice.shake(0.08 * cfg.shake);
-        break;
-      }
-      case 'swallow': {
-        // 地平へ引き込まれる光の筋
-        const bx = sim.bh.x * SCALE, by = sim.bh.y * SCALE;
-        const ang = Math.atan2(by - e.y * SCALE, bx - e.x * SCALE);
-        particles.emit(e.x * SCALE, e.y * SCALE, { count: 30, speed: [200, 420], angle: ang, spread: 0.6, life: [0.12, 0.25], size: [0.04, 0.12], color: [0xffb36b, 0xff6b8a], drag: 0 });
-        synth.tone(180, 0.9, { type: 'sine', vol: 0.16, slideTo: 40 });
-        juice.shake(0.15 * cfg.shake);
-        toast('地平の向こうへ…');
-        break;
-      }
-      case 'hold': {
-        // 地平に抱えた：吸い込まれる筋は水色。まだ失っていない
-        const bx = sim.bh.x * SCALE, by = sim.bh.y * SCALE;
-        const ang = Math.atan2(by - e.y * SCALE, bx - e.x * SCALE);
-        particles.emit(e.x * SCALE, e.y * SCALE, { count: 24, speed: [200, 420], angle: ang, spread: 0.6, life: [0.12, 0.25], size: [0.04, 0.1], color: [0x7ff0ff, 0xffffff], drag: 0 });
-        synth.tone(220, 0.5, { type: 'sine', vol: 0.1, slideTo: 110 });
-        juice.shake(0.08 * cfg.shake);
-        if (!holdTold) { toast(touchText('地平に抱えた — 解放（Space）で吐き出せ', [['（Space）', 'ボタン']])); holdTold = true; }
-        break;
-      }
-      case 'spit': {
-        const x = e.x * SCALE, y = e.y * SCALE;
-        particles.emit(x, y, { count: 50 + e.n * 25, speed: [150, 650], life: [0.3, 0.9], size: [0.05, 0.2], color: [0x7ff0ff, 0xffffff, 0xffd98a], drag: 1.4 });
-        juice.hitstop(0.05);
-        juice.shake((0.2 + e.n * 0.08) * cfg.shake);
-        synth.arp([7, 4, 9, 11, 14].slice(0, Math.min(5, e.n + 1)), 0.03, 0.09);
-        if (e.n >= 2) toast(`吐き出し ×${e.n}`);
-        break;
-      }
-      case 'evaporate': {
-        particles.emit(e.x * SCALE, e.y * SCALE, { count: 30, speed: [30, 140], life: [0.4, 0.9], size: [0.04, 0.1], color: [0xff8a6b, 0xffb36b], drag: 1 });
-        synth.tone(160, 0.9, { type: 'sine', vol: 0.14, slideTo: 40 });
-        toast('抱えすぎて蒸発した…');
-        break;
-      }
-      case 'clink': {
-        const k = Math.min(1, (e.v - 3) / 10);
-        particles.emit(e.x * SCALE, e.y * SCALE, { count: 4 + Math.round(k * 10), speed: [40, 160 + k * 200], life: [0.15, 0.4], size: [0.03, 0.08], color: [0xffffff, 0xbfe8ff] });
-        synth.tone(1200 + k * 900, 0.12, { type: 'sine', vol: 0.02 + k * 0.05, wet: 0.4 });
-        break;
-      }
-      case 'spawn':
-        buildShards();
-        break;
-      case 'fall':
-        synth.tone(300, 0.6, { type: 'triangle', vol: 0.08, slideTo: 90 });
-        toast('奈落へ落ちた');
-        break;
-      case 'clear':
-        juice.slowmo(0.2, 1.6);
-        juice.doFlash(0.7, 0xffe7a8);
-        synth.arp([0, 2, 4, 5, 7, 9, 11], 0.07, 0.11);
-        synth.chargeTone(-1);
-        toast('星座がそろった');
-        resultTimer = sim.tick + Math.round(HZ * 2);
-        break;
-      case 'fail':
-        synth.tone(196, 1, { type: 'sine', vol: 0.15, slideTo: 60 });
-        synth.chargeTone(-1);
-        if (e.why === 'time') toast('時間切れ');
-        resultTimer = sim.tick + Math.round(HZ * 1.5);
-        break;
-      default:
-        break;
-    }
-  };
-
-  let overTold = false;
-  const readInput = (s: HorizonSim): HorizonInput => {
-    if (autoplay && bot) return bot.input(s);
-    // キーボードでも動かせる（矢印・WASD）
-    const kx = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0);
-    const ky = (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0) - (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0);
-    if (kx || ky) {
-      pointer.x = Math.min(VIEW_W, Math.max(0, pointer.x + kx * 7));
-      pointer.y = Math.min(VIEW_H, Math.max(0, pointer.y + ky * 7));
-    }
-    if (touchArm && Math.hypot(pointer.x / SCALE - s.bh.x, pointer.y / SCALE - s.bh.y) * SCALE < 30) {
-      touchArm = false;
-      pullDown = true;
-    }
-    let bits = 0;
-    if (pullDown || keys.has('ShiftLeft') || keys.has('KeyZ')) bits |= IN_PULL;
-    if (burstQueued) bits |= IN_BURST;
-    burstQueued = false;
-    if ((bits & IN_PULL) && !overTold && s.overGoal()) {
-      overTold = true;
-      toast('穴の上（点線の輪の中）では引力が切れる — 運んできて、ここで手放せ');
-    }
-    return { x: pointer.x / SCALE, y: pointer.y / SCALE, bits };
-  };
-
-  // 降着円盤：ブラックホールの周りの傾いた光の輪。奥の半分は穴の後ろ、手前の半分は前に描く
-  const drawDisk = (g: Graphics, front: boolean, bx: number, by: number, glow: number) => {
-    const R = cfg.ringR * SCALE;
-    const tilt = 0.32;
-    const spin = t * (1.2 + glow * 2.5);
-    for (let band = 0; band < 3; band++) {
-      const rr = R * (0.75 + band * 0.22);
-      const col = band === 0 ? 0xfff0c8 : band === 1 ? 0xffb36b : 0xff6b8a;
-      const a = (0.18 + glow * 0.35) * (1 - band * 0.25);
-      const from = front ? 0 : Math.PI, to = front ? Math.PI : Math.PI * 2;
-      const n = 28;
-      g.moveTo(bx + Math.cos(from) * rr, by + Math.sin(from) * rr * tilt);
-      for (let k = 1; k <= n; k++) {
-        const th = from + ((to - from) * k) / n;
-        g.lineTo(bx + Math.cos(th) * rr, by + Math.sin(th) * rr * tilt);
-      }
-      g.stroke({ width: 5 - band, color: col, alpha: a });
-      // 流れる光の粒
-      for (let k = 0; k < 5; k++) {
-        const th = spin * (1 + band * 0.3) + (k * Math.PI * 2) / 5 + band;
-        const s = Math.sin(th);
-        if ((s > 0) !== front) continue;
-        g.circle(bx + Math.cos(th) * rr, by + s * rr * tilt, 2.2).fill({ color: 0xffffff, alpha: 0.35 + glow * 0.5 });
-      }
-    }
-  };
-
-  const draw = (dt: number) => {
-    t += dt;
-    field.update(t);
-    if (!sim) return;
-    particles.update(dt);
-    const s = sim;
-    const bx = s.bh.x * SCALE, by = s.bh.y * SCALE;
-    const hr = cfg.horizon * SCALE;
-    const pulling = s.pulling;
-    const orbiting = s.shards.filter((x) => x.state === 'free' && Math.hypot(x.body.getPosition().x - s.bh.x, x.body.getPosition().y - s.bh.y) < cfg.ringR * 1.6).length;
-
-    // 重力レンズ：ブラックホールの周りの背景が引き込まれて歪む
-    lens.centerX = s.bh.x / WORLD_W;
-    lens.centerY = s.bh.y / WORLD_H;
-    lens.radius = (90 + cfg.horizon * 120 + (pulling ? 40 : 0)) * ga.scale;
-    lens.strength = whiteHole > 0 ? 0.45 * whiteHole : pulling ? -0.75 : -0.45;
-
-    // 星座の穴：暗い穴の縁を小さな星が回る。引力が切れる範囲は淡い点線（ブラックホールが入ると明るく）
-    const gg = goalG;
-    gg.clear();
-    s.stage.goals.forEach((g, i) => {
-      goalFlash[i] = Math.max(0, (goalFlash[i] ?? 0) - dt * 1.5);
-      const x = g.x * SCALE, y = g.y * SCALE, r = g.r * SCALE;
-      const guard = (g.r + cfg.goalGuard) * SCALE;
-      const n = Math.max(12, Math.floor(guard / 7));
-      for (let k = 0; k < n; k += 2) {
-        const a0 = (k / n) * Math.PI * 2 + t * 0.1, a1 = ((k + 1) / n) * Math.PI * 2 + t * 0.1;
-        gg.moveTo(x + Math.cos(a0) * guard, y + Math.sin(a0) * guard).lineTo(x + Math.cos(a1) * guard, y + Math.sin(a1) * guard);
-      }
-      const inside = Math.hypot(s.bh.x - g.x, s.bh.y - g.y) < g.r + cfg.goalGuard;
-      gg.stroke({ width: inside ? 2 : 1.2, color: 0xffd98a, alpha: inside ? 0.55 : 0.18 });
-      // ひねり2：かけらの入った穴は重力を持つ — 外から縁へ縮んでいく輪
-      if (s.goalGravity && s.goalFilled[i] && cfg.goalPull > 0) {
-        const reach = (g.r + cfg.goalPullR) * SCALE;
-        for (let k = 0; k < 3; k++) {
-          const f = 1 - ((t * 0.7 + k / 3) % 1);
-          gg.circle(x, y, r + (reach - r) * f).stroke({ width: 1.5, color: 0xffd98a, alpha: 0.28 * (1 - f) + 0.04 });
+      } else if (e.t === 'fuelOut') {
+        synth.tone(240, 0.4, { type: 'square', vol: 0.04, slideTo: 120 });
+      } else if (e.t === 'end') {
+        if (e.why === 'horizon') {
+          particles.emit(px(sim.x), px(sim.y), { count: 120, speed: [20, 160], life: [0.6, 1.6], size: [0.03, 0.1], color: [0x9fc0ff, 0xffffff, 0xff9f6a] });
+          juice.slowmo(0.2, 1.4);
+          juice.doFlash(0.5, 0x2a3a8a);
+          synth.tone(220, 2, { type: 'sine', vol: 0.12, slideTo: 30 });
+        } else {
+          synth.arp([0, 2, 4, 7, 9, 11, 14], 0.07, 0.08);
         }
-      }
-      gg.circle(x, y, r * 1.25).fill({ color: 0xffd98a, alpha: 0.05 + goalFlash[i] * 0.25 });
-      gg.circle(x, y, r).fill({ color: 0x05040e, alpha: 0.85 }).stroke({ width: 2, color: 0xffd98a, alpha: 0.55 + goalFlash[i] * 0.45 });
-      for (let k = 0; k < 6; k++) {
-        const a = t * 0.6 + (k * Math.PI * 2) / 6 + i;
-        const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-        gg.circle(px, py, 2.6 + goalFlash[i] * 3).fill({ color: 0xfff3d6, alpha: 0.9 });
-        const b = a + (Math.PI * 2) / 6;
-        gg.moveTo(px, py).lineTo(x + Math.cos(b) * r, y + Math.sin(b) * r).stroke({ width: 1, color: 0xffd98a, alpha: 0.35 });
-      }
-    });
-
-    // かけらと軌跡
-    const tg = trailG;
-    tg.clear();
-    s.shards.forEach((sh, i) => {
-      const sv = shardSprites[i];
-      if (!sv) return;
-      if (sh.state !== 'free') {
-        sv.glow.visible = sv.core.visible = false;
-        sv.trail.length = 0;
-        return;
-      }
-      const p = sh.body.getPosition();
-      const x = p.x * SCALE, y = p.y * SCALE;
-      sv.glow.x = sv.core.x = x;
-      sv.glow.y = sv.core.y = y;
-      const d = Math.hypot(p.x - s.bh.x, p.y - s.bh.y);
-      const hot = Math.max(0, 1 - (d - cfg.horizon) / (cfg.dilateRange + 0.6));
-      sv.glow.alpha = 0.7 + 0.3 * Math.sin(t * 5 + i);
-      sv.glow.tint = hot > 0.5 ? 0xffb36b : SHARD_COLOR[sh.kind];
-      sv.trail.push({ x, y });
-      if (sv.trail.length > 18) sv.trail.shift();
-      for (let k = 1; k < sv.trail.length; k++) {
-        const a = sv.trail[k - 1], b = sv.trail[k];
-        tg.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1 + (k / sv.trail.length) * sh.r * SCALE * 0.5, color: SHARD_COLOR[sh.kind], alpha: (k / sv.trail.length) * 0.45 });
-      }
-    });
-
-    // ブラックホール
-    whiteHole = Math.max(0, whiteHole - dt * 1.6);
-    const glow = pulling ? Math.min(1, 0.45 + orbiting * 0.15) : 0.12;
-    diskBackG.clear();
-    diskFrontG.clear();
-    holeG.clear();
-    drawDisk(diskBackG, false, bx, by, glow);
-    // 引く範囲と輪
-    if (pulling) {
-      diskBackG.circle(bx, by, cfg.bhReach * SCALE).stroke({ width: 1, color: 0xffb36b, alpha: 0.08 + 0.04 * Math.sin(t * 4) });
-      diskBackG.circle(bx, by, cfg.ringR * SCALE).stroke({ width: 1, color: 0xfff0c8, alpha: 0.12 });
-    }
-    holeG.circle(bx, by, hr * 2.2).fill({ color: 0x000000, alpha: 0.35 });
-    holeG.circle(bx, by, hr).fill({ color: whiteHole > 0 ? 0xffffff : 0x000000, alpha: whiteHole > 0 ? 0.6 + whiteHole * 0.4 : 1 });
-    holeG.circle(bx, by, hr + 2).stroke({ width: 2.5, color: 0xfff0c8, alpha: 0.65 + glow * 0.35 });
-    holeG.circle(bx, by, hr + 6).stroke({ width: 4, color: 0xffb36b, alpha: 0.12 + glow * 0.2 });
-    if (s.cooldown > 0) holeG.circle(bx, by, hr + 10).stroke({ width: 2, color: 0xffffff, alpha: Math.min(1, s.cooldown / cfg.burstCooldown) * 0.6 });
-    // ひねり1：抱えているかけら — 地平の中を小さく回る光。蒸発が近いと点滅し、赤みを帯びる
-    const held = s.held();
-    held.forEach((sh, k) => {
-      const left = (sh.heldUntil ?? 0) - s.worldTime;
-      const a = t * 5 + (k * Math.PI * 2) / held.length;
-      const rr = hr * 0.55;
-      const blink = left < 1.2 ? 0.4 + 0.6 * Math.abs(Math.sin(t * 14)) : 1;
-      holeG.circle(bx + Math.cos(a) * rr, by + Math.sin(a) * rr, sh.kind === 'heavy' ? 4 : 3).fill({ color: left < 1.2 ? 0xff8a6b : SHARD_COLOR[sh.kind], alpha: blink });
-    });
-    if (held.length) {
-      // 残り時間の弧（一番早く蒸発するかけら）
-      const left = Math.min(...held.map((h) => (h.heldUntil ?? 0) - s.worldTime));
-      const k = Math.max(0, Math.min(1, left / cfg.holdSec));
-      holeG.arc(bx, by, hr + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k).stroke({ width: 3, color: k < 0.3 ? 0xff8a6b : 0x7ff0ff, alpha: 0.85 });
-    }
-    drawDisk(diskFrontG, true, bx, by, glow);
-    // 解放の衝撃波の輪
-    const fg = fxG;
-    fg.clear();
-    burstRings = burstRings.filter((b) => (b.age += dt) < 0.6);
-    for (const b of burstRings) {
-      const k = b.age / 0.6;
-      fg.circle(b.x, b.y, b.r * (0.3 + 0.9 * k)).stroke({ width: 10 * (1 - k) + 1, color: 0xfff6e8, alpha: 0.7 * (1 - k) });
-    }
-    // 目標位置（自分で動かしている時だけ）
-    if (!autoplay && mode === 'play') fg.circle(pointer.x, pointer.y, 5).stroke({ width: 1.5, color: 0xffffff, alpha: 0.35 });
-
-    // 時間の遅れ：画面の縁が青く沈む
-    const dil = 1 - s.timeScale;
-    dilateG.clear();
-    if (dil > 0.05) {
-      for (let k = 0; k < 4; k++) {
-        const m = 10 + k * 16;
-        dilateG.rect(m, m, VIEW_W - m * 2, VIEW_H - m * 2).stroke({ width: 18, color: 0x4a6aff, alpha: dil * 0.12 * (4 - k) / 4 });
+        resultTimer = Math.round(HZ * 1.6);
       }
     }
-
-    // 引く音：周回しているかけらが多いほど高く
-    if (mode === 'play' && pulling) synth.chargeTone(Math.min(1, 0.15 + orbiting * 0.17));
-    else synth.chargeTone(-1);
-
-    // HUD
-    const st = stages[stageIndex];
-    const left = Math.max(0, cfg.timeLimit - s.worldTime);
-    tl.innerHTML = `<div>${st.attack ? '∞' : stageIndex + 1}. ${st.name}</div><div class="big">穴へ ${s.captured}${st.attack ? '' : ` / ${s.need}`}</div><div style="font-size:13px;color:var(--dim)">残りのかけら ${s.free().length}</div>`;
-    tr.innerHTML = `<div class="big">${s.score.toLocaleString()}</div><div>残り ${left.toFixed(0)} 秒</div>${dil > 0.08 ? `<div style="color:#9fb8ff">時間の遅れ ×${s.timeScale.toFixed(2)}</div>` : ''}${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
   };
-
-  // スマホ・タブレット：キーボードの代わりの画面ボタン
-  const tbar = touchButtons([
-    { label: '解放', onPress: () => { synth.unlock(); if (mode === 'play') burstQueued = true; } },
-    { label: '‖', onPress: () => togglePause() },
-  ], 'bottom', { landscape: true });
 
   const loop = new FixedLoop({
     update: () => {
-      if (mode !== 'play' || !sim) return;
-      lastInput = readInput(sim);
-      sim.step(lastInput);
-      for (const e of sim.events) handle(e);
-      if (resultTimer >= 0 && sim.tick >= resultTimer) {
-        resultTimer = -1;
-        showResult();
+      if (mode !== 'play') return;
+      sim.input = autoplay ? bot.input(sim) : playerInput;
+      sim.step();
+      handle();
+      if (sim.tick % 4 === 0 && sim.phase === 'play') {
+        trail.push({ x: sim.x, y: sim.y, m: sim.dilation() });
+        if (trail.length > 900) trail.shift();
       }
+      if (sim.firing && sim.phase === 'play' && sim.tick % 2 === 0) {
+        const sp = Math.hypot(sim.vx, sim.vy) || 1;
+        const bx = (-sim.vx / sp) * sim.firing, by = (-sim.vy / sp) * sim.firing;
+        particles.emit(px(sim.x + bx * 0.35), px(sim.y + by * 0.35), { count: 1, speed: [60, 140], angle: Math.atan2(by, bx), spread: 0.6, life: [0.15, 0.35], size: [0.03, 0.07], color: sim.firing > 0 ? [0xffd98a, 0xff9f6a] : [0x9fe0ff, 0xbfd0ff] });
+      }
+      // 終わってからリザルトまでの間（sim は進まないので、残りを数える）
+      if (sim.phase !== 'play' && resultTimer > 0) resultTimer--;
     },
-    render: (_a, realDt) => {
+    render: (_a, dt) => {
+      t += dt;
+      const dil = mode === 'menu' ? 1 : sim.dilation();
+      // 時計が遅れるほど、画面の時間もゆっくりに
+      const base = 1 - (1 - Math.max(0.42, 1 / Math.sqrt(dil))) * cfg.slowFx;
       juice.shakeScale = cfg.shake;
-      juice.update(realDt, cfg.gameSpeed);
+      juice.update(dt, base * cfg.gameSpeed);
+      particles.multiplier = cfg.particles;
       ga.root.pivot.set(-juice.shakeX, -juice.shakeY);
       ga.flash.alpha = juice.flash;
       ga.flash.tint = juice.flashColor;
-      particles.multiplier = cfg.particles;
-      draw(realDt);
+      field.update(t);
+      particles.update(dt);
+      const pull = Math.min(1, (dil - 1) / 3);
+      const h0 = sim.holes[0];
+      fieldWrap.pivot.set(px(h0.x), px(h0.y));
+      fieldWrap.position.set(px(h0.x), px(h0.y));
+      fieldWrap.scale.set(1 - 0.12 * pull);
+      field.container.tint = lerpColor(0xffffff, 0x7fa8ff, pull);
+      skimGlow = Math.max(0, skimGlow - dt * 0.8);
+      blueWash.alpha = 0.04 * pull + 0.08 * skimGlow;
+      ga.setBloom(cfg.bloom, 1 + pull * 0.8);
+      draw(dil);
+      // 音：倍率に応じて低くなる鼓動
+      toneT -= dt;
+      if (toneT <= 0 && mode === 'play' && sim.phase === 'play') {
+        toneT = 0.45 * Math.min(2.5, dil);
+        synth.tone(196 / Math.sqrt(dil), 0.35, { type: 'sine', vol: 0.025 + 0.02 * pull });
+      }
+      // 得点の飛び出し
+      const rect = ga.app.canvas.getBoundingClientRect();
+      for (let i = pops.length - 1; i >= 0; i--) {
+        const p = pops[i];
+        p.age += dt;
+        const lp = { x: rect.left + (px(p.x) / VW) * rect.width, y: rect.top + (px(p.y) / VH) * rect.height };
+        p.node.style.left = `${lp.x}px`;
+        p.node.style.top = `${lp.y - 20 - p.age * 40}px`;
+        p.node.style.opacity = String(Math.max(0, 1 - p.age / 1.1));
+        if (p.age > 1.1) { p.node.remove(); pops.splice(i, 1); }
+      }
+      if (mode === 'play' && sim.phase !== 'play' && resultTimer === 0) { resultTimer = -1; showResult(); }
+      // HUD
+      if (mode === 'menu') { tl.innerHTML = ''; tr.innerHTML = ''; }
+      else {
+        const st = stages[stageIndex];
+        const left = Math.max(0, sim.timeMax - sim.shipTime);
+        const mc = multColor(dil).toString(16).padStart(6, '0');
+        const next = st.stars.find((v) => sim.score < v);
+        tl.innerHTML = `<div>${stageIndex + 1}. ${st.name}</div><div class="big" style="color:#${mc}">×${dil.toFixed(1)}</div>
+          <div style="font-size:20px;color:#ffe7a8">${sim.score} 点<span style="font-size:13px;color:var(--dim)">${next ? `（次の★ ${next}）` : '（★★★）'}</span></div>${autoplay ? '<div style="color:var(--gold)">AUTO</div>' : ''}`;
+        tr.innerHTML = `<div>船の時計 ${left.toFixed(1)} 秒</div><div class="ehbar"><i style="width:${(left / sim.timeMax) * 100}%;background:#bfd0ff"></i></div>
+          <div>燃料</div><div class="ehbar"><i style="width:${(sim.fuel / sim.fuelMax) * 100}%;background:${sim.fuel < sim.fuelMax * 0.2 ? '#ff8f8f' : '#ffd98a'}"></i></div>
+          <div style="font-size:12px;color:var(--dim)">最高 ×${sim.bestMult.toFixed(1)}　かけら ${sim.picks}</div>`;
+      }
       tbar.update();
       hook.frames++;
     },
   }, HZ);
   juice.attach(loop);
 
+  const draw = (dil: number) => {
+    // 残光：これまでの軌道。倍率が高い所ほど青く太く
+    trailG.clear();
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1], b = trail[i];
+      const f = i / trail.length;
+      trailG.moveTo(px(a.x), px(a.y)).lineTo(px(b.x), px(b.y)).stroke({ width: 1 + Math.min(3, (b.m - 1) * 1.2), color: multColor(b.m), alpha: 0.06 + 0.4 * f * f });
+    }
+    diskBack.clear(); diskFront.clear(); holeG.clear();
+    sim.holes.forEach((h, hi) => {
+      const def = sim.stage.holes[hi];
+      const cx = px(h.x), cy = px(h.y), rs = px(def.rs);
+      lensSprites[hi]?.position.set(cx, cy);
+      lensSprites[hi]?.scale.set((rs * 6) / 64);
+      // 降着円盤：傾いた楕円の輪。奥の半分は穴の後ろ、手前の半分は前
+      for (let k = 0; k < 7; k++) {
+        const rr = rs * (1.5 + k * 0.32);
+        const col = lerpColor(0xffe2b0, 0xff7a4a, k / 7);
+        const al = 0.5 - k * 0.05;
+        const ry = rr * 0.28;
+        const ph = t * (1.6 - k * 0.15) + hi;
+        diskBack.ellipse(cx, cy, rr, ry).stroke({ width: 2.2, color: col, alpha: al * 0.55 });
+        diskFront.moveTo(cx + rr, cy);
+        for (let i = 1; i <= 24; i++) {
+          const a = (i / 24) * Math.PI;
+          diskFront.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * ry);
+        }
+        diskFront.stroke({ width: 2.6, color: col, alpha: al });
+        for (let j = 0; j < 3; j++) {
+          const a = ph + j * 2.1 + k;
+          const front = Math.sin(a) > 0;
+          (front ? diskFront : diskBack).circle(cx + Math.cos(a) * rr, cy + Math.sin(a) * ry, 1.8).fill({ color: 0xfff4d8, alpha: front ? 0.9 : 0.4 });
+        }
+      }
+      // 穴：真っ黒な円と、光子球の細い輪
+      holeG.circle(cx, cy, rs * 1.5).stroke({ width: 1.5, color: 0xbfd0ff, alpha: 0.35 + 0.15 * Math.sin(t * 3) });
+      holeG.circle(cx, cy, rs).fill({ color: 0x000000 }).stroke({ width: 2, color: 0x9fb8ff, alpha: 0.8 });
+      // 倍率の目安の輪（×2・×3）
+      for (const m of [2, 3]) {
+        const r = def.rs / (1 - 1 / (m * m));
+        holeG.circle(cx, cy, px(r)).stroke({ width: 1, color: multColor(m), alpha: 0.18 });
+      }
+    });
+    // かけら
+    sim.shards.forEach((s, i) => {
+      const sp = shardSprites[i];
+      if (!sp) return;
+      sp.position.set(px(s.x), px(s.y));
+      const m = sim.dilationAt(s.x, s.y);
+      sp.tint = multColor(m);
+      sp.scale.set(0.16 + 0.03 * Math.sin(t * 5 + i) + Math.min(0.1, (m - 1) * 0.04));
+      sp.alpha = mode === 'menu' ? 0.4 : 0.9;
+    });
+    // 予測線（噴射しないとどう飛ぶか）
+    predG.clear();
+    if (mode !== 'menu' && sim.phase === 'play' && cfg.predict > 0) {
+      const pts = sim.predict(Math.round(HZ * cfg.predict), 6);
+      pts.forEach((q, i) => {
+        const f = 1 - i / pts.length;
+        predG.circle(px(q.x), px(q.y), 1.2 + 1.2 * f).fill({ color: multColor(sim.dilationAt(q.x, q.y)), alpha: 0.15 + 0.4 * f });
+      });
+    }
+    // 船：進む向きの細い三角。地平に近いほど進む向きに引き伸ばされる
+    shipG.clear();
+    if (mode !== 'menu' && (sim.phase === 'play' || sim.endWhy !== 'horizon')) {
+      const ang = Math.atan2(sim.vy, sim.vx);
+      const stretch = 1 + Math.min(1.2, (dil - 1) * 0.35);
+      shipG.position.set(px(sim.x), px(sim.y));
+      shipG.rotation = ang;
+      shipG.poly([10 * stretch, 0, -6, 5, -3, 0, -6, -5]).fill({ color: 0xf4f6ff }).stroke({ width: 1, color: multColor(dil) });
+      if (sim.firing) {
+        const fl = 6 + fxRandom(0, 5);
+        if (sim.firing > 0) shipG.poly([-4, 2.5, -4 - fl, 0, -4, -2.5]).fill({ color: 0xffd98a, alpha: 0.9 });
+        else shipG.poly([10 * stretch, 2, 10 * stretch + fl, 0, 10 * stretch, -2]).fill({ color: 0x9fe0ff, alpha: 0.9 });
+      }
+      shipGlow.position.set(px(sim.x), px(sim.y));
+      shipGlow.scale.set(0.22 + 0.06 * Math.min(3, dil - 1));
+      shipGlow.tint = multColor(dil);
+      shipGlow.alpha = 0.7;
+    } else {
+      shipGlow.alpha = Math.max(0, shipGlow.alpha - 0.02);
+    }
+  };
+
   const hook = installDebugHook('event-horizon', () => ({
-    mode, stage: stageIndex, phase: sim?.phase, captured: sim?.captured, need: sim?.need, score: sim?.score,
-    timeScale: sim?.timeScale, free: sim?.free().length, pulling: sim?.pulling, bh: sim ? { ...sim.bh } : undefined, bestChain: sim?.bestChain, input: lastInput,
+    mode, stage: stageIndex, phase: sim.phase, why: sim.endWhy, score: sim.score, picks: sim.picks, mult: sim.mult,
+    fuel: +sim.fuel.toFixed(2), shipTime: +sim.shipTime.toFixed(1), best: +sim.bestMult.toFixed(2), input: sim.input, time: +sim.time.toFixed(1),
   }));
-  hook.start = (i: number) => startStage(i);
+  hook.start = (i: number) => start(i);
   hook.setAutoplay = (on: boolean) => { autoplay = on; };
   hook.sim = () => sim;
-
+  buildSprites();
   loop.start();
-  if (params.has('stage')) startStage(Math.min(stages.length - 1, Number(params.get('stage')) || 0));
+  if (params.has('stage') || autoplay) start(stageIndex);
   else showTitle();
   hook.ready = true;
 }

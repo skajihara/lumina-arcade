@@ -1,101 +1,44 @@
 /**
- * Event Horizon のステージ。
- * かけらの置き場所・星座の穴・壁・床の穴（奈落）だけで作れる。
- * 並びはボットの測定（reports/event-horizon-balance.md）で、易しい順に。
+ * Event Horizon（地平すれすれ・EH-20b）のステージ。
+ * 世界は 幅 32 × 高さ 18。船は最初、ブラックホールから半径 5.5 前後の円軌道に乗っている。
+ * 最初の軌道の近く（何もしなくても通る所）にはかけらを置かない — 減速して潜るか、加速して膨らむと届く。
  */
 import type { StageDef } from './sim';
 
-/** 横一列に並べる（既定は床の上） */
-const row = (x0: number, x1: number, n: number, kind: 'dust' | 'heavy' = 'dust', y = 11.7) =>
-  Array.from({ length: n }, (_, i) => ({ kind, x: n === 1 ? x0 : x0 + ((x1 - x0) * i) / (n - 1), y }));
+const C = { x: 16, y: 9 };
+const ONE = { x: C.x, y: C.y, gm: 150, rs: 1.3 };
 
 export const stages: StageDef[] = [
   {
-    id: 'eh-first',
-    name: '最初の軌道',
-    hint: 'クリックしている間だけ引き寄せる。かけらが輪に乗ったら、穴の手前まで運んで放せ',
-    shards: row(2.5, 5.5, 4),
-    goals: [{ x: 16, y: 4, r: 1.3 }],
-    need: 2,
-    start: { x: 4, y: 7 },
-  },  {
-    id: 'eh-abyss',
-    name: '奈落の上',
-    hint: '床の真ん中は奈落。落とさずに向こう岸の高い穴へ',
-    shards: [...row(1.2, 3.6, 3), { kind: 'heavy', x: 4.6, y: 11.6 }],
-    goals: [{ x: 17, y: 3, r: 1.2 }],
-    need: 3,
-    pits: [[7, 13.5]],
-    walls: [[{ x: 14.5, y: 5 }, { x: 19.9, y: 5 }]],
-    start: { x: 3, y: 8 },
-  },  {
-    id: 'eh-white',
-    name: 'ホワイトホール',
-    hint: '周回させたまま Space（右クリック）で解放。輪の全部が外へ弾け飛ぶ',
-    shards: row(8, 12, 6),
-    goals: [{ x: 3, y: 3.5, r: 1.2 }, { x: 17, y: 3.5, r: 1.2 }],
-    need: 4,
-    start: { x: 10, y: 6 },
-  },  {
-    id: 'eh-heavy',
-    name: '重いかけら',
-    hint: '金のかけらは重く、引力が効きにくい。ゆっくり運べ',
-    shards: [...row(5.5, 7, 2, 'heavy'), ...row(14.5, 17, 3)],
-    goals: [{ x: 10, y: 3, r: 1.3 }],
-    need: 4,
-    start: { x: 10, y: 8 },
-  },  {
-    id: 'eh-shelf',
-    name: '高い棚',
-    hint: '棚の上のかけらを、下の穴へ。上から投げ下ろせ',
-    shards: row(1.8, 5.2, 4, 'dust', 4.7),
-    goals: [{ x: 15.5, y: 10, r: 1.2 }],
-    need: 3,
-    walls: [[{ x: 0, y: 5 }, { x: 6.5, y: 5 }]],
-    start: { x: 4, y: 2 },
-  },  {
-    id: 'eh-vortex',
-    name: '銀河の渦',
-    hint: '十のかけら、三つの穴、両端の奈落。輪いっぱいに集めてから解放せよ',
-    shards: [{ kind: 'heavy', x: 3.6, y: 11.6 }, ...row(5, 15, 8), { kind: 'heavy', x: 16.4, y: 11.6 }],
-    goals: [{ x: 2.5, y: 3, r: 1.1 }, { x: 10, y: 1.6, r: 1.1 }, { x: 17.5, y: 3, r: 1.1 }],
-    need: 7,
-    pits: [[0, 2.5], [17.5, 20]],
-    start: { x: 10, y: 6 },
-  },  {
-    id: 'eh-cup',
-    name: '杯',
-    hint: '穴は杯の底。縁を越えて、上から落とし込め',
-    shards: row(2, 7, 5),
-    goals: [{ x: 16.5, y: 9.3, r: 1.1 }],
-    need: 4,
-    walls: [[{ x: 13.8, y: 6.2 }, { x: 13.8, y: 10.8 }, { x: 19.2, y: 10.8 }, { x: 19.2, y: 6.2 }]],
-    start: { x: 4.5, y: 7 },
-  },  {
-    id: 'eh-twins',
-    name: '二つの星座',
-    hint: '両側は奈落。真ん中の台から、左右の高い穴へ分けて投げろ',
-    shards: row(8, 12, 8, 'dust', 8.6),
-    goals: [{ x: 2, y: 2.5, r: 1.1 }, { x: 18, y: 2.5, r: 1.1 }],
-    need: 4,
-    pits: [[0, 4.5], [15.5, 20]],
-    walls: [[{ x: 5.5, y: 9 }, { x: 14.5, y: 9 }]],
-    start: { x: 10, y: 5 },
-  },  {
-    id: 'eh-attack',
-    name: 'スコアアタック',
-    hint: 'かけらは空から降り続ける。制限時間まで、連鎖でスコアを稼げ',
-    shards: row(4, 16, 6),
-    goals: [{ x: 2.5, y: 4, r: 1.2 }, { x: 10, y: 2, r: 1.2 }, { x: 17.5, y: 4, r: 1.2 }],
-    start: { x: 10, y: 8 },
-    attack: { seed: 7 },
+    id: 'eh2-first', name: '最初の地平',
+    hint: '↓（減速）を短く押すと軌道が縮んで地平へ潜る。近いほど倍率が上がる。↑（加速）で離れる',
+    holes: [ONE], start: { around: 0, r: 5.5 },
+    rings: [{ hole: 0, r: 3.6, count: 4 }, { hole: 0, r: 7.4, count: 3, spin: -0.3 }, { hole: 0, r: 2.7, count: 2 }],
+    stars: [250, 600, 1000],
   },
-
-
-
-
-
-
-
-
+  {
+    id: 'eh2-inner', name: '内側の輪',
+    hint: 'かけらは地平のすぐ外を回っている。すれすれで拾えば ×3 以上 — でも潜りすぎると戻れない',
+    holes: [ONE], start: { around: 0, r: 5.5, angle: Math.PI / 2 },
+    rings: [{ hole: 0, r: 2.0, count: 6, spin: 0.45 }, { hole: 0, r: 2.7, count: 3, spin: -0.35 }],
+    stars: [400, 1000, 1800], intro: 'inner',
+  },
+  {
+    id: 'eh2-fuel', name: '燃料ぎりぎり',
+    hint: '燃料が少ない。一度潜ったら、離脱の分を残しておけ（燃料が切れると軌道は変えられない）',
+    holes: [ONE], start: { around: 0, r: 6.2, angle: 0 },
+    rings: [{ hole: 0, r: 2.4, count: 4 }, { hole: 0, r: 3.5, count: 3, spin: -0.4 }],
+    fuel: 6, stars: [300, 800, 1500], intro: 'fuel',
+  },
+  {
+    id: 'eh2-binary', name: '連星',
+    hint: '二つのブラックホールが回り合う。重力の向きが刻々と変わる — 片方の地平をかすめて、もう片方へ',
+    holes: [
+      { x: C.x, y: C.y, gm: 80, rs: 0.95, orbit: { r: 2.3, period: 9, phase: 0 } },
+      { x: C.x, y: C.y, gm: 80, rs: 0.95, orbit: { r: 2.3, period: 9, phase: Math.PI } },
+    ],
+    start: { around: C, r: 7.2 },
+    rings: [{ hole: 0, r: 1.7, count: 3, spin: 0.4 }, { hole: 1, r: 1.7, count: 3, spin: 0.4 }],
+    stars: [150, 400, 750], intro: 'binary',
+  },
 ];

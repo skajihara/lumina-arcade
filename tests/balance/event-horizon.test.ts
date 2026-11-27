@@ -1,39 +1,41 @@
 /**
- * Event Horizon の難易度測定：ボット（上手さ違い）で各ステージを複数回遊ばせ、
- * クリア率・時間・失ったかけら・連鎖を reports/ に書き出す。npm run balance で実行。
+ * Event Horizon（地平すれすれ・EH-20b）の難易度測定：ボット（上手さ違い × シード）で各ステージを遊ばせ、
+ * 得点・★・終わり方を reports/ に書き出す。npm run balance で実行。
  */
 import { it } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { presets } from '../../games/event-horizon/src/config';
+import { presets, toSkim } from '../../games/event-horizon/src/config';
 import { stages } from '../../games/event-horizon/src/stages';
-import { HorizonSim } from '../../games/event-horizon/src/sim';
-import { HorizonBot } from '../../games/event-horizon/src/bot';
+import { SkimSim, HZ } from '../../games/event-horizon/src/sim';
+import { SkimBot } from '../../games/event-horizon/src/bot';
 
-const RUNS = Number(process.env.BALANCE_RUNS ?? 8);
+const RUNS = Number(process.env.BALANCE_RUNS ?? 4);
+const WHY = { horizon: '地平', drift: '流された', time: '時間' } as const;
 
 it('event-horizon balance report', () => {
-  const lines = ['# Event Horizon 難易度レポート', '', `ボット（輪に乗せて運び、放す／解放の放物線を先読みして投げる。skill が低いほど円がぶれ、先読みが減る）で各ステージを${RUNS}回ずつ。生成: ${new Date().toISOString()}`, ''];
+  const lines = ['# Event Horizon 難易度レポート（地平すれすれ）', '', `ボット（噴射なしの先の軌道を読み、近すぎたら加速・遠ければ短く減速。skill が高いほど攻める）で各ステージを${RUNS}回ずつ。各欄は 平均点（★3 の回数／終わり方）。生成: ${new Date().toISOString()}`, ''];
   for (const preset of ['やさしい', 'ふつう', 'むずかしい']) {
-    lines.push(`## ${preset}`, '', '| # | ステージ | skill | クリア率 | 平均クリア秒 | 平均の失ったかけら | 平均最大連鎖 | ★3 |', '|---|---|---|---|---|---|---|---|');
+    lines.push(`## ${preset}`, '', '| # | ステージ | ★の点 | skill 0.5 | skill 0.9 | ★1 以上 | ★3 |', '|---|---|---|---|---|---|---|');
     stages.forEach((st, i) => {
-      for (const skill of [0.6, 0.85]) {
-        let clears = 0, tSum = 0, lost = 0, chain = 0, s3 = 0, score = 0;
+      let one = 0, three = 0;
+      const cells = [0.5, 0.9].map((skill) => {
+        let sum = 0;
+        const ends: Record<string, number> = {};
         for (let r = 0; r < RUNS; r++) {
-          const sim = new HorizonSim(st, { ...presets[preset] });
-          const bot = new HorizonBot(100 + r * 13 + i, skill);
-          while (sim.phase === 'play' && sim.time < 400) sim.step(bot.input(sim));
-          if (sim.phase === 'clear') { clears++; tSum += sim.worldTime; }
-          const l = sim.shards.filter((s) => s.state === 'lost').length;
-          lost += l;
-          chain += sim.bestChain;
-          score += sim.score;
-          // main.ts の星評価と同じ基準（スコアアタックは別）
-          if (sim.phase === 'clear' && !st.attack && l === 0 && sim.bestChain >= 2) s3++;
+          const sim = new SkimSim(st, toSkim({ ...presets[preset] }), 7 + r);
+          const bot = new SkimBot(skill, 100 + r * 13 + i);
+          while (sim.phase === 'play' && sim.tick < HZ * 300) { sim.input = bot.input(sim); sim.step(); }
+          sum += sim.score;
+          const s = sim.starsFor();
+          if (s >= 1) one++;
+          if (s >= 3) three++;
+          const w = sim.endWhy ? WHY[sim.endWhy] : '—';
+          ends[w] = (ends[w] ?? 0) + 1;
         }
-        const extra = st.attack ? `平均スコア ${Math.round(score / RUNS)}` : `${Math.round((s3 / RUNS) * 100)}%`;
-        lines.push(`| ${i + 1} | ${st.name} | ${skill} | ${Math.round((clears / RUNS) * 100)}% | ${clears ? (tSum / clears).toFixed(0) : '-'} | ${(lost / RUNS).toFixed(1)} | ${(chain / RUNS).toFixed(1)} | ${extra} |`);
-      }
+        return `${Math.round(sum / RUNS)}（${Object.entries(ends).map(([k, v]) => `${k}${v}`).join('・')}）`;
+      });
+      lines.push(`| ${i + 1} | ${st.name} | ${st.stars.join(' / ')} | ${cells.join(' | ')} | ${one}/${RUNS * 2} | ${three}/${RUNS * 2} |`);
     });
     lines.push('');
   }
