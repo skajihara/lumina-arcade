@@ -26,8 +26,8 @@ export const games: GameEntry[] = [
     at: [0.27, 0.33], hue: '#9fd0ff',
   },
   {
-    id: 'echo-loop', title: 'Echo Loop', jp: '残響ループ', status: 'ready', stages: 10,
-    desc: '10秒の時間ループ。過去の自分のボールと一緒に、同じ10秒で全部の星を爆発させる。',
+    id: 'echo-loop', title: 'Echo Loop', jp: '残響ループ', status: 'ready', stages: 4,
+    desc: '一筆のループ。球が落ちても灯した星は残り、星座の線は光の弦になって球を弾く。少ない周で全部灯す。',
     shape: [[0.5, 0.5], [0.15, 0.4], [0.35, 0.1], [0.7, 0.15], [0.85, 0.55], [0.6, 0.9]], edges: [[1, 2], [2, 3], [3, 4], [4, 5], [5, 0], [0, 1]],
     at: [0.63, 0.27], hue: '#c3a6ff',
   },

@@ -1,94 +1,50 @@
 import type { Schema } from '@engine/tuning';
-import { schema as novaSchema, presets as novaPresets, type NovaConfig } from '../../nova-pinball/src/config';
+import { defaults, type EchoSimConfig } from './sim';
 
-/** Echo Loop の全パラメータ。盤面・爆発は Nova Pinball と共通で、ループの設定を足す */
-export interface EchoConfig extends NovaConfig {
-  loopSec: number;
-  maxLoops: number;
-  /** 残響どうしがぶつかるか（0/1）。今のボールと残響は常にぶつかる */
-  echoCollide: number;
-  /** ひねり「共鳴」：違うループの自分が、この秒数以内に同じ星へ当てるとすぐ爆発（0 で無し） */
-  resonance: number;
-  /** 共鳴した星の爆風の大きさ（倍） */
-  resonanceBlast: number;
-  /** 時計の針（EL-12）：0 なし／1 あり。長さの倍率・1ループで何周するか・弾む強さ */
-  hand: number;
-  handLen: number;
-  handTurns: number;
-  handBounce: number;
-  /**
-   * ひねり（EL-09）：0 なし／1 縮む時間（残響が1人増えるごとにループが shrinkSec 秒短くなる。共鳴で regainSec 秒取り戻す）／
-   * 2 影（残響の連鎖で壊れた星は shadowSec 秒後に戻る。今の自分の連鎖で壊した星は戻らない）
-   */
-  echoTwist: number;
-  shrinkSec: number;
-  minLoopSec: number;
-  regainSec: number;
-  shadowSec: number;
-  /** 発射してからこの秒数（と発射の通り道の中）は、今のボールと残響がぶつからない */
-  launchGrace: number;
+/** Echo Loop の全パラメータ（EL-20b：一筆のループ）。調整パネルとプリセット */
+export interface EchoConfig extends EchoSimConfig {
+  [k: string]: number | boolean;
+  gameSpeed: number;
+  shake: number;
+  particles: number;
+  bloom: boolean;
+  volume: number;
 }
 
-// ループの項目を先に（調整パネルで上に出る）
-export const schema = Object.assign({
-  loopSec: { label: '1ループの秒数', min: 5, max: 20, step: 0.5, folder: 'ループ', restart: true },
-  maxLoops: { label: '最大ループ数', min: 2, max: 12, step: 1, folder: 'ループ', restart: true },
-  echoCollide: { label: '残響どうしがぶつかる（0/1）', min: 0, max: 1, step: 1, folder: 'ループ', restart: true },
-  resonance: { label: '共鳴：同時とみなす秒数（0で無し）', min: 0, max: 1.5, step: 0.05, folder: 'ループ' },
-  resonanceBlast: { label: '共鳴の爆風の大きさ（倍）', min: 1, max: 3, step: 0.05, folder: 'ループ' },
-  hand: { label: '時計の針（0なし／1あり）', min: 0, max: 1, step: 1, folder: 'ループ', restart: true },
-  handLen: { label: '針の長さ（倍）', min: 0.3, max: 1.5, step: 0.05, folder: 'ループ', restart: true },
-  handTurns: { label: '針が1ループで回る数', min: 0.5, max: 4, step: 0.5, folder: 'ループ', restart: true },
-  handBounce: { label: '針の弾み', min: 0, max: 1.2, step: 0.05, folder: 'ループ', restart: true },
-  echoTwist: { label: 'ひねり（0なし／1縮む時間／2影）', min: 0, max: 2, step: 1, folder: 'ループ', restart: true },
-  shrinkSec: { label: '縮む時間：残響1人ごとに短くなる秒', min: 0, max: 3, step: 0.1, folder: 'ループ', restart: true },
-  minLoopSec: { label: '縮む時間：いちばん短いループの秒', min: 3, max: 15, step: 0.5, folder: 'ループ', restart: true },
-  regainSec: { label: '縮む時間：共鳴で取り戻す秒', min: 0, max: 3, step: 0.1, folder: 'ループ' },
-  shadowSec: { label: '影：残響が壊した星が戻るまでの秒', min: 0.5, max: 8, step: 0.1, folder: 'ループ' },
-  launchGrace: { label: '発射したての球は残響とぶつからない秒数', min: 0, max: 3, step: 0.1, folder: 'ループ' },
-}, novaSchema) as Schema<EchoConfig>;
+export const schema: Schema<EchoConfig> = {
+  maxLoops: { label: '周（球）の上限', min: 1, max: 12, step: 1, folder: 'ループ', restart: true },
+  stringKick: { label: '光の弦の弾き', min: 0, max: 12, step: 0.5, folder: 'ループ' },
+  snapSpeed: { label: '弦が切れる速さ（大きいほど切れにくい）', min: 6, max: 40, step: 0.5, folder: 'ループ' },
+  completeKick: { label: '星座の完成で球を弾く強さ', min: 0, max: 25, step: 0.5, folder: 'ループ' },
+  hitKick: { label: '星に当てた時の弾き', min: 0, max: 10, step: 0.5, folder: '盤面' },
+  bumperKick: { label: '灯った星（バンパー）の弾き', min: 0, max: 15, step: 0.5, folder: '盤面' },
+  gravity: { label: '重力', min: 8, max: 35, step: 0.5, folder: '盤面', restart: true },
+  ballRestitution: { label: '球の弾み', min: 0, max: 0.9, step: 0.05, folder: '盤面', restart: true },
+  flipperLength: { label: 'フリッパーの長さ', min: 1.4, max: 3, step: 0.05, folder: 'フリッパー', restart: true },
+  flipperSpeed: { label: 'フリッパーの速さ', min: 8, max: 40, step: 0.5, folder: 'フリッパー' },
+  flipperTorque: { label: 'フリッパーの力', min: 500, max: 6000, step: 100, folder: 'フリッパー', restart: true },
+  launchMin: { label: '発射の強さ（最小）', min: 10, max: 40, step: 0.5, folder: 'フリッパー' },
+  launchMax: { label: '発射の強さ（最大）', min: 15, max: 50, step: 0.5, folder: 'フリッパー' },
+  gameSpeed: { label: 'ゲーム速度', min: 0.3, max: 1.5, step: 0.05, folder: '演出' },
+  shake: { label: '画面揺れ', min: 0, max: 2, step: 0.05, folder: '演出' },
+  particles: { label: 'パーティクル量', min: 0, max: 3, step: 0.1, folder: '演出' },
+  bloom: { label: '発光（ブルーム）', folder: '演出' },
+  volume: { label: '音量', min: 0, max: 1, step: 0.01, folder: '演出' },
+};
 
-const base = (p: NovaConfig): EchoConfig => ({
-  ...p,
-  // 1ループが短いので、チャージは時間で減らさない（ループごとに全部戻る）
-  decayFloor: 6,
-  // 10秒で群れを1つ落とせるよう、2回当てると爆発し、爆風は近くの星を必ず巻き込む
-  maxCharge: 2,
-  blastCharge: 2,
-  ballSave: 0,
-  balls: 1,
-  twist: 0,
-  // フリッパーは Nova の NP-17（長く）の前の長さのまま（Echo の難しさはループ数で決めている）
-  flipperLength: 2.0,
-  // Nova の「星の引力」は使わない（残響の動きを読みやすく保つ）
-  starPull: 0,
-  // 満月の光（Nova の NP-18b）も使わない（難しさはループ数で決めている）
-  moonCharge: 0,
-  endlessItems: 0,
-  maxBalls: 4,
-  // 星座の線は連鎖を運ばない（群れごとに別のループで落とす遊びを保つ）
-  fuseSpeed: 0,
-  loopSec: 10,
-  maxLoops: 4,
-  echoCollide: 0,
-  resonance: 0.4,
-  resonanceBlast: 1.6,
-  launchGrace: 1,
-  echoTwist: 1,
-  shrinkSec: 1,
-  minLoopSec: 6,
-  regainSec: 1,
-  shadowSec: 3.5,
-  hand: 1,
-  handLen: 1,
-  handTurns: 1,
-  handBounce: 0.6,
-});
+const normal: EchoConfig = { ...defaults, gameSpeed: 1, shake: 1, particles: 1, bloom: true, volume: 0.7 };
 
 export const presets: Record<string, EchoConfig> = {
-  やさしい: { ...base(novaPresets['やさしい']), flipperLength: 2.3, maxLoops: 7, loopSec: 11, shrinkSec: 0.6, minLoopSec: 7 },
-  ふつう: base(novaPresets['ふつう']),
-  むずかしい: { ...base(novaPresets['むずかしい']), maxLoops: 5, loopSec: 9.5, blastRadius: 2.6 },
+  やさしい: { ...normal, maxLoops: 7, flipperLength: 2.45, snapSpeed: 12, gravity: 19 },
+  ふつう: normal,
+  むずかしい: { ...normal, maxLoops: 4, flipperLength: 2.0, snapSpeed: 18, stringKick: 5 },
 };
 
 export const DEFAULT_PRESET = 'ふつう';
+
+/** 調整パネルの値 → シミュレーションの設定 */
+export function toSim(c: EchoConfig): EchoSimConfig {
+  const out = { ...defaults };
+  for (const k of Object.keys(defaults) as (keyof EchoSimConfig)[]) out[k] = c[k] as number;
+  return out;
+}
